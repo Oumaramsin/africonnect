@@ -14,14 +14,23 @@ const NAV_ITEMS = [
 export default function BottomNav() {
   const pathname = usePathname()
 
-  // Cache la nav sur les pages auth
   const hideOn = ['/login', '/register', '/reset-password']
   if (hideOn.includes(pathname)) return null
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 max-w-[430px] mx-auto bg-white border-t border-gray-100"
-        style={{ zIndex: 40 }}>
-      <div className="flex items-center justify-around px-2 py-2 pb-safe">
+    <nav style={{
+      width: '100%',
+      maxWidth: '430px',
+      background: 'white',
+      borderTop: '1px solid #e5e7eb',
+      flexShrink: 0,
+    }}>
+      <div style={{
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-around',
+        padding: '8px 0 12px',
+      }}>
         {NAV_ITEMS.map(item => {
           const isActive = pathname === item.href ||
             (item.href !== '/dashboard' && pathname.startsWith(item.href))
@@ -30,18 +39,30 @@ export default function BottomNav() {
             <Link
               key={item.href}
               href={item.href}
-              className="flex flex-col items-center gap-0.5 px-3 py-1.5 rounded-xl transition-all"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                alignItems: 'center',
+                gap: '2px',
+                padding: '6px 12px',
+                borderRadius: '12px',
+                textDecoration: 'none',
+              }}
             >
-              <span className={`text-xl transition-transform ${isActive ? 'scale-110' : ''}`}>
-                {item.icon}
-              </span>
-              <span className={`text-xs font-medium transition-colors ${
-                isActive ? 'text-[#1D6B45]' : 'text-gray-400'
-              }`}>
+              <span style={{ fontSize: '20px' }}>{item.icon}</span>
+              <span style={{
+                fontSize: '10px',
+                fontWeight: 500,
+                color: isActive ? '#1D6B45' : '#9ca3af',
+              }}>
                 {item.label}
               </span>
               {isActive && (
-                <div className="w-1 h-1 rounded-full bg-[#1D6B45]" />
+                <div style={{
+                  width: '4px', height: '4px',
+                  borderRadius: '50%',
+                  background: '#1D6B45',
+                }} />
               )}
             </Link>
           )

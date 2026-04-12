@@ -22,33 +22,30 @@ export default function RootLayout({
         <meta name="theme-color" content="#1D6B45" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
       </head>
-      <body className={`${inter.className}`}
-        style={{ background: 'linear-gradient(135deg, #0F4A30 0%, #1D6B45 50%, #D4870A 100%)' }}>
-
-        {/* Wrapper centrage parfait */}
+      <body className={inter.className} style={{
+        background: 'linear-gradient(135deg, #0F4A30 0%, #1D6B45 50%, #D4870A 100%)',
+        minHeight: '100vh',
+        display: 'flex',
+        justifyContent: 'center',
+        alignItems: 'flex-start',
+      }}>
         <div style={{
+          width: '100%',
+          maxWidth: '430px',
           minHeight: '100vh',
+          background: '#FAF7F2',
+          boxShadow: '0 0 60px rgba(0,0,0,0.3)',
           display: 'flex',
-          alignItems: 'flex-start',
-          justifyContent: 'center',
-          padding: '0',
+          flexDirection: 'column',
+          overflow: 'hidden',
         }}>
-          {/* Shell app */}
-          <div style={{
-            position: 'relative',
-            width: '100%',
-            maxWidth: '430px',
-            minHeight: '100vh',
-            background: '#FAF7F2',
-            boxShadow: '0 0 60px rgba(0,0,0,0.3)',
-          }}>
-           <main style={{ paddingBottom: '100px' }}>
-              {children}
-            </main>
+          <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+            {children}
+          </main>
+          <div style={{ width: '100%', maxWidth: '430px' }}>
             <BottomNavWrapper />
           </div>
         </div>
-
       </body>
     </html>
   )

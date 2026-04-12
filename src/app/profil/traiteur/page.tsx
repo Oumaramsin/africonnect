@@ -143,7 +143,7 @@ export default function TraiteurEspacePage() {
   )
 
   if (view === 'setup') return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-10">
+    <div className="min-h-screen bg-[#FAF7F2] pb-36">
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <Link href="/profil" className="text-white/70 text-sm mb-4 inline-block">← Profil</Link>
         <h1 className="text-2xl font-bold text-white">Devenir Traiteur</h1>
@@ -205,7 +205,7 @@ export default function TraiteurEspacePage() {
   )
 
   if (view === 'nouveau_plat') return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-32">
+    <div className="min-h-screen bg-[#FAF7F2] pb-36">
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <button onClick={() => setView('plats')} className="text-white/70 text-sm mb-4 inline-block">← Mes plats</button>
         <h1 className="text-2xl font-bold text-white">Ajouter un plat</h1>

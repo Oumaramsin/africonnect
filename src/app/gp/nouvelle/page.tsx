@@ -115,7 +115,7 @@ export default function NouvelleAnnoncePage() {
   )
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-10">
+    <div className="min-h-screen bg-[#FAF7F2] pb-36">
 
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">

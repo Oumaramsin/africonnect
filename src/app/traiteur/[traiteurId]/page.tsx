@@ -150,9 +150,9 @@ export default function TraiteurDetailPage() {
         </div>
       </div>
 
-      {/* Panier flottant */}
+    {/* Panier flottant */}
       {totalItems > 0 && (
-        <div className="fixed bottom-6 left-4 right-4 max-w-2xl mx-auto">
+        <div className="px-4 py-4">
           <button
             onClick={goToCheckout}
             className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl flex items-center justify-between px-6 shadow-lg hover:bg-[#0F4A30] transition-colors"

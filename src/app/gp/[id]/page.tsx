@@ -107,7 +107,7 @@ export default function GpDetailPage() {
   const estimatedTotal = (weightKg || 0) * listing.price_per_kg
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-32">
+    <div className="min-h-screen bg-[#FAF7F2] pb-36">
 
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-8">
