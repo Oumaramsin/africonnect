@@ -2,6 +2,7 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import NotificationBell from './NotificationBell'
 
 const NAV_ITEMS = [
   { href: '/dashboard', icon: '🏠', label: 'Accueil' },
@@ -45,6 +46,7 @@ export default function BottomNav() {
             </Link>
           )
         })}
+        <NotificationBell /> 
       </div>
     </nav>
   )

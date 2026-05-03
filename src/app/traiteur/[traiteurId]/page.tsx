@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getTraiteur, type Traiteur, type Dish, type CartItem } from '@/lib/api/traiteur'
 import Link from 'next/link'
+import CommandeForm from './CommandeForm'
 
 export default function TraiteurDetailPage() {
   const { traiteurId: id } = useParams()
@@ -83,6 +84,7 @@ export default function TraiteurDetailPage() {
             <div className="text-white font-bold text-lg">{traiteur.rating}</div>
             <div className="text-white/60 text-xs">{traiteur.review_count} avis</div>
           </div>
+         
         </div>
 
         {/* Zones de livraison */}
@@ -93,7 +95,12 @@ export default function TraiteurDetailPage() {
             </span>
           ))}
         </div>
+
+          
+
       </div>
+
+
 
       {/* Menu */}
       <div className="px-4 py-6 max-w-2xl mx-auto">
@@ -148,6 +155,15 @@ export default function TraiteurDetailPage() {
             )
           })}
         </div>
+      </div>
+
+       {/* Formulaire de commande */}
+      <div className="px-4 max-w-2xl mx-auto mt-4">
+        <CommandeForm
+          traiteurId={traiteur.id}
+          traiteurName={traiteur.name}
+          whatsapp={traiteur.whatsapp}
+        />
       </div>
 
     {/* Panier flottant */}

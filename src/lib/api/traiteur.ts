@@ -8,6 +8,7 @@ export type Traiteur = {
   rating: number
   review_count: number
   delivery_zones: string[]
+  whatsapp: string | null 
   image_url: string | null
   dishes: Dish[]
 }

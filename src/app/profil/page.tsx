@@ -160,7 +160,7 @@ export default function ProfilPage() {
                 {userEmail}
               </div>
               <p className="text-xs text-gray-400 mt-1">
-                L'email ne peut pas être modifié
+                L&apos;email ne peut pas être modifié
               </p>
             </div>
 

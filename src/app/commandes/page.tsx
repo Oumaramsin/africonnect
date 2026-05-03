@@ -1,290 +1,845 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { getMyOrders, cancelOrder } from '@/lib/api/traiteur'
-import { getMyGpRequests, getFlag } from '@/lib/api/gp'
-import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
 
-type Tab = 'traiteur' | 'gp'
-
-const STATUS_CONFIG: Record<string, { label: string; color: string; bg: string }> = {
-  pending:    { label: 'En attente',    color: 'D97706', bg: 'FEF3C7' },
-  confirmed:  { label: 'Confirmée',     color: '16A34A', bg: 'DCFCE7' },
-  preparing:  { label: 'En préparation',color: '2563EB', bg: 'DBEAFE' },
-  ready:      { label: 'Prête',         color: '7C3AED', bg: 'EDE9FE' },
-  delivered:  { label: 'Livrée',        color: '16A34A', bg: 'DCFCE7' },
-  cancelled:  { label: 'Annulée',       color: 'DC2626', bg: 'FEE2E2' },
-  accepted:   { label: 'Acceptée',      color: '16A34A', bg: 'DCFCE7' },
-  in_transit: { label: 'En transit',    color: '2563EB', bg: 'DBEAFE' },
-  disputed:   { label: 'Litige',        color: 'DC2626', bg: 'FEE2E2' },
+type CommandeTraiteur = {
+  id: string
+  date_evenement: string
+  nb_personnes: number
+  adresse: string
+  type_evenement: string | null
+  notes: string | null
+  statut: string
+  message_traiteur: string | null
+  created_at: string
+  client_id: string
+  traiteur_id: string
+  traiteurs?: { name: string; whatsapp: string | null } | null
+  profiles?: { full_name: string; phone: string | null } | null
 }
 
+type OrderPlat = {
+  id: string
+  client_id: string
+  traiteur_id: string
+  status: string
+  delivery_type: string
+  delivery_address: string | null
+  delivery_date: string | null
+  total_amount: number
+  notes: string | null
+  created_at: string
+  traiteurs?: { name: string; whatsapp: string | null } | null
+  profiles?: { full_name: string; phone: string | null } | null
+  order_items?: {
+    id: string
+    quantity: number
+    dishes?: { name: string; price: number } | null
+  }[]
+}
+
+type GpRequest = {
+  id: string
+  listing_id: string
+  sender_id: string
+  weight_kg: number
+  content_desc: string
+  declared_value: number
+  status: string
+  total_amount: number
+  notes: string | null
+  created_at: string
+  gp_listings?: {
+    departure_city: string
+    arrival_city: string
+    departure_country: string
+    arrival_country: string
+    departure_date: string
+    gp_id: string
+  } | null
+  profiles?: { full_name: string; phone: string | null } | null
+}
+
+type Tab = 'envoyees' | 'recues'
+
 export default function CommandesPage() {
-  const [tab, setTab] = useState<Tab>('traiteur')
-  const [orders, setOrders] = useState<any[]>([])
-  const [gpRequests, setGpRequests] = useState<any[]>([])
+  const supabase = createClient()
+  const [tab, setTab] = useState<Tab>('envoyees')
+  const [isTraiteur, setIsTraiteur] = useState(false)
+  const [isGp, setIsGp] = useState(false)
   const [loading, setLoading] = useState(true)
-  const [cancelling, setCancelling] = useState<string | null>(null)
+  const [messageRefus, setMessageRefus] = useState<Record<string, string>>({})
+
+  // Envoyées
+  const [commandesEnvoyees, setCommandesEnvoyees] = useState<CommandeTraiteur[]>([])
+  const [ordersEnvoyees, setOrdersEnvoyees] = useState<OrderPlat[]>([])
+  const [gpEnvoyees, setGpEnvoyees] = useState<GpRequest[]>([])
+
+  // Reçues
+  const [commandesRecues, setCommandesRecues] = useState<CommandeTraiteur[]>([])
+  const [ordersRecues, setOrdersRecues] = useState<OrderPlat[]>([])
+  const [gpRecues, setGpRecues] = useState<GpRequest[]>([])
 
   useEffect(() => {
-    async function fetchAll() {
-      setLoading(true)
-      try {
-        const [ordersData, gpData] = await Promise.all([
-          getMyOrders(),
-          getMyGpRequests()
-        ])
-        setOrders(ordersData || [])
-        setGpRequests(gpData || [])
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchAll()
+    const load = async () => { await loadAll() }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleCancel = async (orderId: string) => {
-    setCancelling(orderId)
-    try {
-      await cancelOrder(orderId)
-      setOrders(prev => prev.map(o =>
-        o.id === orderId ? { ...o, status: 'cancelled' } : o
-      ))
-    } finally {
-      setCancelling(null)
+  async function loadAll() {
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+
+    // ── Commandes traiteur envoyées ──
+    const { data: cmdEnv } = await supabase
+      .from('commandes_traiteur')
+      .select('*, traiteurs(name, whatsapp)')
+      .eq('client_id', session.user.id)
+      .order('created_at', { ascending: false })
+    setCommandesEnvoyees(cmdEnv || [])
+
+    // ── Orders plats envoyées ──
+    const { data: ordersEnv } = await supabase
+      .from('orders')
+      .select('*, traiteurs(name, whatsapp), order_items(id, quantity, dishes(name, price))')
+      .eq('client_id', session.user.id)
+      .order('created_at', { ascending: false })
+    setOrdersEnvoyees(ordersEnv || [])
+
+    // ── Demandes GP envoyées ──
+    const { data: gpEnv } = await supabase
+      .from('gp_requests')
+      .select('*, gp_listings(departure_city, arrival_city, departure_country, arrival_country, departure_date, gp_id)')
+      .eq('sender_id', session.user.id)
+      .order('created_at', { ascending: false })
+    setGpEnvoyees(gpEnv || [])
+
+    // ── Vérifie si traiteur ──
+    const { data: traiteurData } = await supabase
+      .from('traiteurs')
+      .select('id')
+      .eq('user_id', session.user.id)
+      .maybeSingle()
+
+    if (traiteurData) {
+      setIsTraiteur(true)
+
+      const { data: cmdRec } = await supabase
+        .from('commandes_traiteur')
+        .select('*, profiles(full_name, phone)')
+        .eq('traiteur_id', traiteurData.id)
+        .order('created_at', { ascending: false })
+      setCommandesRecues(cmdRec || [])
+
+      const { data: ordersRec } = await supabase
+        .from('orders')
+        .select('*, profiles(full_name, phone), order_items(id, quantity, dishes(name, price))')
+        .eq('traiteur_id', traiteurData.id)
+        .order('created_at', { ascending: false })
+      setOrdersRecues(ordersRec || [])
     }
+
+    // ── Vérifie si GP ──
+    const { data: gpListings } = await supabase
+      .from('gp_listings')
+      .select('id')
+      .eq('gp_id', session.user.id)
+
+    if (gpListings && gpListings.length > 0) {
+      setIsGp(true)
+      const ids = gpListings.map((l: { id: string }) => l.id)
+
+      const { data: gpRec } = await supabase
+        .from('gp_requests')
+        .select('*, gp_listings(departure_city, arrival_city, departure_country, arrival_country, departure_date, gp_id)')
+        .in('listing_id', ids)
+        .order('created_at', { ascending: false })
+      setGpRecues(gpRec || [])
+    }
+
+    setLoading(false)
   }
 
-  const formatDate = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR', {
-      day: 'numeric', month: 'long', year: 'numeric'
+  async function handleAccepterTraiteur(commande: CommandeTraiteur) {
+    await supabase
+      .from('commandes_traiteur')
+      .update({ statut: 'acceptee' })
+      .eq('id', commande.id)
+
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: commande.client_id,
+        type: 'commande_acceptee',
+        titre: '✅ Commande acceptée !',
+        message: `Votre commande du ${commande.date_evenement} a été acceptée.`,
+        data: { commande_id: commande.id }
+      })
     })
-  }
 
-  const formatDateTime = (dateStr: string) => {
-    return new Date(dateStr).toLocaleDateString('fr-FR', {
-      day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit'
-    })
-  }
-
-  const StatusBadge = ({ status }: { status: string }) => {
-    const cfg = STATUS_CONFIG[status] || { label: status, color: '64748B', bg: 'F1F5F9' }
-    return (
-      <span style={{ color: `#${cfg.color}`, background: `#${cfg.bg}` }}
-        className="text-xs font-semibold px-2 py-1 rounded-full">
-        {cfg.label}
-      </span>
+    setCommandesRecues(prev =>
+      prev.map(c => c.id === commande.id ? { ...c, statut: 'acceptee' } : c)
     )
   }
 
+  async function handleRefuserTraiteur(commande: CommandeTraiteur) {
+    const message = messageRefus[commande.id] || ''
+    await supabase
+      .from('commandes_traiteur')
+      .update({ statut: 'refusee', message_traiteur: message })
+      .eq('id', commande.id)
+
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: commande.client_id,
+        type: 'commande_refusee',
+        titre: '❌ Commande refusée',
+        message: message || `Le traiteur ne peut pas honorer votre commande.`,
+        data: { commande_id: commande.id }
+      })
+    })
+
+    setCommandesRecues(prev =>
+      prev.map(c => c.id === commande.id
+        ? { ...c, statut: 'refusee', message_traiteur: message }
+        : c
+      )
+    )
+  }
+
+  async function handleAccepterOrder(order: OrderPlat) {
+    await supabase
+      .from('orders')
+      .update({ status: 'accepted' })
+      .eq('id', order.id)
+
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: order.client_id,
+        type: 'order_acceptee',
+        titre: '✅ Commande de plats acceptée !',
+        message: `Votre commande de plats a été acceptée.`,
+        data: { order_id: order.id }
+      })
+    })
+
+    setOrdersRecues(prev =>
+      prev.map(o => o.id === order.id ? { ...o, status: 'accepted' } : o)
+    )
+  }
+
+  async function handleRefuserOrder(order: OrderPlat) {
+    await supabase
+      .from('orders')
+      .update({ status: 'rejected' })
+      .eq('id', order.id)
+
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: order.client_id,
+        type: 'order_refusee',
+        titre: '❌ Commande de plats refusée',
+        message: `Votre commande de plats a été refusée.`,
+        data: { order_id: order.id }
+      })
+    })
+
+    setOrdersRecues(prev =>
+      prev.map(o => o.id === order.id ? { ...o, status: 'rejected' } : o)
+    )
+  }
+
+  async function handleAccepterGp(request: GpRequest) {
+    await supabase
+      .from('gp_requests')
+      .update({ status: 'accepted' })
+      .eq('id', request.id)
+
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: request.sender_id,
+        type: 'gp_accepte',
+        titre: '✅ Demande de colis acceptée !',
+        message: `Votre demande de colis a été acceptée par le GP.`,
+        data: { request_id: request.id }
+      })
+    })
+
+    setGpRecues(prev =>
+      prev.map(r => r.id === request.id ? { ...r, status: 'accepted' } : r)
+    )
+  }
+
+  async function handleRefuserGp(request: GpRequest) {
+    const message = messageRefus[request.id] || ''
+    await supabase
+      .from('gp_requests')
+      .update({ status: 'rejected' })
+      .eq('id', request.id)
+
+    await fetch('/api/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        user_id: request.sender_id,
+        type: 'gp_refuse',
+        titre: '❌ Demande de colis refusée',
+        message: message || `Le GP ne peut pas transporter votre colis.`,
+        data: { request_id: request.id }
+      })
+    })
+
+    setGpRecues(prev =>
+      prev.map(r => r.id === request.id ? { ...r, status: 'rejected' } : r)
+    )
+  }
+
+  const getStatutBadge = (statut: string) => {
+    switch (statut) {
+      case 'en_attente':
+      case 'pending':
+        return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-medium">⏳ En attente</span>
+      case 'acceptee':
+      case 'accepted':
+        return <span className="text-xs bg-[#E8F5E9] text-[#1D6B45] px-2 py-1 rounded-full font-medium">✅ Acceptée</span>
+      case 'refusee':
+      case 'rejected':
+        return <span className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-full font-medium">❌ Refusée</span>
+      default:
+        return null
+    }
+  }
+
+  const formatDate = (d: string) => new Date(d).toLocaleDateString('fr-FR', {
+    day: 'numeric', month: 'long', year: 'numeric'
+  })
+
+  const pendingRecues =
+    commandesRecues.filter(c => c.statut === 'en_attente').length +
+    ordersRecues.filter(o => o.status === 'pending').length +
+    gpRecues.filter(r => r.status === 'pending').length
+
+  if (loading) return (
+    <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="text-[#1D6B45]">Chargement...</div>
+    </div>
+  )
+
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-[#FAF7F2] pb-24">
 
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
-        <Link href="/dashboard" className="text-white/70 text-sm mb-4 inline-block">
-          ← Accueil
-        </Link>
-        <h1 className="text-2xl font-bold text-white">Mes commandes</h1>
-        <p className="text-white/70 text-sm mt-1">Suivi de tes commandes et colis</p>
+        <h1 className="text-2xl font-bold text-white">📦 Commandes</h1>
 
-        {/* Tabs */}
+        {/* Onglets */}
         <div className="flex gap-2 mt-4">
           <button
-            onClick={() => setTab('traiteur')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              tab === 'traiteur'
+            onClick={() => setTab('envoyees')}
+            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+              tab === 'envoyees'
                 ? 'bg-white text-[#1D6B45]'
                 : 'bg-white/20 text-white'
             }`}
           >
-            🍽️ Traiteur
-            {orders.length > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                tab === 'traiteur' ? 'bg-[#1D6B45] text-white' : 'bg-white/30 text-white'
-              }`}>
-                {orders.length}
-              </span>
-            )}
+            🛒 Mes envois
           </button>
-          <button
-            onClick={() => setTab('gp')}
-            className={`flex items-center gap-2 px-4 py-2 rounded-full text-sm font-medium transition-all ${
-              tab === 'gp'
-                ? 'bg-white text-[#1D6B45]'
-                : 'bg-white/20 text-white'
-            }`}
-          >
-            ✈️ GP Colis
-            {gpRequests.length > 0 && (
-              <span className={`text-xs px-1.5 py-0.5 rounded-full font-bold ${
-                tab === 'gp' ? 'bg-[#1D6B45] text-white' : 'bg-white/30 text-white'
-              }`}>
-                {gpRequests.length}
-              </span>
-            )}
-          </button>
+          {(isTraiteur || isGp) && (
+            <button
+              onClick={() => setTab('recues')}
+              className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all relative ${
+                tab === 'recues'
+                  ? 'bg-white text-[#1D6B45]'
+                  : 'bg-white/20 text-white'
+              }`}
+            >
+              📥 Reçues
+              {pendingRecues > 0 && (
+                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center font-bold">
+                  {pendingRecues}
+                </span>
+              )}
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="px-4 py-6 max-w-2xl mx-auto">
+      <div className="px-4 py-6 max-w-2xl mx-auto space-y-6">
 
-        {loading ? (
-          <div className="space-y-4">
-            {[1, 2, 3].map(i => (
-              <div key={i} className="bg-white rounded-2xl p-5 animate-pulse">
-                <div className="h-4 bg-gray-200 rounded w-1/2 mb-3" />
-                <div className="h-3 bg-gray-100 rounded w-3/4" />
-              </div>
-            ))}
-          </div>
-
-        ) : tab === 'traiteur' ? (
-          orders.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4">🍽️</div>
-              <p className="text-gray-500 font-medium">Aucune commande traiteur</p>
-              <Link href="/traiteur"
-                className="mt-4 inline-block bg-[#1D6B45] text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-[#0F4A30] transition-colors">
-                Commander un plat
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {orders.map(order => (
-                <div key={order.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-
-                  {/* Header carte */}
-                  <div className="px-5 py-4 flex items-start justify-between">
-                    <div>
-                      <p className="font-semibold text-gray-800">
-                        {order.traiteurs?.name || 'Traiteur'}
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Commandé le {formatDate(order.created_at)}
-                      </p>
-                    </div>
-                    <StatusBadge status={order.status} />
-                  </div>
-
-                  {/* Items */}
-                  <div className="px-5 pb-3 border-t border-gray-50">
-                    <div className="pt-3 space-y-1.5">
-                      {order.order_items?.map((item: any, idx: number) => (
-                        <div key={idx} className="flex justify-between items-center text-sm">
-                          <span className="text-gray-600">
-                            {item.quantity}× {item.dishes?.name}
-                          </span>
-                          <span className="text-gray-500">
-                            {(item.quantity * item.unit_price).toFixed(2)} €
-                          </span>
+        {/* ── ONGLET ENVOYÉES ── */}
+        {tab === 'envoyees' && (
+          <>
+            {/* Commandes traiteur */}
+            {commandesEnvoyees.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  🍽️ Commandes traiteur
+                </h2>
+                <div className="space-y-3">
+                  {commandesEnvoyees.map(commande => (
+                    <div key={commande.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            👨‍🍳 {commande.traiteurs?.name || 'Traiteur'}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(commande.created_at)}
+                          </p>
                         </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Footer carte */}
-                  <div className="px-5 py-3 bg-gray-50 flex items-center justify-between">
-                    <div>
-                      {order.delivery_date && (
-                        <p className="text-xs text-gray-500">
-                          📅 {formatDateTime(order.delivery_date)}
-                        </p>
+                        {getStatutBadge(commande.statut)}
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-3">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📅</span><span>{formatDate(commande.date_evenement)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>👥</span><span>{commande.nb_personnes} personnes</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📍</span><span>{commande.adresse}</span>
+                        </div>
+                        {commande.type_evenement && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span>🎉</span><span>{commande.type_evenement}</span>
+                          </div>
+                        )}
+                        {commande.notes && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span>📝</span><span>{commande.notes}</span>
+                          </div>
+                        )}
+                      </div>
+                      {commande.statut === 'refusee' && commande.message_traiteur && (
+                        <div className="bg-red-50 rounded-xl p-3 mb-3">
+                          <p className="text-xs text-red-600 font-medium mb-1">Motif du refus :</p>
+                          <p className="text-sm text-red-700">{commande.message_traiteur}</p>
+                        </div>
                       )}
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {order.delivery_type === 'delivery' ? '🚗 Livraison' : '🏠 Retrait'}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span className="font-bold text-[#1D6B45]">
-                        {Number(order.total_amount).toFixed(2)} €
-                      </span>
-                      {order.status === 'pending' && (
+                      {commande.statut === 'acceptee' && commande.traiteurs?.whatsapp && (
                         <button
-                          onClick={() => handleCancel(order.id)}
-                          disabled={cancelling === order.id}
-                          className="text-xs text-red-500 border border-red-200 px-3 py-1.5 rounded-lg hover:bg-red-50 transition-colors disabled:opacity-50"
+                          onClick={() => {
+                            const num = commande.traiteurs!.whatsapp!.replace(/\+/g, '').replace(/\s/g, '')
+                            const msg = encodeURIComponent(`Bonjour, je vous contacte suite à ma commande du ${commande.date_evenement} sur AfriConnect.`)
+                            window.open(`https://wa.me/${num}?text=${msg}`, '_blank')
+                          }}
+                          className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                         >
-                          {cancelling === order.id ? '...' : 'Annuler'}
+                          💬 Contacter le traiteur sur WhatsApp
                         </button>
                       )}
                     </div>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )
+              </div>
+            )}
 
-        ) : (
-          gpRequests.length === 0 ? (
-            <div className="text-center py-16">
-              <div className="text-5xl mb-4">✈️</div>
-              <p className="text-gray-500 font-medium">Aucune demande de colis</p>
-              <Link href="/gp"
-                className="mt-4 inline-block bg-[#1D6B45] text-white px-6 py-3 rounded-xl text-sm font-medium hover:bg-[#0F4A30] transition-colors">
-                Trouver un GP
-              </Link>
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {gpRequests.map(req => (
-                <div key={req.id} className="bg-white rounded-2xl border border-gray-100 overflow-hidden shadow-sm">
-
-                  {/* Header */}
-                  <div className="px-5 py-4 flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-2 font-semibold text-gray-800">
-                        <span>
-                          {getFlag(req.gp_listings?.departure_country)} {req.gp_listings?.departure_city}
-                        </span>
-                        <span className="text-[#1D6B45]">→</span>
-                        <span>
-                          {getFlag(req.gp_listings?.arrival_country)} {req.gp_listings?.arrival_city}
-                        </span>
-                      </div>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        Demande du {formatDate(req.created_at)}
-                      </p>
-                    </div>
-                    <StatusBadge status={req.status} />
-                  </div>
-
-                  {/* Détails colis */}
-                  <div className="px-5 pb-3 border-t border-gray-50 pt-3">
-                    <div className="flex gap-4 text-sm">
-                      <div>
-                        <p className="text-xs text-gray-400">Poids</p>
-                        <p className="font-medium text-gray-700">{req.weight_kg} kg</p>
-                      </div>
-                      <div>
-                        <p className="text-xs text-gray-400">Contenu</p>
-                        <p className="font-medium text-gray-700">{req.content_desc}</p>
-                      </div>
-                      {req.gp_listings?.departure_date && (
+            {/* Commandes plats */}
+            {ordersEnvoyees.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  🛒 Commandes plats
+                </h2>
+                <div className="space-y-3">
+                  {ordersEnvoyees.map(order => (
+                    <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <div className="flex items-start justify-between mb-3">
                         <div>
-                          <p className="text-xs text-gray-400">Départ</p>
-                          <p className="font-medium text-gray-700">
-                            {formatDate(req.gp_listings.departure_date)}
+                          <p className="font-semibold text-gray-800">
+                            👨‍🍳 {order.traiteurs?.name || 'Traiteur'}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(order.created_at)}
                           </p>
                         </div>
+                        {getStatutBadge(order.status)}
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-3">
+                        {order.order_items?.map(item => (
+                          <div key={item.id} className="flex items-center justify-between text-sm text-gray-600">
+                            <span>🍽️ {item.dishes?.name} x{item.quantity}</span>
+                            <span className="font-medium text-[#1D6B45]">
+                              {item.dishes?.price
+                                ? (item.dishes.price * item.quantity).toFixed(2)
+                                : '0.00'} €
+                            </span>
+                          </div>
+                        ))}
+                        <div className="border-t border-gray-200 pt-2 mt-1 flex justify-between font-semibold text-sm">
+                          <span>Total</span>
+                          <span className="text-[#1D6B45]">{Number(order.total_amount).toFixed(2)} €</span>
+                        </div>
+                        {order.delivery_address && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600 pt-1">
+                            <span>📍</span><span>{order.delivery_address}</span>
+                          </div>
+                        )}
+                        {order.delivery_date && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span>📅</span><span>{formatDate(order.delivery_date)}</span>
+                          </div>
+                        )}
+                      </div>
+                      {order.status === 'accepted' && order.traiteurs?.whatsapp && (
+                        <button
+                          onClick={() => {
+                            const num = order.traiteurs!.whatsapp!.replace(/\+/g, '').replace(/\s/g, '')
+                            const msg = encodeURIComponent(`Bonjour, je vous contacte suite à ma commande de plats sur AfriConnect.`)
+                            window.open(`https://wa.me/${num}?text=${msg}`, '_blank')
+                          }}
+                          className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
+                        >
+                          💬 Contacter le traiteur sur WhatsApp
+                        </button>
                       )}
                     </div>
-                  </div>
-
-                  {/* Footer */}
-                  <div className="px-5 py-3 bg-gray-50 flex items-center justify-between">
-                    <p className="text-xs text-gray-500">
-                      {req.weight_kg} kg × {req.gp_listings?.price_per_kg} €/kg
-                    </p>
-                    <span className="font-bold text-[#1D6B45]">
-                      {Number(req.total_amount).toFixed(2)} €
-                    </span>
-                  </div>
+                  ))}
                 </div>
-              ))}
-            </div>
-          )
+              </div>
+            )}
+
+            {/* Demandes GP */}
+            {gpEnvoyees.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  ✈️ Demandes GP colis
+                </h2>
+                <div className="space-y-3">
+                  {gpEnvoyees.map(request => (
+                    <div key={request.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            ✈️ {request.gp_listings?.departure_city} ({request.gp_listings?.departure_country}) → {request.gp_listings?.arrival_city} ({request.gp_listings?.arrival_country})
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(request.created_at)}
+                          </p>
+                        </div>
+                        {getStatutBadge(request.status)}
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📅</span>
+                          <span>Départ : {request.gp_listings?.departure_date ? formatDate(request.gp_listings.departure_date) : 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>⚖️</span><span>{request.weight_kg} kg</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📦</span><span>{request.content_desc}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>💰</span><span>{request.total_amount} €</span>
+                        </div>
+                        {request.notes && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span>📝</span><span>{request.notes}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {commandesEnvoyees.length === 0 && ordersEnvoyees.length === 0 && gpEnvoyees.length === 0 && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-3">📦</div>
+                <p className="text-gray-500">{"Vous n'avez pas encore passé de commande"}</p>
+              </div>
+            )}
+          </>
         )}
+
+        {/* ── ONGLET REÇUES ── */}
+        {tab === 'recues' && (
+          <>
+            {/* Commandes traiteur reçues */}
+            {isTraiteur && commandesRecues.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  🍽️ Commandes traiteur reçues
+                </h2>
+                <div className="space-y-3">
+                  {commandesRecues.map(commande => (
+                    <div key={commande.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            👤 {commande.profiles?.full_name || 'Client'}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(commande.created_at)}
+                          </p>
+                        </div>
+                        {getStatutBadge(commande.statut)}
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📅</span><span>{formatDate(commande.date_evenement)}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>👥</span><span>{commande.nb_personnes} personnes</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📍</span><span>{commande.adresse}</span>
+                        </div>
+                        {commande.type_evenement && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <span>🎉</span><span>{commande.type_evenement}</span>
+                          </div>
+                        )}
+                        {commande.notes && (
+                          <div className="flex items-start gap-2 text-sm text-gray-600">
+                            <span>📝</span><span>{commande.notes}</span>
+                          </div>
+                        )}
+                      </div>
+                      {commande.statut === 'refusee' && commande.message_traiteur && (
+                        <div className="bg-red-50 rounded-xl p-3 mb-3">
+                          <p className="text-xs text-red-600 font-medium mb-1">Motif du refus :</p>
+                          <p className="text-sm text-red-700">{commande.message_traiteur}</p>
+                        </div>
+                      )}
+                      {commande.statut === 'en_attente' && (
+                        <div className="space-y-3">
+                          <textarea
+                            rows={2}
+                            placeholder="Message au client (optionnel)..."
+                            value={messageRefus[commande.id] || ''}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setMessageRefus(prev => ({ ...prev, [commande.id]: val }))
+                            }}
+                            className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1D6B45]"
+                          />
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleAccepterTraiteur(commande)}
+                              className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
+                            >
+                              ✅ Accepter
+                            </button>
+                            <button
+                              onClick={() => handleRefuserTraiteur(commande)}
+                              className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
+                            >
+                              ❌ Refuser
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {commande.statut === 'acceptee' && commande.profiles?.phone && (
+                        <button
+                          onClick={() => {
+                            const num = commande.profiles!.phone!.replace(/\+/g, '').replace(/\s/g, '')
+                            const msg = encodeURIComponent(`Bonjour, j'ai accepté votre commande du ${commande.date_evenement}. Parlons des détails !`)
+                            window.open(`https://wa.me/${num}?text=${msg}`, '_blank')
+                          }}
+                          className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
+                        >
+                          💬 Contacter le client sur WhatsApp
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Orders plats reçues */}
+            {isTraiteur && ordersRecues.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  🛒 Commandes plats reçues
+                </h2>
+                <div className="space-y-3">
+                  {ordersRecues.map(order => (
+                    <div key={order.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            👤 {order.profiles?.full_name || 'Client'}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(order.created_at)}
+                          </p>
+                        </div>
+                        {getStatutBadge(order.status)}
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
+                        {order.order_items?.map(item => (
+                          <div key={item.id} className="flex items-center justify-between text-sm text-gray-600">
+                            <span>🍽️ {item.dishes?.name} x{item.quantity}</span>
+                            <span className="font-medium">
+                              {item.dishes?.price
+                                ? (item.dishes.price * item.quantity).toFixed(2)
+                                : '0.00'} €
+                            </span>
+                          </div>
+                        ))}
+                        <div className="border-t border-gray-200 pt-2 mt-1 flex justify-between font-semibold text-sm">
+                          <span>Total</span>
+                          <span className="text-[#1D6B45]">{Number(order.total_amount).toFixed(2)} €</span>
+                        </div>
+                        {order.delivery_address && (
+                          <div className="flex items-center gap-2 text-sm text-gray-600 pt-1">
+                            <span>📍</span><span>{order.delivery_address}</span>
+                          </div>
+                        )}
+                      </div>
+                      {order.status === 'pending' && (
+                        <div className="flex gap-3">
+                          <button
+                            onClick={() => handleAccepterOrder(order)}
+                            className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
+                          >
+                            ✅ Accepter
+                          </button>
+                          <button
+                            onClick={() => handleRefuserOrder(order)}
+                            className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
+                          >
+                            ❌ Refuser
+                          </button>
+                        </div>
+                      )}
+                      {order.status === 'accepted' && order.profiles?.phone && (
+                        <button
+                          onClick={() => {
+                            const num = order.profiles!.phone!.replace(/\+/g, '').replace(/\s/g, '')
+                            const msg = encodeURIComponent(`Bonjour, j'ai accepté votre commande de plats sur AfriConnect !`)
+                            window.open(`https://wa.me/${num}?text=${msg}`, '_blank')
+                          }}
+                          className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
+                        >
+                          💬 Contacter le client sur WhatsApp
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Demandes GP reçues */}
+            {isGp && gpRecues.length > 0 && (
+              <div>
+                <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
+                  ✈️ Demandes GP reçues
+                </h2>
+                <div className="space-y-3">
+                  {gpRecues.map(request => (
+                    <div key={request.id} className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+                      <div className="flex items-start justify-between mb-3">
+                        <div>
+                          <p className="font-semibold text-gray-800">
+                            👤 {request.profiles?.full_name || 'Expéditeur'}
+                          </p>
+                          <p className="text-xs text-gray-400 mt-0.5">
+                            {formatDate(request.created_at)}
+                          </p>
+                        </div>
+                        {getStatutBadge(request.status)}
+                      </div>
+                      <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>✈️</span>
+                          <span>{request.gp_listings?.departure_city} ({request.gp_listings?.departure_country}) → {request.gp_listings?.arrival_city} ({request.gp_listings?.arrival_country})</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📅</span>
+                          <span>{request.gp_listings?.departure_date ? formatDate(request.gp_listings.departure_date) : 'N/A'}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>⚖️</span><span>{request.weight_kg} kg</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>📦</span><span>{request.content_desc}</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-gray-600">
+                          <span>💰</span><span>{request.total_amount} €</span>
+                        </div>
+                        {request.notes && (
+                          <div className="flex items-start gap-2 text-sm text-gray-600">
+                            <span>📝</span><span>{request.notes}</span>
+                          </div>
+                        )}
+                      </div>
+                      {request.status === 'pending' && (
+                        <div className="space-y-3">
+                          <textarea
+                            rows={2}
+                            placeholder="Message à l'expéditeur (optionnel)..."
+                            value={messageRefus[request.id] || ''}
+                            onChange={(e) => {
+                              const val = e.target.value
+                              setMessageRefus(prev => ({ ...prev, [request.id]: val }))
+                            }}
+                            className="w-full px-3 py-2 rounded-xl border border-gray-200 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-[#1D6B45]"
+                          />
+                          <div className="flex gap-3">
+                            <button
+                              onClick={() => handleAccepterGp(request)}
+                              className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
+                            >
+                              ✅ Accepter
+                            </button>
+                            <button
+                              onClick={() => handleRefuserGp(request)}
+                              className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
+                            >
+                              ❌ Refuser
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                      {request.status === 'accepted' && request.profiles?.phone && (
+                        <button
+                          onClick={() => {
+                            const num = request.profiles!.phone!.replace(/\+/g, '').replace(/\s/g, '')
+                            const msg = encodeURIComponent(`Bonjour, j'ai accepté votre demande de colis. Parlons des détails !`)
+                            window.open(`https://wa.me/${num}?text=${msg}`, '_blank')
+                          }}
+                          className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
+                        >
+                          💬 {"Contacter l'expéditeur sur WhatsApp"}
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(isTraiteur || isGp) && commandesRecues.length === 0 && ordersRecues.length === 0 && gpRecues.length === 0 && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-3">📥</div>
+                <p className="text-gray-500">Aucune demande reçue pour le moment</p>
+              </div>
+            )}
+
+            {!isTraiteur && !isGp && (
+              <div className="text-center py-16">
+                <div className="text-5xl mb-3">📥</div>
+                <p className="text-gray-500">{"Vous n'êtes pas encore prestataire"}</p>
+              </div>
+            )}
+          </>
+        )}
+
       </div>
     </div>
   )

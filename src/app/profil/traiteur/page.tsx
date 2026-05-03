@@ -35,7 +35,7 @@ export default function TraiteurEspacePage() {
   const [view, setView] = useState<'profil' | 'plats' | 'nouveau_plat' | 'setup'>('profil')
 
   const [setupData, setSetupData] = useState({
-    name: '', bio: '', cuisine_type: [] as string[], delivery_zones: [] as string[]
+    name: '', bio: '', cuisine_type: [] as string[], delivery_zones: [] as string[],whatsapp: ''
   })
   const [savingSetup, setSavingSetup] = useState(false)
   const [newDish, setNewDish] = useState({
@@ -45,7 +45,7 @@ export default function TraiteurEspacePage() {
   const [success, setSuccess] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  useEffect(() => { loadTraiteur() }, [])
+  
 
   async function loadTraiteur() {
     const { data: { session } } = await supabase.auth.getSession()
@@ -69,6 +69,14 @@ export default function TraiteurEspacePage() {
     setLoading(false)
   }
 
+  useEffect(() => {
+  const load = async () => {
+    await loadTraiteur()
+  }
+  load()
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+}, [])
+
   async function handleSetup() {
     if (!setupData.name || !setupData.bio || setupData.cuisine_type.length === 0) {
       setError('Remplis tous les champs obligatoires'); return
@@ -79,9 +87,11 @@ export default function TraiteurEspacePage() {
 
     const { data, error } = await supabase.from('traiteurs').insert({
       user_id: session.user.id,
-      name: setupData.name, bio: setupData.bio,
+      name: setupData.name,
+      bio: setupData.bio,
       cuisine_type: setupData.cuisine_type,
       delivery_zones: setupData.delivery_zones,
+      whatsapp: setupData.whatsapp || null, // ← ajoute ceci
       is_active: true,
     }).select().single()
 
@@ -194,6 +204,22 @@ export default function TraiteurEspacePage() {
                 ))}
               </div>
             </div>
+             <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    Numéro WhatsApp
+                  </label>
+                  <input
+                    type="tel"
+                    placeholder="+33612345678"
+                    value={setupData.whatsapp}
+                    onChange={e => setSetupData(p => ({ ...p, whatsapp: e.target.value }))}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                  />
+                  <p className="text-xs text-gray-400 mt-1">
+                    Tu recevras les commandes directement sur WhatsApp
+                  </p>
+              </div>    
+
           </div>
         </div>
         <button onClick={handleSetup} disabled={savingSetup}

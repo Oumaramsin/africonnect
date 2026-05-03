@@ -6,6 +6,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createOrder, type CartItem } from '@/lib/api/traiteur'
+import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 
 const schema = z.object({
@@ -28,6 +29,7 @@ type FormData = z.infer<typeof schema>
 
 export default function CheckoutPage() {
   const router = useRouter()
+  const supabase = createClient()
   const [cart, setCart] = useState<CartItem[]>([])
   const [loading, setLoading] = useState(false)
   const [success, setSuccess] = useState(false)
@@ -53,28 +55,70 @@ export default function CheckoutPage() {
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0)
 
   const onSubmit = async (data: FormData) => {
-    if (cart.length === 0) return
-    setLoading(true)
-    setError(null)
+  if (cart.length === 0) return
+  setLoading(true)
+  setError(null)
 
-    try {
-      await createOrder({
-        traiteur_id: cart[0].traiteur_id,
-        items: cart,
-        delivery_address: data.delivery_address || 'Retrait sur place',
-        delivery_date: `${data.delivery_date}T${data.delivery_time}`,
-        delivery_type: data.delivery_type,
-        notes: data.notes,
-      })
+  try {
+    // Vérifie la session avant tout
+    const { data: { session } } = await supabase.auth.getSession()
+    console.log('Session avant commande:', session?.user?.id)
 
-      localStorage.removeItem('africonnect_cart')
-      setSuccess(true)
-      } catch (e: any) {
-        setError(e?.message || 'Une erreur est survenue. Réessaie.')
-      } finally {
-        setLoading(false)
-      }
+    if (!session) {
+      setError('Tu dois être connecté pour commander')
+      setLoading(false)
+      return
     }
+
+    const order = await createOrder({
+      traiteur_id: cart[0].traiteur_id,
+      items: cart,
+      delivery_address: data.delivery_address || 'Retrait sur place',
+      delivery_date: `${data.delivery_date}T${data.delivery_time}`,
+      delivery_type: data.delivery_type,
+      notes: data.notes,
+    })
+
+    console.log('Commande créée:', order)
+
+    const { data: traiteurData, error: traiteurError } = await supabase
+      .from('traiteurs')
+      .select('user_id')
+      .eq('id', cart[0].traiteur_id)
+      .single()
+
+    console.log('Traiteur data:', traiteurData, 'error:', traiteurError)
+
+    if (traiteurData?.user_id) {
+      const notifRes = await fetch('/api/notify', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          user_id: traiteurData.user_id,
+          type: 'nouvelle_commande_plats',
+          titre: '🛒 Nouvelle commande de plats !',
+          message: `${cart.map(i => `${i.dish.name} x${i.quantity}`).join(', ')} — ${total.toFixed(2)} €`,
+          data: {
+            traiteur_id: cart[0].traiteur_id,
+            total: total.toFixed(2),
+            items: cart.map(i => ({ name: i.dish.name, quantity: i.quantity }))
+          }
+        })
+      })
+      const notifJson = await notifRes.json()
+      console.log('Notification result:', notifJson)
+    }
+
+    localStorage.removeItem('africonnect_cart')
+    setSuccess(true)
+  } catch (e: unknown) {
+    const err = e as { message?: string }
+    console.error('Erreur commande:', err)
+    setError(err?.message || 'Une erreur est survenue. Réessaie.')
+  } finally {
+    setLoading(false)
+  }
+}
 
   // Page succès
   if (success) {
@@ -92,7 +136,7 @@ export default function CheckoutPage() {
             href="/dashboard"
             className="bg-[#1D6B45] text-white px-8 py-3 rounded-xl font-medium hover:bg-[#0F4A30] transition-colors"
           >
-            Retour à l'accueil
+            Retour à l&apos;accueil
           </Link>
         </div>
       </div>
@@ -138,7 +182,6 @@ export default function CheckoutPage() {
               </div>
             ))}
           </div>
-
           <div className="border-t border-gray-100 mt-4 pt-4 flex justify-between items-center">
             <span className="font-semibold text-gray-800">Total</span>
             <span className="font-bold text-[#1D6B45] text-lg">{total.toFixed(2)} €</span>
@@ -184,7 +227,7 @@ export default function CheckoutPage() {
             </div>
           </div>
 
-          {/* Adresse (si livraison) */}
+          {/* Adresse si livraison */}
           {deliveryType === 'delivery' && (
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <h2 className="font-semibold text-gray-800 mb-4">Adresse de livraison</h2>
