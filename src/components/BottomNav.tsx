@@ -2,6 +2,8 @@
 
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase'
 
 const NAV_ITEMS = [
   { href: '/dashboard', icon: '🏠', label: 'Accueil' },
@@ -13,9 +15,30 @@ const NAV_ITEMS = [
 
 export default function BottomNav() {
   const pathname = usePathname()
+  const supabase = createClient()
+  const [isAdmin, setIsAdmin] = useState(false)
+
+  useEffect(() => {
+    const load = async () => {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data } = await supabase
+        .from('profiles')
+        .select('role')
+        .eq('id', session.user.id)
+        .single()
+      setIsAdmin(data?.role === 'admin')
+    }
+    load()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const hideOn = ['/login', '/register', '/reset-password']
   if (hideOn.includes(pathname)) return null
+
+  const items = isAdmin
+    ? [...NAV_ITEMS, { href: '/admin', icon: '🔐', label: 'Admin' }]
+    : NAV_ITEMS
 
   return (
     <nav style={{
@@ -31,7 +54,7 @@ export default function BottomNav() {
         justifyContent: 'space-around',
         padding: '8px 0 12px',
       }}>
-        {NAV_ITEMS.map(item => {
+        {items.map(item => {
           const isActive = pathname === item.href ||
             (item.href !== '/dashboard' && pathname.startsWith(item.href))
 
