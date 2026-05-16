@@ -29,3 +29,27 @@ body {
     padding-bottom: calc(0.5rem + env(safe-area-inset-bottom));
   }
 }
+
+/* Force les couleurs sur tous les inputs pour éviter le mode sombre */
+input, textarea, select {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+  -webkit-text-fill-color: #111827 !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: #9ca3af !important;
+  -webkit-text-fill-color: #9ca3af !important;
+}
+
+/* Fix pour les options des selects */
+option {
+  color: #111827 !important;
+  background-color: #ffffff !important;
+}
+
+/* Fix dropdown */
+select option {
+  background-color: #ffffff !important;
+  color: #111827 !important;
+}
