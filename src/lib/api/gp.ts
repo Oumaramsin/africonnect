@@ -20,6 +20,13 @@ export type GpListing = {
   latitude: number | null
   longitude: number | null
   created_at: string
+
+   profiles?: {
+    full_name: string
+    phone: string | null
+    whatsapp: string | null
+  } | null
+
 }
 
 export type GpRequest = {
@@ -69,7 +76,7 @@ export async function getGpListings(filters?: {
 
   let query = supabase
     .from('gp_listings')
-    .select('*')
+    .select('*, profiles(full_name, phone, whatsapp)')
     .eq('is_active', true)
     .gte('departure_date', new Date().toISOString().split('T')[0])
     .order('departure_date', { ascending: true })
