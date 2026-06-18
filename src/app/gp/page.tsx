@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { getGpListings, getFlag, getDistance, formatDistance, type GpListing } from '@/lib/api/gp'
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
+import { Plane, MapPin, Lock, Star, Plus } from 'lucide-react'
 
 const DESTINATIONS = [
   { label: 'Tout', value: 'tout' },
@@ -130,7 +131,7 @@ export default function GpPage() {
               : 'bg-white text-gray-600 border-gray-200 hover:border-[#1D6B45] hover:text-[#1D6B45]'
           } disabled:opacity-40 disabled:cursor-not-allowed`}
         >
-          <span>📍</span>
+          <MapPin size={16} />
           {locationLoading
             ? 'Localisation...'
             : userLocation
@@ -139,14 +140,14 @@ export default function GpPage() {
           }
         </button>
 
-        <span className="text-sm text-gray-400">
+        <span className="text-sm text-gray-600">
           {sortedListings.length} GP{sortedListings.length > 1 ? 's' : ''}
         </span>
       </div>
 
       {/* Bannière sécurité */}
       <div className="mx-4 mt-3 bg-[#FFF8E1] border border-[#D4870A]/20 rounded-2xl p-4 flex gap-3 max-w-2xl">
-        <span className="text-xl">🔒</span>
+        <Lock size={20} className="text-[#D4870A]" />
         <div>
           <p className="text-sm font-medium text-[#D4870A]">Paiement sécurisé</p>
           <p className="text-xs text-gray-500 mt-0.5">
@@ -167,8 +168,8 @@ export default function GpPage() {
             ))}
           </div>
         ) : sortedListings.length === 0 ? (
-          <div className="text-center py-16 text-gray-400">
-            <div className="text-4xl mb-3">✈️</div>
+          <div className="text-center py-16 text-gray-600">
+            <div className="flex justify-center mb-3"><Plane size={48} className="text-gray-300" /></div>
             <p>Aucun GP disponible pour cette destination</p>
           </div>
         ) : (
@@ -216,7 +217,7 @@ export default function GpPage() {
                     <div className="flex items-center gap-3 mb-3">
                       {listing.pickup_city && (
                         <span className="text-xs text-gray-500 flex items-center gap-1">
-                          📍 {listing.pickup_city}
+                          <MapPin size={12} /> {listing.pickup_city}
                         </span>
                       )}
                       {distance !== null && (
@@ -227,11 +228,11 @@ export default function GpPage() {
                             ? 'bg-[#FFF8E1] text-[#D4870A]'
                             : 'bg-gray-100 text-gray-500'
                         }`}>
-                          {distance <= 5 ? '🟢' : distance <= 15 ? '🟡' : '⚪'} {formatDistance(distance)}
+                          {formatDistance(distance)}
                         </span>
                       )}
-                      <span className="text-xs text-gray-400 ml-auto">
-                        ✈️ {formatDate(listing.departure_date)}
+                      <span className="text-xs text-gray-600 ml-auto flex items-center">
+                        <Plane size={12} className="mr-1" /> {formatDate(listing.departure_date)}
                       </span>
                     </div>
 
@@ -239,18 +240,18 @@ export default function GpPage() {
                     <div className="flex items-center justify-between">
                       <div className="flex gap-4">
                         <div>
-                          <p className="text-xs text-gray-400">Disponible</p>
+                          <p className="text-xs text-gray-600">Disponible</p>
                           <p className="font-semibold text-gray-800">{listing.available_kg} kg</p>
                         </div>
                         <div>
-                          <p className="text-xs text-gray-400">Tarif</p>
+                          <p className="text-xs text-gray-600">Tarif</p>
                           <p className="font-semibold text-[#1D6B45]">{listing.price_per_kg} €/kg</p>
                         </div>
                         {listing.review_count > 0 && (
                           <div>
-                            <p className="text-xs text-gray-400">Note</p>
-                            <p className="font-semibold text-gray-800">
-                              ★ {listing.rating}
+                            <p className="text-xs text-gray-600">Note</p>
+                            <p className="font-semibold text-gray-800 flex items-center">
+                              <Star size={12} className="mr-1 text-yellow-500" fill="currentColor" /> {listing.rating}
                             </p>
                           </div>
                         )}
@@ -272,7 +273,7 @@ export default function GpPage() {
         <div className="fixed bottom-6 right-4 z-50">
           <Link href="/gp/nouvelle">
             <button className="bg-[#1D6B45] text-white px-5 py-3 rounded-2xl font-medium shadow-lg hover:bg-[#0F4A30] transition-colors flex items-center gap-2">
-              <span className="text-lg">+</span>
+              <Plus size={20} />
               Je suis GP
             </button>
           </Link>
@@ -281,7 +282,7 @@ export default function GpPage() {
         <div className="fixed bottom-6 right-4 z-50">
           <Link href="/login">
             <button className="bg-white border-2 border-dashed border-[#1D6B45]/40 text-[#1D6B45] px-5 py-3 rounded-2xl font-medium shadow-lg hover:bg-[#1D6B45]/5 transition-colors flex items-center gap-2">
-              <span className="text-lg">🔒</span>
+              <Lock size={20} />
               Devenir GP
             </button>
           </Link>

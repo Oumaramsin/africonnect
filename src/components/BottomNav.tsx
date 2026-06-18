@@ -4,11 +4,12 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
+import { Home, ChefHat, Plane, Package, User, ShieldCheck, LogIn } from "lucide-react";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", icon: "🏠", label: "Accueil" },
-  { href: "/traiteur", icon: "🍽️", label: "Traiteur" },
-  { href: "/gp", icon: "✈️", label: "GP Colis" },
+  { href: "/dashboard", icon: <Home size={22} />, label: "Accueil" },
+  { href: "/traiteur", icon: <ChefHat size={22} />, label: "Traiteur" },
+  { href: "/gp", icon: <Plane size={22} />, label: "GP Colis" },
 ];
 
 export default function BottomNav() {
@@ -42,15 +43,15 @@ export default function BottomNav() {
 
   if (isLoggedIn) {
     items.push(
-      { href: "/commandes", icon: "📦", label: "Commandes" },
-      { href: "/profil", icon: "👤", label: "Profil" },
+      { href: "/commandes", icon: <Package size={22} />, label: "Commandes" },
+      { href: "/profil", icon: <User size={22} />, label: "Profil" },
     );
     if (isAdmin) {
-      items.push({ href: "/admin", icon: "🔐", label: "Admin" });
+      items.push({ href: "/admin", icon: <ShieldCheck size={22} />, label: "Admin" });
     }
 
   }else{
-    items.push({ href: "/login", icon: "👤", label: "Se Connecter" },)
+    items.push({ href: "/login", icon: <LogIn size={22} />, label: "Se Connecter" },)
   }
 
   return (
@@ -93,7 +94,14 @@ export default function BottomNav() {
                 textDecoration: "none",
               }}
             >
-              <span style={{ fontSize: "20px" }}>{item.icon}</span>
+              <span style={{ 
+                color: isActive ? "#1D6B45" : "#9ca3af",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center"
+              }}>
+                {item.icon}
+              </span>
               <span
                 style={{
                   fontSize: "10px",

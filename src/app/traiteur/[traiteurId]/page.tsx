@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { getTraiteur, type Traiteur, type Dish, type CartItem } from '@/lib/api/traiteur'
 import Link from 'next/link'
+import { Star, MapPin, ChefHat } from 'lucide-react'
 import CommandeForm from './CommandeForm'
 
 export default function TraiteurDetailPage() {
@@ -80,7 +81,7 @@ export default function TraiteurDetailPage() {
             <p className="text-white/70 text-sm mt-1 max-w-xs">{traiteur.bio}</p>
           </div>
           <div className="bg-white/20 rounded-xl px-3 py-2 text-center">
-            <div className="text-yellow-300 text-lg">★</div>
+            <div className="flex justify-center text-yellow-300 mb-1"><Star size={20} fill="currentColor" /></div>
             <div className="text-white font-bold text-lg">{traiteur.rating}</div>
             <div className="text-white/60 text-xs">{traiteur.review_count} avis</div>
           </div>
@@ -90,8 +91,8 @@ export default function TraiteurDetailPage() {
         {/* Zones de livraison */}
         <div className="flex gap-2 mt-4 flex-wrap">
           {traiteur.delivery_zones?.map(zone => (
-            <span key={zone} className="bg-white/20 text-white text-xs px-3 py-1 rounded-full">
-              📍 {zone}
+            <span key={zone} className="bg-white/20 text-white text-xs px-3 py-1 rounded-full flex items-center">
+              <MapPin size={12} className="mr-1" /> {zone}
             </span>
           ))}
         </div>
@@ -115,8 +116,8 @@ export default function TraiteurDetailPage() {
               <div key={dish.id} className="bg-white rounded-2xl border border-gray-100 p-4 flex gap-4">
 
                 {/* Emoji placeholder */}
-                <div className="w-20 h-20 rounded-xl bg-[#FFF3E0] flex items-center justify-center text-3xl flex-shrink-0">
-                  🍽️
+                <div className="w-20 h-20 rounded-xl bg-[#FFF3E0] flex items-center justify-center text-[#D4870A] flex-shrink-0">
+                  <ChefHat size={32} />
                 </div>
 
                 <div className="flex-1">

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import { useRouter } from 'next/navigation'
+import { Clock, CheckCircle2, XCircle, ShoppingCart, Inbox, ChefHat, User, Calendar, Users, MapPin, MessageSquare, StickyNote, Banknote, Plane, Package, Scale, PartyPopper } from "lucide-react";
 
 type CommandeTraiteur = {
   id: string
@@ -325,13 +326,13 @@ export default function CommandesPage() {
     switch (statut) {
       case 'en_attente':
       case 'pending':
-        return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-medium">⏳ En attente</span>
+        return <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-1 rounded-full font-medium flex items-center w-fit gap-1"><Clock size={14} /> En attente</span>
       case 'acceptee':
       case 'accepted':
-        return <span className="text-xs bg-[#E8F5E9] text-[#1D6B45] px-2 py-1 rounded-full font-medium">✅ Acceptée</span>
+        return <span className="text-xs bg-[#E8F5E9] text-[#1D6B45] px-2 py-1 rounded-full font-medium flex items-center w-fit gap-1"><CheckCircle2 size={14} /> Acceptée</span>
       case 'refusee':
       case 'rejected':
-        return <span className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-full font-medium">❌ Refusée</span>
+        return <span className="text-xs bg-red-50 text-red-600 px-2 py-1 rounded-full font-medium flex items-center w-fit gap-1"><XCircle size={14} /> Refusée</span>
       default:
         return null
     }
@@ -357,7 +358,7 @@ export default function CommandesPage() {
 
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
-        <h1 className="text-2xl font-bold text-white">📦 Commandes</h1>
+        <h1 className="text-2xl font-bold text-white"><Package size={24} className="inline mr-2" /> Commandes</h1>
 
         {/* Onglets */}
         <div className="flex gap-2 mt-4">
@@ -369,7 +370,7 @@ export default function CommandesPage() {
                 : 'bg-white/20 text-white'
             }`}
           >
-            🛒 Mes envois
+            <ShoppingCart size={18} className="inline mr-2" /> Mes envois
           </button>
           {(isTraiteur || isGp) && (
             <button
@@ -380,7 +381,7 @@ export default function CommandesPage() {
                   : 'bg-white/20 text-white'
               }`}
             >
-              📥 Reçues
+              <Inbox size={18} className="inline mr-2" /> Reçues
               {pendingRecues > 0 && (
                 <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center font-bold">
                   {pendingRecues}
@@ -400,7 +401,7 @@ export default function CommandesPage() {
             {commandesEnvoyees.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  🍽️ Commandes traiteur
+                  <ChefHat size={18} className="inline mr-1" /> Commandes traiteur
                 </h2>
                 <div className="space-y-3">
                   {commandesEnvoyees.map(commande => (
@@ -408,9 +409,9 @@ export default function CommandesPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <p className="font-semibold text-gray-800">
-                            👨‍🍳 {commande.traiteurs?.name || 'Traiteur'}
+                            <ChefHat size={16} className="inline mr-1 text-[#1D6B45]" /> {commande.traiteurs?.name || 'Traiteur'}
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-600 mt-0.5">
                             {formatDate(commande.created_at)}
                           </p>
                         </div>
@@ -418,22 +419,22 @@ export default function CommandesPage() {
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-3">
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📅</span><span>{formatDate(commande.date_evenement)}</span>
+                          <Calendar size={16} className="text-[#1D6B45] inline mr-1" /><span>{formatDate(commande.date_evenement)}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>👥</span><span>{commande.nb_personnes} personnes</span>
+                          <Users size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.nb_personnes} personnes</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📍</span><span>{commande.adresse}</span>
+                          <MapPin size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.adresse}</span>
                         </div>
                         {commande.type_evenement && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span>🎉</span><span>{commande.type_evenement}</span>
+                            <PartyPopper size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.type_evenement}</span>
                           </div>
                         )}
                         {commande.notes && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span>📝</span><span>{commande.notes}</span>
+                            <StickyNote size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.notes}</span>
                           </div>
                         )}
                       </div>
@@ -452,7 +453,7 @@ export default function CommandesPage() {
                           }}
                           className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                         >
-                          💬 Contacter le traiteur sur WhatsApp
+                          <MessageSquare size={16} className="inline mr-2" /> Contacter le traiteur sur WhatsApp
                         </button>
                       )}
                     </div>
@@ -465,7 +466,7 @@ export default function CommandesPage() {
             {ordersEnvoyees.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  🛒 Commandes plats
+                  <ShoppingCart size={18} className="inline mr-1" /> Commandes plats
                 </h2>
                 <div className="space-y-3">
                   {ordersEnvoyees.map(order => (
@@ -473,9 +474,9 @@ export default function CommandesPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <p className="font-semibold text-gray-800">
-                            👨‍🍳 {order.traiteurs?.name || 'Traiteur'}
+                            <ChefHat size={16} className="inline mr-1 text-[#1D6B45]" /> {order.traiteurs?.name || 'Traiteur'}
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-600 mt-0.5">
                             {formatDate(order.created_at)}
                           </p>
                         </div>
@@ -484,7 +485,7 @@ export default function CommandesPage() {
                       <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-3">
                         {order.order_items?.map(item => (
                           <div key={item.id} className="flex items-center justify-between text-sm text-gray-600">
-                            <span>🍽️ {item.dishes?.name} x{item.quantity}</span>
+                            <ChefHat size={16} className="text-[#1D6B45] inline mr-1" /> <span className="text-gray-600">{item.dishes?.name} x{item.quantity}</span>
                             <span className="font-medium text-[#1D6B45]">
                               {item.dishes?.price
                                 ? (item.dishes.price * item.quantity).toFixed(2)
@@ -492,18 +493,18 @@ export default function CommandesPage() {
                             </span>
                           </div>
                         ))}
-                        <div className="border-t border-gray-200 pt-2 mt-1 flex justify-between font-semibold text-sm">
+                        <div className="border-t border-gray-200 pt-2 mt-1 flex justify-between font-bold text-black text-sm">
                           <span>Total</span>
                           <span className="text-[#1D6B45]">{Number(order.total_amount).toFixed(2)} €</span>
                         </div>
                         {order.delivery_address && (
                           <div className="flex items-center gap-2 text-sm text-gray-600 pt-1">
-                            <span>📍</span><span>{order.delivery_address}</span>
+                            <MapPin size={16} className="text-[#1D6B45] inline mr-1" /><span>{order.delivery_address}</span>
                           </div>
                         )}
                         {order.delivery_date && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span>📅</span><span>{formatDate(order.delivery_date)}</span>
+                            <Calendar size={16} className="text-[#1D6B45] inline mr-1" /><span>{formatDate(order.delivery_date)}</span>
                           </div>
                         )}
                       </div>
@@ -516,7 +517,7 @@ export default function CommandesPage() {
                           }}
                           className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                         >
-                          💬 Contacter le traiteur sur WhatsApp
+                          <MessageSquare size={16} className="inline mr-2" /> Contacter le traiteur sur WhatsApp
                         </button>
                       )}
                     </div>
@@ -529,7 +530,7 @@ export default function CommandesPage() {
             {gpEnvoyees.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  ✈️ Demandes GP colis
+                  <Plane size={18} className="inline mr-1" /> Demandes GP colis
                 </h2>
                 <div className="space-y-3">
                   {gpEnvoyees.map(request => (
@@ -537,9 +538,9 @@ export default function CommandesPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <p className="font-semibold text-gray-800">
-                            ✈️ {request.gp_listings?.departure_city} ({request.gp_listings?.departure_country}) → {request.gp_listings?.arrival_city} ({request.gp_listings?.arrival_country})
+                            <Plane size={16} className="inline mr-1 text-[#1D6B45]" /> {request.gp_listings?.departure_city} ({request.gp_listings?.departure_country}) → {request.gp_listings?.arrival_city} ({request.gp_listings?.arrival_country})
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-600 mt-0.5">
                             {formatDate(request.created_at)}
                           </p>
                         </div>
@@ -547,21 +548,21 @@ export default function CommandesPage() {
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 space-y-1.5">
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📅</span>
+                          <Calendar size={16} className="text-[#1D6B45] inline mr-1" />
                           <span>Départ : {request.gp_listings?.departure_date ? formatDate(request.gp_listings.departure_date) : 'N/A'}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>⚖️</span><span>{request.weight_kg} kg</span>
+                          <Scale size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.weight_kg} kg</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📦</span><span>{request.content_desc}</span>
+                          <Package size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.content_desc}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>💰</span><span>{request.total_amount} €</span>
+                          <Banknote size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.total_amount} €</span>
                         </div>
                         {request.notes && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span>📝</span><span>{request.notes}</span>
+                            <StickyNote size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.notes}</span>
                           </div>
                         )}
                       </div>
@@ -573,7 +574,7 @@ export default function CommandesPage() {
 
             {commandesEnvoyees.length === 0 && ordersEnvoyees.length === 0 && gpEnvoyees.length === 0 && (
               <div className="text-center py-16">
-                <div className="text-5xl mb-3">📦</div>
+                <div className="flex justify-center mb-3"><Package size={48} className="text-gray-300" /></div>
                 <p className="text-gray-500">{"Vous n'avez pas encore passé de commande"}</p>
               </div>
             )}
@@ -587,7 +588,7 @@ export default function CommandesPage() {
             {isTraiteur && commandesRecues.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  🍽️ Commandes traiteur reçues
+                  <ChefHat size={18} className="inline mr-1" /> Commandes traiteur reçues
                 </h2>
                 <div className="space-y-3">
                   {commandesRecues.map(commande => (
@@ -595,9 +596,9 @@ export default function CommandesPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <p className="font-semibold text-gray-800">
-                            👤 {commande.profiles?.full_name || 'Client'}
+                            <User size={16} className="inline mr-1 text-[#1D6B45]" /> {commande.profiles?.full_name || 'Client'}
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-600 mt-0.5">
                             {formatDate(commande.created_at)}
                           </p>
                         </div>
@@ -605,22 +606,22 @@ export default function CommandesPage() {
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📅</span><span>{formatDate(commande.date_evenement)}</span>
+                          <Calendar size={16} className="text-[#1D6B45] inline mr-1" /><span>{formatDate(commande.date_evenement)}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>👥</span><span>{commande.nb_personnes} personnes</span>
+                          <Users size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.nb_personnes} personnes</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📍</span><span>{commande.adresse}</span>
+                          <MapPin size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.adresse}</span>
                         </div>
                         {commande.type_evenement && (
                           <div className="flex items-center gap-2 text-sm text-gray-600">
-                            <span>🎉</span><span>{commande.type_evenement}</span>
+                            <PartyPopper size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.type_evenement}</span>
                           </div>
                         )}
                         {commande.notes && (
                           <div className="flex items-start gap-2 text-sm text-gray-600">
-                            <span>📝</span><span>{commande.notes}</span>
+                            <StickyNote size={16} className="text-[#1D6B45] inline mr-1" /><span>{commande.notes}</span>
                           </div>
                         )}
                       </div>
@@ -647,13 +648,13 @@ export default function CommandesPage() {
                               onClick={() => handleAccepterTraiteur(commande)}
                               className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                             >
-                              ✅ Accepter
+                              <CheckCircle2 size={16} className="inline mr-2" /> Accepter
                             </button>
                             <button
                               onClick={() => handleRefuserTraiteur(commande)}
                               className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
                             >
-                              ❌ Refuser
+                              <XCircle size={16} className="inline mr-2" /> Refuser
                             </button>
                           </div>
                         </div>
@@ -667,7 +668,7 @@ export default function CommandesPage() {
                           }}
                           className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                         >
-                          💬 Contacter le client sur WhatsApp
+                          <MessageSquare size={16} className="inline mr-2" /> Contacter le client sur WhatsApp
                         </button>
                       )}
                     </div>
@@ -680,7 +681,7 @@ export default function CommandesPage() {
             {isTraiteur && ordersRecues.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  🛒 Commandes plats reçues
+                  <ShoppingCart size={18} className="inline mr-1" /> Commandes plats reçues
                 </h2>
                 <div className="space-y-3">
                   {ordersRecues.map(order => (
@@ -688,9 +689,9 @@ export default function CommandesPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <p className="font-semibold text-gray-800">
-                            👤 {order.profiles?.full_name || 'Client'}
+                            <User size={16} className="inline mr-1 text-[#1D6B45]" /> {order.profiles?.full_name || 'Client'}
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-600 mt-0.5">
                             {formatDate(order.created_at)}
                           </p>
                         </div>
@@ -699,7 +700,7 @@ export default function CommandesPage() {
                       <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
                         {order.order_items?.map(item => (
                           <div key={item.id} className="flex items-center justify-between text-sm text-gray-600">
-                            <span>🍽️ {item.dishes?.name} x{item.quantity}</span>
+                            <ChefHat size={16} className="text-[#1D6B45] inline mr-1" /> <span className="text-gray-600">{item.dishes?.name} x{item.quantity}</span>
                             <span className="font-medium">
                               {item.dishes?.price
                                 ? (item.dishes.price * item.quantity).toFixed(2)
@@ -707,13 +708,13 @@ export default function CommandesPage() {
                             </span>
                           </div>
                         ))}
-                        <div className="border-t border-gray-200 pt-2 mt-1 flex justify-between font-semibold text-sm">
+                        <div className="border-t border-gray-200 pt-2 mt-1 flex justify-between font-bold text-black text-sm">
                           <span>Total</span>
                           <span className="text-[#1D6B45]">{Number(order.total_amount).toFixed(2)} €</span>
                         </div>
                         {order.delivery_address && (
                           <div className="flex items-center gap-2 text-sm text-gray-600 pt-1">
-                            <span>📍</span><span>{order.delivery_address}</span>
+                            <MapPin size={16} className="text-[#1D6B45] inline mr-1" /><span>{order.delivery_address}</span>
                           </div>
                         )}
                       </div>
@@ -723,13 +724,13 @@ export default function CommandesPage() {
                             onClick={() => handleAccepterOrder(order)}
                             className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                           >
-                            ✅ Accepter
+                            <CheckCircle2 size={16} className="inline mr-2" /> Accepter
                           </button>
                           <button
                             onClick={() => handleRefuserOrder(order)}
                             className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
                           >
-                            ❌ Refuser
+                            <XCircle size={16} className="inline mr-2" /> Refuser
                           </button>
                         </div>
                       )}
@@ -742,7 +743,7 @@ export default function CommandesPage() {
                           }}
                           className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                         >
-                          💬 Contacter le client sur WhatsApp
+                          <MessageSquare size={16} className="inline mr-2" /> Contacter le client sur WhatsApp
                         </button>
                       )}
                     </div>
@@ -755,7 +756,7 @@ export default function CommandesPage() {
             {isGp && gpRecues.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
-                  ✈️ Demandes GP reçues
+                  <Plane size={18} className="inline mr-1" /> Demandes GP reçues
                 </h2>
                 <div className="space-y-3">
                   {gpRecues.map(request => (
@@ -763,9 +764,9 @@ export default function CommandesPage() {
                       <div className="flex items-start justify-between mb-3">
                         <div>
                           <p className="font-semibold text-gray-800">
-                            👤 {request.profiles?.full_name || 'Expéditeur'}
+                            <User size={16} className="inline mr-1 text-[#1D6B45]" /> {request.profiles?.full_name || 'Expéditeur'}
                           </p>
-                          <p className="text-xs text-gray-400 mt-0.5">
+                          <p className="text-xs text-gray-600 mt-0.5">
                             {formatDate(request.created_at)}
                           </p>
                         </div>
@@ -773,25 +774,25 @@ export default function CommandesPage() {
                       </div>
                       <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>✈️</span>
+                          <Plane size={16} className="text-[#1D6B45] inline mr-1" />
                           <span>{request.gp_listings?.departure_city} ({request.gp_listings?.departure_country}) → {request.gp_listings?.arrival_city} ({request.gp_listings?.arrival_country})</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📅</span>
+                          <Calendar size={16} className="text-[#1D6B45] inline mr-1" />
                           <span>{request.gp_listings?.departure_date ? formatDate(request.gp_listings.departure_date) : 'N/A'}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>⚖️</span><span>{request.weight_kg} kg</span>
+                          <Scale size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.weight_kg} kg</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>📦</span><span>{request.content_desc}</span>
+                          <Package size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.content_desc}</span>
                         </div>
                         <div className="flex items-center gap-2 text-sm text-gray-600">
-                          <span>💰</span><span>{request.total_amount} €</span>
+                          <Banknote size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.total_amount} €</span>
                         </div>
                         {request.notes && (
                           <div className="flex items-start gap-2 text-sm text-gray-600">
-                            <span>📝</span><span>{request.notes}</span>
+                            <StickyNote size={16} className="text-[#1D6B45] inline mr-1" /><span>{request.notes}</span>
                           </div>
                         )}
                       </div>
@@ -812,13 +813,13 @@ export default function CommandesPage() {
                               onClick={() => handleAccepterGp(request)}
                               className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                             >
-                              ✅ Accepter
+                              <CheckCircle2 size={16} className="inline mr-2" /> Accepter
                             </button>
                             <button
                               onClick={() => handleRefuserGp(request)}
                               className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
                             >
-                              ❌ Refuser
+                              <XCircle size={16} className="inline mr-2" /> Refuser
                             </button>
                           </div>
                         </div>

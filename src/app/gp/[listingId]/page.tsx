@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
+import { CheckCircle2, MessageSquare, User, MapPin, Lock, Plane, Smartphone, Package } from "lucide-react";
 import { getFlag } from "@/lib/api/gp";
 
 type GpListing = {
@@ -167,7 +168,7 @@ export default function GpDetailPage() {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
-          <div className="text-6xl mb-4">✅</div>
+          <div className="flex justify-center mb-4"><CheckCircle2 size={64} className="text-[#1D6B45]" /></div>
           <h2 className="text-2xl font-bold text-[#1D6B45] mb-2">
             Demande envoyée !
           </h2>
@@ -188,7 +189,7 @@ export default function GpDetailPage() {
               }}
               className="w-full bg-[#25D366] text-white py-3 rounded-2xl font-semibold text-sm hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2 mb-4"
             >
-              💬 Contacter le GP sur WhatsApp
+              <MessageSquare size={16} className="inline mr-2" /> Contacter le GP sur WhatsApp
             </button>
           )}
           <Link
@@ -197,7 +198,7 @@ export default function GpDetailPage() {
           >
             Voir mes commandes →
           </Link>
-          <Link href="/gp" className="text-gray-400 text-sm hover:underline">
+          <Link href="/gp" className="text-gray-600 text-sm hover:underline">
             Retour aux annonces
           </Link>
         </div>
@@ -217,8 +218,8 @@ export default function GpDetailPage() {
               {getFlag(listing.departure_country)} {listing.departure_city} →{" "}
               {getFlag(listing.arrival_country)} {listing.arrival_city}
             </h1>
-            <p className="text-white/70 text-sm mt-1">
-              ✈️ Départ le {formatDate(listing.departure_date)}
+            <p className="text-white/70 text-sm mt-1 flex items-center">
+              <Plane size={16} className="inline mr-1" /> Départ le {formatDate(listing.departure_date)}
             </p>
           </div>
           {listing.flight_type && (
@@ -239,7 +240,7 @@ export default function GpDetailPage() {
         {/* Infos GP */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h2 className="font-semibold text-gray-800 mb-4">
-            👤 À propos du GP
+            <User size={16} className="inline mr-1 text-[#1D6B45]" /> À propos du GP
           </h2>
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xl font-bold">
@@ -250,8 +251,8 @@ export default function GpDetailPage() {
                 {listing.profiles?.full_name || "GP Anonyme"}
               </p>
               {listing.profiles?.phone && (
-                <p className="text-sm text-gray-500 mt-0.5">
-                  📱 {listing.profiles.phone}
+                <p className="text-sm text-gray-500 mt-0.5 flex items-center">
+                  <Smartphone size={16} className="inline mr-1" /> {listing.profiles.phone}
                 </p>
               )}
               {listing.review_count > 0 && (
@@ -281,29 +282,29 @@ export default function GpDetailPage() {
 
         {/* Détails annonce */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">
-            📦 Détails de l&apos;annonce
+          <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
+            <Package size={16} className="inline mr-1" /> Détails de l&apos;annonce
           </h2>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-xs text-gray-400 mb-1">Kg disponibles</p>
+              <p className="text-xs text-gray-600 mb-1">Kg disponibles</p>
               <p className="text-2xl font-bold text-[#1D6B45]">
                 {listing.available_kg}
               </p>
-              <p className="text-xs text-gray-400">kg</p>
+              <p className="text-xs text-gray-600">kg</p>
             </div>
             <div className="bg-gray-50 rounded-xl p-3 text-center">
-              <p className="text-xs text-gray-400 mb-1">Prix</p>
+              <p className="text-xs text-gray-600 mb-1">Prix</p>
               <p className="text-2xl font-bold text-[#1D6B45]">
                 {listing.price_per_kg}
               </p>
-              <p className="text-xs text-gray-400">€/kg</p>
+              <p className="text-xs text-gray-600">€/kg</p>
             </div>
           </div>
 
           {listing.pickup_city && (
             <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-              <span>📍</span>
+              <MapPin size={16} className="text-[#1D6B45] inline mr-1" />
               <span>Remise des colis à {listing.pickup_city}</span>
             </div>
           )}
@@ -335,7 +336,7 @@ export default function GpDetailPage() {
               <h2 className="font-semibold text-gray-800">Ma demande</h2>
               <button
                 onClick={() => setShowForm(false)}
-                className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+                className="text-gray-600 hover:text-gray-600 text-xl leading-none"
               >
                 &#x2715;
               </button>
@@ -435,11 +436,11 @@ export default function GpDetailPage() {
         ) : (
           <Link href="/login" className="block">
             <div className="w-full bg-gray-100 border-2 border-dashed border-[#1D6B45]/30 rounded-2xl py-5 px-4 text-center hover:bg-[#1D6B45]/5 hover:border-[#1D6B45]/60 transition-all group">
-              <div className="text-2xl mb-2">🔒</div>
+              <div className="flex justify-center mb-2"><Lock size={24} className="text-[#1D6B45]" /></div>
               <p className="font-semibold text-[#1D6B45] text-sm group-hover:underline">
                 Se connecter pour envoyer un colis
               </p>
-              <p className="text-xs text-gray-400 mt-1">
+              <p className="text-xs text-gray-600 mt-1">
                 Connectez-vous pour passer votre demande
               </p>
             </div>

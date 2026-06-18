@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
+import { CheckCircle2, MessageSquare, Lock } from "lucide-react";
 
 type Props = {
   traiteurId: string;
@@ -152,7 +153,7 @@ export default function CommandeForm({
 
       return (
         <div className="bg-[#E8F5E9] border border-[#1D6B45]/20 rounded-2xl p-6 text-center">
-          <div className="text-4xl mb-3">✅</div>
+          <div className="flex justify-center mb-3"><CheckCircle2 size={48} className="text-[#1D6B45]" /></div>
           <h3 className="font-bold text-[#1D6B45] mb-1">Commande envoyée !</h3>
           <p className="text-sm text-gray-600 mb-4">
             {traiteurName} a bien reçu ta demande et te contactera rapidement.
@@ -162,7 +163,7 @@ export default function CommandeForm({
               onClick={() => window.open(waUrl, "_blank")}
               className="inline-flex items-center gap-2 bg-[#25D366] text-white px-5 py-3 rounded-xl font-medium text-sm hover:bg-[#1da851] transition-colors"
             >
-              💬 Contacter sur WhatsApp
+              <MessageSquare size={16} className="inline mr-2" /> Contacter sur WhatsApp
             </button>
           )}
         </div>
@@ -175,7 +176,7 @@ export default function CommandeForm({
           <h3 className="font-semibold text-gray-800">Passer une commande</h3>
           <button
             onClick={() => setOpen(false)}
-            className="text-gray-400 hover:text-gray-600 text-xl leading-none"
+            className="text-gray-600 hover:text-gray-600 text-xl leading-none"
           >
             &#x2715;
           </button>
@@ -272,7 +273,7 @@ export default function CommandeForm({
           </button>
 
           {whatsapp && (
-            <p className="text-xs text-center text-gray-400">
+            <p className="text-xs text-center text-gray-600">
               Le traiteur sera notifié sur WhatsApp
             </p>
           )}
@@ -283,11 +284,11 @@ export default function CommandeForm({
     return (
       <Link href="/login" className="block">
         <div className="w-full bg-gray-100 border-2 border-dashed border-[#1D6B45]/30 rounded-2xl py-5 px-4 text-center hover:bg-[#1D6B45]/5 hover:border-[#1D6B45]/60 transition-all group">
-          <div className="text-2xl mb-2">🔒</div>
+          <div className="flex justify-center mb-2"><Lock size={24} className="text-[#1D6B45]" /></div>
           <p className="font-semibold text-[#1D6B45] text-sm group-hover:underline">
             Se connecter pour commander
           </p>
-          <p className="text-xs text-gray-400 mt-1">
+          <p className="text-xs text-gray-600 mt-1">
             Connectez-vous pour passer votre commande
           </p>
         </div>

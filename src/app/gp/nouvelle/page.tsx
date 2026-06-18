@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import { Plane, PlaneTakeoff, Package, MapPin, Lock } from "lucide-react";
 
 const schema = z.object({
   departure_city: z.string().min(2, 'Ville de départ requise'),
@@ -108,7 +109,7 @@ export default function NouvelleAnnoncePage() {
   if (success) return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
       <div className="text-center max-w-sm">
-        <div className="text-6xl mb-4">✈️</div>
+        <div className="flex justify-center mb-4"><Plane size={64} className="text-[#1D6B45]" /></div>
         <h2 className="text-2xl font-bold text-[#1D6B45] mb-2">
           Annonce publiée !
         </h2>
@@ -163,7 +164,7 @@ export default function NouvelleAnnoncePage() {
 
           {/* Route */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">🛫 Itinéraire</h2>
+            <h2 className="font-semibold text-gray-800 mb-4 flex items-center"><PlaneTakeoff size={16} className="inline mr-1" /> Itinéraire</h2>
 
             <div className="grid grid-cols-2 gap-3 mb-3">
               <div>
@@ -225,7 +226,7 @@ export default function NouvelleAnnoncePage() {
 
           {/* Vol */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">✈️ Détails du vol</h2>
+            <h2 className="font-semibold text-gray-800 mb-4 flex items-center"><Plane size={16} className="inline mr-1" /> Détails du vol</h2>
 
             <div className="mb-4">
               <label className="block text-xs text-gray-500 mb-1">Date de départ</label>
@@ -260,7 +261,7 @@ export default function NouvelleAnnoncePage() {
 
           {/* Colis */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">📦 Capacité & tarif</h2>
+            <h2 className="font-semibold text-gray-800 mb-4 flex items-center"><Package size={16} className="inline mr-1" /> Capacité & tarif</h2>
 
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -295,8 +296,8 @@ export default function NouvelleAnnoncePage() {
 
           {/* Point de retrait */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-1">📍 Point de remise</h2>
-            <p className="text-xs text-gray-400 mb-4">
+            <h2 className="font-semibold text-gray-800 mb-1 flex items-center"><MapPin size={16} className="inline mr-1" /> Point de remise</h2>
+            <p className="text-xs text-gray-600 mb-4">
               Où les expéditeurs peuvent déposer leur colis
             </p>
 
@@ -315,7 +316,7 @@ export default function NouvelleAnnoncePage() {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
                   Adresse précise
-                  <span className="text-gray-400 ml-1">(optionnel — partagée après accord)</span>
+                  <span className="text-gray-600 ml-1">(optionnel — partagée après accord)</span>
                 </label>
                 <input
                   {...register('pickup_address')}
@@ -330,7 +331,7 @@ export default function NouvelleAnnoncePage() {
           {/* Description */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
             <h2 className="font-semibold text-gray-800 mb-1">✍️ Présentation</h2>
-            <p className="text-xs text-gray-400 mb-4">
+            <p className="text-xs text-gray-600 mb-4">
               Décris-toi et tes conditions pour rassurer les expéditeurs
             </p>
             <textarea
@@ -346,7 +347,7 @@ export default function NouvelleAnnoncePage() {
 
           {/* Info sécurité */}
           <div className="bg-[#FFF8E1] border border-[#D4870A]/20 rounded-2xl p-4">
-            <p className="text-sm font-medium text-[#D4870A] mb-1">🔒 Paiement sécurisé</p>
+            <p className="text-sm font-medium text-[#D4870A] mb-1"><Lock size={16} className="inline mr-2" /> Paiement sécurisé</p>
             <p className="text-xs text-gray-600">
               Le paiement des expéditeurs est bloqué jusqu'à confirmation de livraison. Tu es protégé à chaque trajet.
             </p>

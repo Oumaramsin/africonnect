@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState} from 'react'
 import { createClient } from '@/lib/supabase'
+import { ChefHat, Plane, Users, Smartphone, MapPin, User, Trash2, Lightbulb, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
 
 type Profile = {
@@ -293,7 +294,7 @@ export default function AdminAfriConnectClient({
         <Link href="/dashboard" className="text-white/70 text-sm mb-4 inline-block">
           ← Dashboard
         </Link>
-        <h1 className="text-2xl font-bold text-white">🔐 Admin AfriConnect</h1>
+        <h1 className="text-2xl font-bold text-white flex items-center"><ShieldCheck size={28} className="inline mr-2" /> Admin AfriConnect</h1>
         <p className="text-white/70 text-sm mt-1">Gérer les traiteurs, GP et utilisateurs</p>
 
         {/* Stats */}
@@ -322,7 +323,7 @@ export default function AdminAfriConnectClient({
                 tab === t ? 'bg-white text-[#1D6B45]' : 'bg-white/20 text-white'
               }`}
             >
-              {t === 'traiteurs' ? '👨‍🍳 Traiteurs' : t === 'gp' ? '✈️ GP Colis' : '👥 Utilisateurs'}
+              {t === 'traiteurs' ? <><ChefHat size={16} className="inline mr-1" /> Traiteurs</> : t === 'gp' ? <><Plane size={16} className="inline mr-1" /> GP Colis</> : <><Users size={16} className="inline mr-1" /> Utilisateurs</>}
             </button>
           ))}
         </div>
@@ -449,7 +450,7 @@ export default function AdminAfriConnectClient({
 
                 {traiteurs.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
-                    <div className="text-4xl mb-3">👨‍🍳</div>
+                    <div className="flex justify-center mb-3"><ChefHat size={48} className="text-[#D4870A]" /></div>
                     <p>Aucun traiteur enregistré</p>
                   </div>
                 ) : (
@@ -459,11 +460,11 @@ export default function AdminAfriConnectClient({
                         <div className="flex items-start justify-between mb-3">
                           <div>
                             <p className="font-semibold text-gray-800">{traiteur.name}</p>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              👤 {traiteur.profiles?.full_name || 'Utilisateur'}
+                            <p className="text-sm font-medium text-gray-700 mt-0.5">
+                              <User size={16} className="inline mr-1 text-[#1D6B45]" /> {traiteur.profiles?.full_name || 'Utilisateur'}
                             </p>
                             {traiteur.whatsapp && (
-                              <p className="text-xs text-gray-400">📱 {traiteur.whatsapp}</p>
+                              <p className="text-sm font-medium text-gray-700 flex items-center mt-1"><Smartphone size={16} className="inline mr-1 text-[#1D6B45]" /> {traiteur.whatsapp}</p>
                             )}
                           </div>
                           <span className={`text-xs px-2 py-1 rounded-full font-medium ${
@@ -500,7 +501,7 @@ export default function AdminAfriConnectClient({
                             onClick={() => handleDeleteTraiteur(traiteur.id)}
                             className="px-4 py-2 rounded-xl text-xs font-medium bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
                           >
-                            🗑️
+                            <Trash2 size={16} className="mx-auto" />
                           </button>
                         </div>
                       </div>
@@ -521,7 +522,7 @@ export default function AdminAfriConnectClient({
 
                 <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
                   <p className="text-xs text-blue-700">
-                    💡 Si l&apos;utilisateur n&apos;existe pas encore, crée-le d&apos;abord dans l&apos;onglet <strong>Utilisateurs</strong>.
+                    <Lightbulb size={16} className="inline mr-1" /> Si l&apos;utilisateur n&apos;existe pas encore, crée-le d&apos;abord dans l&apos;onglet <strong>Utilisateurs</strong>.
                   </p>
                 </div>
 
@@ -653,7 +654,7 @@ export default function AdminAfriConnectClient({
 
                 {gpListings.length === 0 ? (
                   <div className="text-center py-12 text-gray-400">
-                    <div className="text-4xl mb-3">✈️</div>
+                    <div className="flex justify-center mb-3"><Plane size={48} className="text-[#1D6B45]" /></div>
                     <p>Aucune annonce GP</p>
                   </div>
                 ) : (
@@ -663,13 +664,13 @@ export default function AdminAfriConnectClient({
                         <div className="flex items-start justify-between mb-3">
                           <div>
                             <p className="font-semibold text-gray-800">
-                              ✈️ {gp.departure_city} ({gp.departure_country}) → {gp.arrival_city} ({gp.arrival_country})
+                              <Plane size={16} className="inline mr-1" /> {gp.departure_city} ({gp.departure_country}) → {gp.arrival_city} ({gp.arrival_country})
                             </p>
-                            <p className="text-xs text-gray-400 mt-0.5">
-                              👤 {gp.profiles?.full_name || 'Utilisateur'}
+                            <p className="text-sm font-medium text-gray-700 mt-0.5">
+                              <User size={16} className="inline mr-1 text-[#1D6B45]" /> {gp.profiles?.full_name || 'Utilisateur'}
                             </p>
                             {gp.profiles?.whatsapp && (
-                              <p className="text-xs text-gray-400">📱 {gp.profiles.whatsapp}</p>
+                              <p className="text-sm font-medium text-gray-700 flex items-center mt-1"><Smartphone size={16} className="inline mr-1 text-[#1D6B45]" /> {gp.profiles.whatsapp}</p>
                             )}
                           </div>
                           <span className={`text-xs px-2 py-1 rounded-full font-medium ${
@@ -713,7 +714,7 @@ export default function AdminAfriConnectClient({
                             onClick={() => handleDeleteGp(gp.id)}
                             className="px-4 py-2 rounded-xl text-xs font-medium bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
                           >
-                            🗑️
+                            <Trash2 size={16} className="mx-auto" />
                           </button>
                         </div>
                       </div>
@@ -734,7 +735,7 @@ export default function AdminAfriConnectClient({
 
                 <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-3 mb-4">
                   <p className="text-xs text-blue-700">
-                    💡 Si le GP n&apos;existe pas encore, crée-le d&apos;abord dans l&apos;onglet <strong>Utilisateurs</strong>.
+                    <Lightbulb size={16} className="inline mr-1" /> Si le GP n&apos;existe pas encore, crée-le d&apos;abord dans l&apos;onglet <strong>Utilisateurs</strong>.
                   </p>
                 </div>
 

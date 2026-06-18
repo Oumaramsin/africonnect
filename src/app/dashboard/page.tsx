@@ -1,6 +1,6 @@
-import { redirect } from "next/navigation";
 import { createServerSupabase } from "@/lib/supabase-server";
 import Link from "next/link";
+import { Clock, CheckCircle2, XCircle, Bell, ChefHat, Plane, ShoppingCart, Scissors, Hand, User } from "lucide-react";
 
 type CommandeTraiteur = {
   id: string;
@@ -136,22 +136,22 @@ export default async function DashboardPage() {
       case "en_attente":
       case "pending":
         return (
-          <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full">
-            ⏳ En attente
+          <span className="text-xs bg-yellow-100 text-yellow-700 px-2 py-0.5 rounded-full flex items-center w-fit gap-1">
+            <Clock size={12} /> En attente
           </span>
         );
       case "acceptee":
       case "accepted":
         return (
-          <span className="text-xs bg-[#E8F5E9] text-[#1D6B45] px-2 py-0.5 rounded-full">
-            ✅ Acceptée
+          <span className="text-xs bg-[#E8F5E9] text-[#1D6B45] px-2 py-0.5 rounded-full flex items-center w-fit gap-1">
+            <CheckCircle2 size={12} /> Acceptée
           </span>
         );
       case "refusee":
       case "rejected":
         return (
-          <span className="text-xs bg-red-50 text-red-500 px-2 py-0.5 rounded-full">
-            ❌ Refusée
+          <span className="text-xs bg-red-50 text-red-500 px-2 py-0.5 rounded-full flex items-center w-fit gap-1">
+            <XCircle size={12} /> Refusée
           </span>
         );
       default:
@@ -177,8 +177,8 @@ export default async function DashboardPage() {
         {isLoggedIn ? (
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-2xl font-bold text-[#1D6B45]">
-                Bonjour, {profile?.full_name} 👋
+              <h1 className="text-2xl font-bold text-[#1D6B45] flex items-center gap-2">
+                Bonjour, {profile?.full_name} <Hand className="text-[#D4870A]" size={24} />
               </h1>
               <p className="text-gray-500 mt-1 text-sm">
                 {"Que cherches-tu aujourd'hui ?"}
@@ -193,8 +193,8 @@ export default async function DashboardPage() {
         ) : (
           <div className="flex items-center justify-between mb-8">
             <div>
-              <h1 className="text-2xl font-bold text-[#1D6B45]">
-                Bonjour 👋
+              <h1 className="text-2xl font-bold text-[#1D6B45] flex items-center gap-2">
+                Bonjour <Hand className="text-[#D4870A]" size={24} />
               </h1>
               <p className="text-gray-500 mt-1 text-sm">
                 <Link href="/login" className="text-[#1D6B45] font-semibold hover:underline">
@@ -204,8 +204,8 @@ export default async function DashboardPage() {
               </p>
             </div>
             <Link href="/login">
-              <div className="w-10 h-10 rounded-full bg-[#1D6B45]/10 border-2 border-[#1D6B45] flex items-center justify-center text-[#1D6B45] font-bold text-sm">
-                ?
+              <div className="w-10 h-10 rounded-full bg-[#1D6B45]/10 border-2 border-[#1D6B45] flex items-center justify-center text-[#1D6B45]">
+                <User size={20} />
               </div>
             </Link>
           </div>
@@ -216,7 +216,7 @@ export default async function DashboardPage() {
           <Link href="/commandes">
             <div className="bg-[#D4870A]/10 border border-[#D4870A]/30 rounded-2xl p-4 mb-6 flex items-center justify-between hover:bg-[#D4870A]/15 transition-all">
               <div className="flex items-center gap-3">
-                <span className="text-2xl">🔔</span>
+                <Bell className="text-[#D4870A]" size={24} />
                 <div>
                   <p className="font-semibold text-[#D4870A] text-sm">
                     {pendingCount} demande{pendingCount > 1 ? "s" : ""} en
@@ -236,7 +236,7 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 gap-4 mb-6">
           <Link href="/traiteur">
             <div className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md hover:border-[#1D6B45]/20 transition-all">
-              <div className="text-3xl mb-3">🍲</div>
+              <div className="mb-3"><ChefHat className="text-[#1D6B45]" size={32} /></div>
               <div className="font-semibold text-gray-800">Traiteur</div>
               <div className="text-sm text-gray-500 mt-1">
                 Plats africains à domicile
@@ -246,7 +246,7 @@ export default async function DashboardPage() {
 
           <Link href="/gp">
             <div className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md hover:border-[#D4870A]/20 transition-all">
-              <div className="text-3xl mb-3">✈️</div>
+              <div className="mb-3"><Plane className="text-[#D4870A]" size={32} /></div>
               <div className="font-semibold text-gray-800">GP Colis</div>
               <div className="text-sm text-gray-500 mt-1">
                 Envoie un colis au pays
@@ -255,15 +255,15 @@ export default async function DashboardPage() {
           </Link>
 
           <div className="bg-white rounded-2xl p-6 border border-gray-100 opacity-50">
-            <div className="text-3xl mb-3">🛒</div>
+            <div className="mb-3"><ShoppingCart className="text-gray-600" size={32} /></div>
             <div className="font-semibold text-gray-800">Épicerie</div>
-            <div className="text-sm text-gray-400 mt-1">Bientôt disponible</div>
+            <div className="text-sm text-gray-600 mt-1">Bientôt disponible</div>
           </div>
 
           <div className="bg-white rounded-2xl p-6 border border-gray-100 opacity-50">
-            <div className="text-3xl mb-3">💇</div>
+            <div className="mb-3"><Scissors className="text-gray-600" size={32} /></div>
             <div className="font-semibold text-gray-800">Coiffure</div>
-            <div className="text-sm text-gray-400 mt-1">Bientôt disponible</div>
+            <div className="text-sm text-gray-600 mt-1">Bientôt disponible</div>
           </div>
         </div>
 
@@ -283,7 +283,7 @@ export default async function DashboardPage() {
             </div>
 
             {!hasCommandes ? (
-              <p className="text-gray-400 text-sm text-center py-4">
+              <p className="text-gray-600 text-sm text-center py-4">
                 Aucune commande pour le moment
               </p>
             ) : (
@@ -295,12 +295,12 @@ export default async function DashboardPage() {
                     className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-xl">🍽️</span>
+                      <ChefHat className="text-[#1D6B45]" size={20} />
                       <div>
                         <p className="text-sm font-medium text-gray-800">
                           {cmd.traiteurs?.name || "Traiteur"}
                         </p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-600">
                           {formatDate(cmd.created_at)} · {cmd.nb_personnes}{" "}
                           pers.
                         </p>
@@ -317,12 +317,12 @@ export default async function DashboardPage() {
                     className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-xl">🛒</span>
+                      <ShoppingCart className="text-[#D4870A]" size={20} />
                       <div>
                         <p className="text-sm font-medium text-gray-800">
                           {order.traiteurs?.name || "Traiteur"}
                         </p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-600">
                           {formatDate(order.created_at)} ·{" "}
                           {Number(order.total_amount).toFixed(2)} €
                         </p>
@@ -339,13 +339,13 @@ export default async function DashboardPage() {
                     className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
                   >
                     <div className="flex items-center gap-3">
-                      <span className="text-xl">✈️</span>
+                      <Plane className="text-[#1D6B45]" size={20} />
                       <div>
                         <p className="text-sm font-medium text-gray-800">
                           {req.gp_listings?.departure_city} →{" "}
                           {req.gp_listings?.arrival_city}
                         </p>
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-600">
                           {formatDate(req.created_at)} · {req.weight_kg} kg
                         </p>
                       </div>

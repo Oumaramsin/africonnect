@@ -4,6 +4,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import { Mail, Smartphone } from "lucide-react";
 
 type Method = 'email' | 'phone'
 
@@ -70,7 +71,7 @@ export default function LoginPage() {
                     : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
                 }`}
               >
-                {m === 'email' ? '✉️ Email' : '📱 Téléphone'}
+                {m === 'email' ? <><Mail size={16} className="inline mr-1" /> Email</> : <><Smartphone size={16} className="inline mr-1" /> Téléphone</>}
               </button>
             ))}
           </div>

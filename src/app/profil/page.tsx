@@ -7,6 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import { ChefHat, Plane, User, Package, LogOut } from 'lucide-react'
 
 const schema = z.object({
   full_name: z.string().min(2, 'Nom requis'),
@@ -126,7 +127,7 @@ export default function ProfilPage() {
               ? 'bg-white/20 text-white'
               : 'bg-white/20 text-white'
           }`}>
-            {userRole === 'traiteur' ? '👨‍🍳 Traiteur' : userRole === 'gp' ? '✈️ GP' : '👤 Client'}
+            {userRole === 'traiteur' ? <><ChefHat size={16} className="inline mr-1" /> Traiteur</> : userRole === 'gp' ? <><Plane size={16} className="inline mr-1" /> GP</> : <><User size={16} className="inline mr-1" /> Client</>}
           </span>
         </div>
       </div>
@@ -227,7 +228,7 @@ export default function ProfilPage() {
 
             <Link href="/commandes" className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors border-t border-gray-50">
                 <div className="flex items-center gap-3">
-                <span className="text-xl">📦</span>
+                <Package size={20} className="text-[#1D6B45]" />
                 <span className="text-sm text-gray-700">Mes commandes</span>
                 </div>
                 <span className="text-gray-400 text-sm">→</span>
@@ -235,7 +236,7 @@ export default function ProfilPage() {
 
             <Link href="/profil/traiteur" className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors border-t border-gray-50">
                 <div className="flex items-center gap-3">
-                <span className="text-xl">👨‍🍳</span>
+                <ChefHat size={20} className="text-[#D4870A]" />
                 <div>
                     <span className="text-sm text-gray-700 block">Espace Traiteur</span>
                     <span className="text-xs text-gray-400">
@@ -248,7 +249,7 @@ export default function ProfilPage() {
 
             <Link href="/gp/nouvelle" className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors border-t border-gray-50">
                 <div className="flex items-center gap-3">
-                <span className="text-xl">✈️</span>
+                <Plane size={20} className="text-[#3B82F6]" />
                 <div>
                     <span className="text-sm text-gray-700 block">Espace GP</span>
                     <span className="text-xs text-gray-400">Publier une annonce</span>
@@ -265,7 +266,7 @@ export default function ProfilPage() {
             className="w-full flex items-center justify-between px-5 py-4 hover:bg-red-50 transition-colors text-red-500 rounded-2xl"
           >
             <div className="flex items-center gap-3">
-              <span className="text-xl">🚪</span>
+              <LogOut size={20} className="text-red-500" />
               <span className="text-sm font-medium">Se déconnecter</span>
             </div>
             <span className="text-sm">→</span>

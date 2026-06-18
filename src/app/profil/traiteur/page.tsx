@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { MapPin } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 
@@ -338,7 +339,7 @@ export default function TraiteurEspacePage() {
                   <p className="text-xs text-gray-400 mb-1">Zones de livraison</p>
                   <div className="flex flex-wrap gap-1">
                     {traiteur?.delivery_zones?.map(z => (
-                      <span key={z} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full">📍 {z}</span>
+                      <span key={z} className="bg-gray-100 text-gray-600 text-xs px-2 py-1 rounded-full flex items-center"><MapPin size={12} className="inline mr-1" /> {z}</span>
                     ))}
                   </div>
                 </div>
