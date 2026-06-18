@@ -52,10 +52,9 @@ export default function CommandeForm({
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if (!session) {
-        return setIsLoggedIn(false);
+      if (session) {
+        setIsLoggedIn(true);
       }
-      setIsLoggedIn(true);
     };
     load();
   }, []);

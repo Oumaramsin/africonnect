@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { createOrder, type CartItem } from '@/lib/api/traiteur'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
+import { PartyPopper, Car, Home } from 'lucide-react'
 
 const schema = z.object({
   delivery_type: z.enum(['delivery', 'pickup']),
@@ -125,7 +126,7 @@ export default function CheckoutPage() {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
-          <div className="text-6xl mb-4">🎉</div>
+          <div className="flex justify-center mb-4"><PartyPopper size={64} className="text-[#1D6B45]" /></div>
           <h2 className="text-2xl font-bold text-[#1D6B45] mb-2">
             Commande confirmée !
           </h2>
@@ -206,7 +207,7 @@ export default function CheckoutPage() {
                   value="delivery"
                   className="hidden"
                 />
-                <span className="text-2xl">🚗</span>
+                <Car size={24} className={deliveryType === 'delivery' ? 'text-[#1D6B45]' : 'text-gray-400'} />
                 <span className="text-sm font-medium text-gray-700">Livraison</span>
               </label>
 
@@ -221,7 +222,7 @@ export default function CheckoutPage() {
                   value="pickup"
                   className="hidden"
                 />
-                <span className="text-2xl">🏠</span>
+                <Home size={24} className={deliveryType === 'pickup' ? 'text-[#1D6B45]' : 'text-gray-400'} />
                 <span className="text-sm font-medium text-gray-700">Retrait</span>
               </label>
             </div>
