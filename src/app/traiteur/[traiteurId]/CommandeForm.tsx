@@ -69,6 +69,17 @@ export default function CommandeForm({
       return;
     }
 
+    if (parseInt(form.nb_personnes) < 1) {
+      setError("Le nombre de personnes doit être d'au moins 1");
+      return;
+    }
+
+    const today = new Date().toISOString().split("T")[0];
+    if (form.date_evenement < today) {
+      setError("La date de l'événement ne peut pas être dans le passé");
+      return;
+    }
+
     setLoading(true);
     setError(null);
 
@@ -137,7 +148,7 @@ export default function CommandeForm({
       return (
         <button
           onClick={() => setOpen(true)}
-          className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors"
+          className="w-full bg-[#2563EB] text-white py-4 rounded-2xl font-semibold text-sm hover:bg-[#1D4ED8] transition-colors"
         >
           Commander ce traiteur
         </button>

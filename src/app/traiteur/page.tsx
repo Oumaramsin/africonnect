@@ -52,20 +52,23 @@ export default function TraiteurPage() {
         <h1 className="text-2xl font-bold text-white">Traiteurs africains</h1>
         <p className="text-white/70 text-sm mt-1">Commande un plat fait maison</p>
 
-        <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
-          {CUISINES.map(c => (
-            <button
-              key={c.value}
-              onClick={() => setCuisine(c.value)}
-              className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                cuisine === c.value
-                  ? 'bg-white text-[#1D6B45] font-medium'
-                  : 'bg-white/20 text-white'
-              }`}
-            >
-              {c.label}
-            </button>
-          ))}
+        <div className="relative mt-4 -mx-4 px-4">
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-8">
+            {CUISINES.map(c => (
+              <button
+                key={c.value}
+                onClick={() => setCuisine(c.value)}
+                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
+                  cuisine === c.value
+                    ? 'bg-white text-[#1D6B45] font-medium'
+                    : 'bg-white/20 text-white'
+                }`}
+              >
+                {c.label}
+              </button>
+            ))}
+          </div>
+          <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[#1D6B45] to-transparent pointer-events-none"></div>
         </div>
       </div>
 
@@ -112,8 +115,8 @@ export default function TraiteurPage() {
                           </span>
                         ))}
                       </div>
-                      <span className="text-[#1D6B45] text-sm font-medium">
-                        {traiteur.dishes?.length || 0} plats →
+                      <span className="text-[#1D6B45] text-sm font-medium shrink-0 whitespace-nowrap ml-2">
+                        {traiteur.dishes?.length || 0} plat{(traiteur.dishes?.length || 0) > 1 ? 's' : ''} →
                       </span>
                     </div>
                   </div>

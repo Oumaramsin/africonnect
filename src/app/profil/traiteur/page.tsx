@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { MapPin } from 'lucide-react'
+import { MapPin, User, Utensils, Eye } from 'lucide-react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
 
@@ -104,6 +104,10 @@ export default function TraiteurEspacePage() {
   async function handleAddDish() {
     if (!newDish.name || !newDish.price || !newDish.cuisine_type) {
       setError('Remplis tous les champs obligatoires'); return
+    }
+    
+    if (parseFloat(newDish.price) < 0) {
+      setError('Le prix ne peut pas être négatif'); return
     }
     setSavingDish(true); setError(null)
 
@@ -301,7 +305,7 @@ export default function TraiteurEspacePage() {
               className={`px-4 py-2 rounded-full text-sm font-medium transition-all ${
                 view === v ? 'bg-white text-[#1D6B45]' : 'bg-white/20 text-white'
               }`}>
-              {v === 'profil' ? '👤 Mon profil' : `🍽️ Mes plats (${dishes.length})`}
+              {v === 'profil' ? <><User size={16} className="inline mr-1" /> Mon profil</> : <><Utensils size={16} className="inline mr-1" /> Mes plats ({dishes.length})</>}
             </button>
           ))}
         </div>
@@ -364,7 +368,7 @@ export default function TraiteurEspacePage() {
               className="block bg-white rounded-2xl border border-gray-100 p-4 hover:shadow-sm transition-all">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <span className="text-xl">👁️</span>
+                  <Eye size={20} className="text-[#1D6B45]" />
                   <span className="text-sm font-medium text-gray-700">Voir ma page publique</span>
                 </div>
                 <span className="text-gray-400">→</span>
@@ -382,7 +386,7 @@ export default function TraiteurEspacePage() {
 
             {dishes.length === 0 ? (
               <div className="text-center py-12 text-gray-400">
-                <div className="text-4xl mb-3">🍽️</div>
+                <div className="flex justify-center mb-3"><Utensils size={48} className="text-gray-300" /></div>
                 <p>Aucun plat encore</p>
                 <p className="text-sm mt-1">Ajoute ton premier plat !</p>
               </div>

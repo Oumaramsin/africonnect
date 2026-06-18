@@ -101,20 +101,23 @@ export default function GpPage() {
         <p className="text-white/70 text-sm mt-1">Envoie un colis en toute sécurité</p>
 
         {/* Filtres destination */}
-        <div className="flex gap-2 mt-4 overflow-x-auto pb-1">
-          {DESTINATIONS.map(d => (
-            <button
-              key={d.value}
-              onClick={() => setDestination(d.value)}
-              className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                destination === d.value
-                  ? 'bg-white text-[#1D6B45] font-medium'
-                  : 'bg-white/20 text-white'
-              }`}
-            >
-              {d.label}
-            </button>
-          ))}
+        <div className="relative mt-4 -mx-4 px-4">
+          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-8">
+            {DESTINATIONS.map(d => (
+              <button
+                key={d.value}
+                onClick={() => setDestination(d.value)}
+                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
+                  destination === d.value
+                    ? 'bg-white text-[#1D6B45] font-medium'
+                    : 'bg-white/20 text-white'
+                }`}
+              >
+                {d.label}
+              </button>
+            ))}
+          </div>
+          <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[#1D6B45] to-transparent pointer-events-none"></div>
         </div>
       </div>
 

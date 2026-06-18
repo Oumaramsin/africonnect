@@ -90,6 +90,16 @@ export default function GpDetailPage() {
       setError("Poids et description requis");
       return;
     }
+
+    if (parseFloat(form.weight_kg) <= 0) {
+      setError("Le poids doit être supérieur à 0");
+      return;
+    }
+
+    if (form.declared_value && parseFloat(form.declared_value) < 0) {
+      setError("La valeur déclarée ne peut pas être négative");
+      return;
+    }
     setSubmitting(true);
     setError(null);
 
