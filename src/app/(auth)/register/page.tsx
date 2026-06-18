@@ -3,7 +3,7 @@
 import { useState } from 'react'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
-import { Mail, Smartphone } from "lucide-react";
+import { Mail, Smartphone, PartyPopper } from "lucide-react";
 
 type Method = 'email' | 'phone'
 
@@ -78,7 +78,9 @@ export default function RegisterPage() {
   if (success) return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
       <div className="w-full max-w-md text-center">
-        <div className="text-5xl mb-4">🎉</div>
+        <div className="flex justify-center mb-4">
+          <PartyPopper size={48} className="text-[#1D6B45]" />
+        </div>
         <h2 className="text-2xl font-bold text-[#1D6B45] mb-2">
           Compte créé !
         </h2>

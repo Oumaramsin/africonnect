@@ -2,7 +2,7 @@
 
 import { useState} from 'react'
 import { createClient } from '@/lib/supabase'
-import { ChefHat, Plane, Users, Smartphone, MapPin, User, Trash2, Lightbulb, ShieldCheck } from 'lucide-react'
+import { ChefHat, Plane, Users, Smartphone, MapPin, User, Trash2, Lightbulb, ShieldCheck, Calendar, Scale, Banknote, FileText, Info } from 'lucide-react'
 import Link from 'next/link'
 
 type Profile = {
@@ -395,7 +395,7 @@ export default function AdminAfriConnectClient({
 
               <div className="bg-blue-50 border border-blue-200 rounded-xl p-3">
                 <p className="text-xs text-blue-700">
-                  ℹ️ Un mot de passe temporaire sera généré automatiquement.
+                  <Info size={14} className="inline mr-1" /> Un mot de passe temporaire sera généré automatiquement.
                   Si pas d&apos;email, un email fictif sera créé avec le numéro de téléphone.
                 </p>
               </div>
@@ -684,17 +684,17 @@ export default function AdminAfriConnectClient({
 
                         <div className="bg-gray-50 rounded-xl p-3 space-y-1 mb-3">
                           <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <span>📅</span><span>Départ : {formatDate(gp.departure_date)}</span>
+                            <Calendar size={14} className="text-[#1D6B45]" /><span>Départ : {formatDate(gp.departure_date)}</span>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <span>⚖️</span><span>{gp.available_kg} kg disponibles</span>
+                            <Scale size={14} className="text-[#1D6B45]" /><span>{gp.available_kg} kg disponibles</span>
                           </div>
                           <div className="flex items-center gap-2 text-xs text-gray-600">
-                            <span>💰</span><span>{gp.price_per_kg} €/kg</span>
+                            <Banknote size={14} className="text-[#1D6B45]" /><span>{gp.price_per_kg} €/kg</span>
                           </div>
                           {gp.description && (
                             <div className="flex items-center gap-2 text-xs text-gray-600">
-                              <span>📝</span><span>{gp.description}</span>
+                              <FileText size={14} className="text-[#1D6B45]" /><span>{gp.description}</span>
                             </div>
                           )}
                         </div>

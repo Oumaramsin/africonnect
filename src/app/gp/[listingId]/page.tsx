@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { CheckCircle2, MessageSquare, User, MapPin, Lock, Plane, Smartphone, Package } from "lucide-react";
+import { CheckCircle2, MessageSquare, User, MapPin, Lock, Plane, Smartphone, Package, Home } from "lucide-react";
 import { getFlag } from "@/lib/api/gp";
 
 type GpListing = {
@@ -320,7 +320,7 @@ export default function GpDetailPage() {
           )}
           {listing.pickup_address && (
             <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
-              <span>🏠</span>
+              <Home size={16} className="text-[#1D6B45]" />
               <span>{listing.pickup_address}</span>
             </div>
           )}
