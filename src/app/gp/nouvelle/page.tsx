@@ -7,7 +7,7 @@ import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { createClient } from '@/lib/supabase'
 import Link from 'next/link'
-import { Plane, PlaneTakeoff, Package, MapPin, Lock } from "lucide-react";
+import { Plane, PlaneTakeoff, Package, MapPin, Lock, PenLine } from "lucide-react";
 
 const schema = z.object({
   departure_city: z.string().min(2, 'Ville de départ requise'),
@@ -330,7 +330,7 @@ export default function NouvelleAnnoncePage() {
 
           {/* Description */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-1">✍️ Présentation</h2>
+            <h2 className="font-semibold text-gray-800 mb-1 flex items-center"><PenLine size={16} className="inline mr-1" /> Présentation</h2>
             <p className="text-xs text-gray-600 mb-4">
               Décris-toi et tes conditions pour rassurer les expéditeurs
             </p>
