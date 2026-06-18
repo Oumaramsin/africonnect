@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react'
 import { getGpListings, getFlag, getDistance, formatDistance, type GpListing } from '@/lib/api/gp'
 import Link from 'next/link'
+import { createClient } from '@/lib/supabase'
 
 const DESTINATIONS = [
   { label: 'Tout', value: 'tout' },
@@ -14,8 +15,10 @@ const DESTINATIONS = [
 ]
 
 export default function GpPage() {
+  const supabase = createClient();
   const [listings, setListings] = useState<GpListing[]>([])
   const [loading, setLoading] = useState(true)
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [destination, setDestination] = useState('tout')
   const [userLocation, setUserLocation] = useState<{ lat: number; lon: number } | null>(null)
   const [locationLoading, setLocationLoading] = useState(false)
@@ -54,6 +57,18 @@ export default function GpPage() {
     fetchListings()
     return () => { ignore = true }
   }, [destination])
+
+  useEffect(() => {
+    const load = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if (session) {
+        return setIsLoggedIn(true);
+      }
+    };
+    load();
+  }, []);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString('fr-FR', {
@@ -253,14 +268,25 @@ export default function GpPage() {
       </div>
 
       {/* Bouton publier annonce */}
-      <div className="fixed bottom-6 right-4">
-        <Link href="/gp/nouvelle">
-          <button className="bg-[#1D6B45] text-white px-5 py-3 rounded-2xl font-medium shadow-lg hover:bg-[#0F4A30] transition-colors flex items-center gap-2">
-            <span className="text-lg">+</span>
-            Je suis GP
-          </button>
-        </Link>
-      </div>
+      {isLoggedIn ? (
+        <div className="fixed bottom-6 right-4 z-50">
+          <Link href="/gp/nouvelle">
+            <button className="bg-[#1D6B45] text-white px-5 py-3 rounded-2xl font-medium shadow-lg hover:bg-[#0F4A30] transition-colors flex items-center gap-2">
+              <span className="text-lg">+</span>
+              Je suis GP
+            </button>
+          </Link>
+        </div>
+      ) : (
+        <div className="fixed bottom-6 right-4 z-50">
+          <Link href="/login">
+            <button className="bg-white border-2 border-dashed border-[#1D6B45]/40 text-[#1D6B45] px-5 py-3 rounded-2xl font-medium shadow-lg hover:bg-[#1D6B45]/5 transition-colors flex items-center gap-2">
+              <span className="text-lg">🔒</span>
+              Devenir GP
+            </button>
+          </Link>
+        </div>
+      )}
     </div>
   )
 }

@@ -39,7 +39,7 @@ export default function RootLayout({
           flexDirection: 'column',
           overflow: 'hidden',
         }}>
-          <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden' }}>
+          <main style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', paddingBottom: "100px" }}>
             {children}
           </main>
           <div style={{ width: '100%', maxWidth: '430px' }}>

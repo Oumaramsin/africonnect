@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase'
+import { useRouter } from 'next/navigation'
 
 type CommandeTraiteur = {
   id: string
@@ -69,6 +70,8 @@ export default function CommandesPage() {
   const [isTraiteur, setIsTraiteur] = useState(false)
   const [isGp, setIsGp] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const router = useRouter();
   const [messageRefus, setMessageRefus] = useState<Record<string, string>>({})
 
   // Envoyées
@@ -80,6 +83,20 @@ export default function CommandesPage() {
   const [commandesRecues, setCommandesRecues] = useState<CommandeTraiteur[]>([])
   const [ordersRecues, setOrdersRecues] = useState<OrderPlat[]>([])
   const [gpRecues, setGpRecues] = useState<GpRequest[]>([])
+
+  useEffect(() => {
+    const load = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if(session){
+        setIsLoggedIn(true);
+      }else{
+        router.push('/login')
+      }
+    };
+    load();
+  }, []);
 
   useEffect(() => {
     const load = async () => { await loadAll() }

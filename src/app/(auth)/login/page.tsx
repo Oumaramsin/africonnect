@@ -149,6 +149,13 @@ export default function LoginPage() {
             <Link href="/register" className="text-[#1D6B45] font-medium hover:underline">
               {"S'inscrire gratuitement"}
             </Link>
+            
+          </p>
+          <p className="text-center text-sm text-gray-500 mt-6">
+            <Link href="/dashboard" className="text-[#1D6B45] font-bold hover:underline">
+              {"Continuer en tant qu'invité"}
+            </Link>
+            
           </p>
 
         </div>

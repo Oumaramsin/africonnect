@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
@@ -44,7 +44,22 @@ export default function NouvelleAnnoncePage() {
   const supabase = createClient()
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [success, setSuccess] = useState(false)
+
+   useEffect(() => {
+    const load = async () => {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      if(!session){
+        router.push('/login')
+      }else{
+        setIsLoggedIn(true)
+      }
+    };
+    load();
+  })
 
   const { register, handleSubmit, formState: { errors } } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -113,6 +128,14 @@ export default function NouvelleAnnoncePage() {
       </div>
     </div>
   )
+
+  if (!isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+        <div className="text-[#1D6B45] text-lg font-medium">Chargement...</div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] pb-36">
