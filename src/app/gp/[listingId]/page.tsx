@@ -4,7 +4,17 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { CheckCircle2, MessageSquare, User, MapPin, Lock, Plane, Smartphone, Package, Home } from "lucide-react";
+import {
+  CheckCircle2,
+  MessageSquare,
+  User,
+  MapPin,
+  Lock,
+  Plane,
+  Smartphone,
+  Package,
+  Home,
+} from "lucide-react";
 import { getFlag } from "@/lib/api/gp";
 
 type GpListing = {
@@ -51,6 +61,7 @@ export default function GpDetailPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
@@ -67,7 +78,7 @@ export default function GpDetailPage() {
       const {
         data: { session },
       } = await supabase.auth.getSession();
-      if(session){
+      if (session) {
         setIsLoggedIn(true);
       }
       const { data } = await supabase
@@ -75,8 +86,8 @@ export default function GpDetailPage() {
         .select("*, profiles(full_name, phone, whatsapp)")
         .eq("id", listingId as string)
         .single();
-        setListing(data);
-        setLoading(false);
+      setListing(data);
+      setLoading(false);
     };
     load();
   }, [listingId]);
@@ -85,7 +96,7 @@ export default function GpDetailPage() {
     ? parseFloat(form.weight_kg || "0") * listing.price_per_kg
     : 0;
 
-  const handleSubmit = async () => {
+  const handlePreSubmit = async () => {
     if (!form.weight_kg || !form.content_desc) {
       setError("Poids et description requis");
       return;
@@ -100,9 +111,10 @@ export default function GpDetailPage() {
       setError("La valeur déclarée ne peut pas être négative");
       return;
     }
-    setSubmitting(true);
+    setShowConfirmModal(true);
     setError(null);
-
+  };
+  const confirmOrder = async () => {
     const {
       data: { session },
     } = await supabase.auth.getSession();
@@ -148,7 +160,7 @@ export default function GpDetailPage() {
         }),
       });
     }
-
+    setSubmitting(true);
     setSuccess(true);
     setSubmitting(false);
   };
@@ -178,7 +190,9 @@ export default function GpDetailPage() {
     return (
       <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
-          <div className="flex justify-center mb-4"><CheckCircle2 size={64} className="text-[#1D6B45]" /></div>
+          <div className="flex justify-center mb-4">
+            <CheckCircle2 size={64} className="text-[#1D6B45]" />
+          </div>
           <h2 className="text-2xl font-bold text-[#1D6B45] mb-2">
             Demande envoyée !
           </h2>
@@ -199,7 +213,8 @@ export default function GpDetailPage() {
               }}
               className="w-full bg-[#25D366] text-white py-3 rounded-2xl font-semibold text-sm hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2 mb-4"
             >
-              <MessageSquare size={16} className="inline mr-2" /> Contacter le GP sur WhatsApp
+              <MessageSquare size={16} className="inline mr-2" /> Contacter le
+              GP sur WhatsApp
             </button>
           )}
           <Link
@@ -229,7 +244,8 @@ export default function GpDetailPage() {
               {getFlag(listing.arrival_country)} {listing.arrival_city}
             </h1>
             <p className="text-white/70 text-sm mt-1 flex items-center">
-              <Plane size={16} className="inline mr-1" /> Départ le {formatDate(listing.departure_date)}
+              <Plane size={16} className="inline mr-1" /> Départ le{" "}
+              {formatDate(listing.departure_date)}
             </p>
           </div>
           {listing.flight_type && (
@@ -250,7 +266,8 @@ export default function GpDetailPage() {
         {/* Infos GP */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h2 className="font-semibold text-gray-800 mb-4">
-            <User size={16} className="inline mr-1 text-[#1D6B45]" /> À propos du GP
+            <User size={16} className="inline mr-1 text-[#1D6B45]" /> À propos
+            du GP
           </h2>
           <div className="flex items-center gap-4">
             <div className="w-14 h-14 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xl font-bold">
@@ -262,7 +279,8 @@ export default function GpDetailPage() {
               </p>
               {listing.profiles?.phone && (
                 <p className="text-sm text-gray-500 mt-0.5 flex items-center">
-                  <Smartphone size={16} className="inline mr-1" /> {listing.profiles.phone}
+                  <Smartphone size={16} className="inline mr-1" />{" "}
+                  {listing.profiles.phone}
                 </p>
               )}
               {listing.review_count > 0 && (
@@ -293,7 +311,8 @@ export default function GpDetailPage() {
         {/* Détails annonce */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
           <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-            <Package size={16} className="inline mr-1" /> Détails de l&apos;annonce
+            <Package size={16} className="inline mr-1" /> Détails de
+            l&apos;annonce
           </h2>
           <div className="grid grid-cols-2 gap-4">
             <div className="bg-gray-50 rounded-xl p-3 text-center">
@@ -335,118 +354,120 @@ export default function GpDetailPage() {
         {isLoggedIn ? (
           !showForm ? (
             <button
-            onClick={() => setShowForm(true)}
-            className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors"
-          >
-            Envoyer un colis avec ce GP
-          </button>
-        ) : (
-          <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
-            <div className="flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800">Ma demande</h2>
+              onClick={() => setShowForm(true)}
+              className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors"
+            >
+              Envoyer un colis avec ce GP
+            </button>
+          ) : (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="font-semibold text-gray-800">Ma demande</h2>
+                <button
+                  onClick={() => setShowForm(false)}
+                  className="text-gray-600 hover:text-gray-600 text-xl leading-none"
+                >
+                  &#x2715;
+                </button>
+              </div>
+
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+                  {error}
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Poids du colis (kg) *
+                </label>
+                <input
+                  type="number"
+                  step="0.1"
+                  min="0.1"
+                  max={listing.available_kg}
+                  value={form.weight_kg}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, weight_kg: e.target.value }))
+                  }
+                  placeholder={`Max ${listing.available_kg} kg`}
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description du contenu *
+                </label>
+                <textarea
+                  rows={2}
+                  value={form.content_desc}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, content_desc: e.target.value }))
+                  }
+                  placeholder="Ex: vêtements, chaussures, médicaments..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Valeur déclarée (€)
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  value={form.declared_value}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, declared_value: e.target.value }))
+                  }
+                  placeholder="Ex: 100"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) =>
+                    setForm((p) => ({ ...p, notes: e.target.value }))
+                  }
+                  placeholder="Instructions particulières, fragile..."
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
+                />
+              </div>
+
+              {/* Total */}
+              {form.weight_kg && (
+                <div className="bg-[#E8F5E9] rounded-xl p-4 flex justify-between items-center">
+                  <span className="text-sm font-medium text-[#1D6B45]">
+                    Total estimé
+                  </span>
+                  <span className="text-xl font-bold text-[#1D6B45]">
+                    {total.toFixed(2)} €
+                  </span>
+                </div>
+              )}
+
               <button
-                onClick={() => setShowForm(false)}
-                className="text-gray-600 hover:text-gray-600 text-xl leading-none"
+                onClick={handlePreSubmit}
+                disabled={submitting}
+                className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
               >
-                &#x2715;
+                {submitting ? "Envoi..." : "Envoyer ma demande"}
               </button>
             </div>
-
-            {error && (
-              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-                {error}
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Poids du colis (kg) *
-              </label>
-              <input
-                type="number"
-                step="0.1"
-                min="0.1"
-                max={listing.available_kg}
-                value={form.weight_kg}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, weight_kg: e.target.value }))
-                }
-                placeholder={`Max ${listing.available_kg} kg`}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Description du contenu *
-              </label>
-              <textarea
-                rows={2}
-                value={form.content_desc}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, content_desc: e.target.value }))
-                }
-                placeholder="Ex: vêtements, chaussures, médicaments..."
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Valeur déclarée (€)
-              </label>
-              <input
-                type="number"
-                min="0"
-                value={form.declared_value}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, declared_value: e.target.value }))
-                }
-                placeholder="Ex: 100"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Notes
-              </label>
-              <textarea
-                rows={2}
-                value={form.notes}
-                onChange={(e) =>
-                  setForm((p) => ({ ...p, notes: e.target.value }))
-                }
-                placeholder="Instructions particulières, fragile..."
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
-              />
-            </div>
-
-            {/* Total */}
-            {form.weight_kg && (
-              <div className="bg-[#E8F5E9] rounded-xl p-4 flex justify-between items-center">
-                <span className="text-sm font-medium text-[#1D6B45]">
-                  Total estimé
-                </span>
-                <span className="text-xl font-bold text-[#1D6B45]">
-                  {total.toFixed(2)} €
-                </span>
-              </div>
-            )}
-
-            <button
-              onClick={handleSubmit}
-              disabled={submitting}
-              className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
-            >
-              {submitting ? "Envoi..." : "Envoyer ma demande"}
-            </button>
-          </div>
           )
         ) : (
           <Link href="/login" className="block">
             <div className="w-full bg-gray-100 border-2 border-dashed border-[#1D6B45]/30 rounded-2xl py-5 px-4 text-center hover:bg-[#1D6B45]/5 hover:border-[#1D6B45]/60 transition-all group">
-              <div className="flex justify-center mb-2"><Lock size={24} className="text-[#1D6B45]" /></div>
+              <div className="flex justify-center mb-2">
+                <Lock size={24} className="text-[#1D6B45]" />
+              </div>
               <p className="font-semibold text-[#1D6B45] text-sm group-hover:underline">
                 Se connecter pour envoyer un colis
               </p>
@@ -457,6 +478,39 @@ export default function GpDetailPage() {
           </Link>
         )}
       </div>
+      {/* Pop-up (Modale) de confirmation */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">
+              Confirmer l'envoi
+            </h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              Es-tu sûr(e) de vouloir envoyer cette demande pour <span className="font-bold">{form.weight_kg} kg</span> d'un montant estimé à <span className="font-bold text-[#1D6B45]">{total.toFixed(2)} €</span> ?
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={submitting}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmOrder}
+                disabled={submitting}
+                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-medium text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center"
+              >
+                {submitting ? "Envoi..." : "Oui, envoyer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
+    
   );
 }

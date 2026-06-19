@@ -39,6 +39,8 @@ export default function CheckoutPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingData, setPendingData] = useState<FormData>();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -52,6 +54,10 @@ export default function CheckoutPage() {
     defaultValues: { delivery_type: "delivery" },
   });
 
+  const handlePreSubmit = (data:FormData) => {
+    setPendingData(data);
+    setShowConfirmModal(true)
+  }
   const deliveryType = watch("delivery_type");
 
   useEffect(() => {
@@ -221,7 +227,7 @@ export default function CheckoutPage() {
         </div>
 
         {/* Formulaire livraison */}
-        <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
+        <form onSubmit={handleSubmit(handlePreSubmit)} className="space-y-4">
           {/* Mode de livraison */}
           <div className="bg-white rounded-2xl border border-gray-100 p-5">
             <h2 className="font-semibold text-gray-800 mb-4">
@@ -383,6 +389,39 @@ export default function CheckoutPage() {
           </button>
         </form>
       </div>
+
+      {/* Pop-up (Modale) de confirmation */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">
+              Confirmer la commande
+            </h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              Es-tu sûr(e) de vouloir confirmer cette commande d'un montant total de <span className="font-bold text-[#1D6B45]">{total.toFixed(2)} €</span> ?
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={loading}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => pendingData && onSubmit(pendingData)}
+                disabled={loading}
+                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-medium text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center"
+              >
+                {loading ? "En cours..." : "Oui, confirmer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

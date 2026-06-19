@@ -68,12 +68,17 @@ type Tab = 'envoyees' | 'recues'
 export default function CommandesPage() {
   const supabase = createClient()
   const [tab, setTab] = useState<Tab>('envoyees')
+  const [serviceFilter, setServiceFilter] = useState<'tout' | 'traiteur' | 'gp'>('tout')
   const [isTraiteur, setIsTraiteur] = useState(false)
   const [isGp, setIsGp] = useState(false)
   const [loading, setLoading] = useState(true)
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const router = useRouter();
   const [messageRefus, setMessageRefus] = useState<Record<string, string>>({})
+  const [confirmAction, setConfirmAction] = useState<{
+    type: 'accepter_traiteur' | 'refuser_traiteur' | 'accepter_order' | 'refuser_order' | 'accepter_gp' | 'refuser_gp',
+    item: any
+  } | null>(null)
 
   // Envoyées
   const [commandesEnvoyees, setCommandesEnvoyees] = useState<CommandeTraiteur[]>([])
@@ -390,6 +395,23 @@ export default function CommandesPage() {
             </button>
           )}
         </div>
+
+        {/* Sous-filtres Traiteur / GP */}
+        <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
+          {(['tout', 'traiteur', 'gp'] as const).map(f => (
+            <button
+              key={f}
+              onClick={() => setServiceFilter(f)}
+              className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all border border-transparent ${
+                serviceFilter === f
+                  ? 'bg-white text-[#1D6B45]'
+                  : 'bg-white/20 text-white hover:bg-white/30 border-white/10'
+              }`}
+            >
+              {f === 'tout' ? 'Tout voir' : f === 'traiteur' ? 'Traiteur & Plats' : 'GP Colis'}
+            </button>
+          ))}
+        </div>
       </div>
 
       <div className="px-4 py-6 max-w-2xl mx-auto space-y-6">
@@ -398,7 +420,7 @@ export default function CommandesPage() {
         {tab === 'envoyees' && (
           <>
             {/* Commandes traiteur */}
-            {commandesEnvoyees.length > 0 && (
+            {(serviceFilter === 'tout' || serviceFilter === 'traiteur') && commandesEnvoyees.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   <ChefHat size={18} className="inline mr-1" /> Commandes traiteur
@@ -463,7 +485,7 @@ export default function CommandesPage() {
             )}
 
             {/* Commandes plats */}
-            {ordersEnvoyees.length > 0 && (
+            {(serviceFilter === 'tout' || serviceFilter === 'traiteur') && ordersEnvoyees.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   <ShoppingCart size={18} className="inline mr-1" /> Commandes plats
@@ -527,7 +549,7 @@ export default function CommandesPage() {
             )}
 
             {/* Demandes GP */}
-            {gpEnvoyees.length > 0 && (
+            {(serviceFilter === 'tout' || serviceFilter === 'gp') && gpEnvoyees.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   <Plane size={18} className="inline mr-1" /> Demandes GP colis
@@ -572,7 +594,9 @@ export default function CommandesPage() {
               </div>
             )}
 
-            {commandesEnvoyees.length === 0 && ordersEnvoyees.length === 0 && gpEnvoyees.length === 0 && (
+            {((serviceFilter === 'tout' && commandesEnvoyees.length === 0 && ordersEnvoyees.length === 0 && gpEnvoyees.length === 0) ||
+              (serviceFilter === 'traiteur' && commandesEnvoyees.length === 0 && ordersEnvoyees.length === 0) ||
+              (serviceFilter === 'gp' && gpEnvoyees.length === 0)) && (
               <div className="text-center py-16">
                 <div className="flex justify-center mb-3"><Package size={48} className="text-gray-300" /></div>
                 <p className="text-gray-500">{"Vous n'avez pas encore passé de commande"}</p>
@@ -585,7 +609,7 @@ export default function CommandesPage() {
         {tab === 'recues' && (
           <>
             {/* Commandes traiteur reçues */}
-            {isTraiteur && commandesRecues.length > 0 && (
+            {isTraiteur && (serviceFilter === 'tout' || serviceFilter === 'traiteur') && commandesRecues.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   <ChefHat size={18} className="inline mr-1" /> Commandes traiteur reçues
@@ -645,13 +669,13 @@ export default function CommandesPage() {
                           />
                           <div className="flex gap-3">
                             <button
-                              onClick={() => handleAccepterTraiteur(commande)}
+                              onClick={() => setConfirmAction({ type: 'accepter_traiteur', item: commande })}
                               className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                             >
                               <CheckCircle2 size={16} className="inline mr-2" /> Accepter
                             </button>
                             <button
-                              onClick={() => handleRefuserTraiteur(commande)}
+                              onClick={() => setConfirmAction({ type: 'refuser_traiteur', item: commande })}
                               className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
                             >
                               <XCircle size={16} className="inline mr-2" /> Refuser
@@ -678,7 +702,7 @@ export default function CommandesPage() {
             )}
 
             {/* Orders plats reçues */}
-            {isTraiteur && ordersRecues.length > 0 && (
+            {isTraiteur && (serviceFilter === 'tout' || serviceFilter === 'traiteur') && ordersRecues.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   <ShoppingCart size={18} className="inline mr-1" /> Commandes plats reçues
@@ -721,13 +745,13 @@ export default function CommandesPage() {
                       {order.status === 'pending' && (
                         <div className="flex gap-3">
                           <button
-                            onClick={() => handleAccepterOrder(order)}
+                            onClick={() => setConfirmAction({ type: 'accepter_order', item: order })}
                             className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                           >
                             <CheckCircle2 size={16} className="inline mr-2" /> Accepter
                           </button>
                           <button
-                            onClick={() => handleRefuserOrder(order)}
+                            onClick={() => setConfirmAction({ type: 'refuser_order', item: order })}
                             className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
                           >
                             <XCircle size={16} className="inline mr-2" /> Refuser
@@ -753,7 +777,7 @@ export default function CommandesPage() {
             )}
 
             {/* Demandes GP reçues */}
-            {isGp && gpRecues.length > 0 && (
+            {isGp && (serviceFilter === 'tout' || serviceFilter === 'gp') && gpRecues.length > 0 && (
               <div>
                 <h2 className="text-sm font-semibold text-gray-500 uppercase tracking-wider mb-3">
                   <Plane size={18} className="inline mr-1" /> Demandes GP reçues
@@ -810,13 +834,13 @@ export default function CommandesPage() {
                           />
                           <div className="flex gap-3">
                             <button
-                              onClick={() => handleAccepterGp(request)}
+                              onClick={() => setConfirmAction({ type: 'accepter_gp', item: request })}
                               className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                             >
                               <CheckCircle2 size={16} className="inline mr-2" /> Accepter
                             </button>
                             <button
-                              onClick={() => handleRefuserGp(request)}
+                              onClick={() => setConfirmAction({ type: 'refuser_gp', item: request })}
                               className="flex-1 bg-red-50 text-red-600 border border-red-200 py-2.5 rounded-xl text-sm font-semibold hover:bg-red-100 transition-colors"
                             >
                               <XCircle size={16} className="inline mr-2" /> Refuser
@@ -842,12 +866,15 @@ export default function CommandesPage() {
               </div>
             )}
 
-            {(isTraiteur || isGp) && commandesRecues.length === 0 && ordersRecues.length === 0 && gpRecues.length === 0 && (
-              <div className="text-center py-16">
-                <div className="text-5xl mb-3">📥</div>
-                <p className="text-gray-500">Aucune demande reçue pour le moment</p>
-              </div>
-            )}
+            {(isTraiteur || isGp) &&
+              ((serviceFilter === 'tout' && commandesRecues.length === 0 && ordersRecues.length === 0 && gpRecues.length === 0) ||
+                (serviceFilter === 'traiteur' && commandesRecues.length === 0 && ordersRecues.length === 0) ||
+                (serviceFilter === 'gp' && gpRecues.length === 0)) && (
+                <div className="text-center py-16">
+                  <div className="text-5xl mb-3">📥</div>
+                  <p className="text-gray-500">Aucune demande reçue pour le moment</p>
+                </div>
+              )}
 
             {!isTraiteur && !isGp && (
               <div className="text-center py-16">
@@ -857,8 +884,51 @@ export default function CommandesPage() {
             )}
           </>
         )}
-
       </div>
+
+      {/* Pop-up (Modale) de confirmation */}
+      {confirmAction && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">
+              {confirmAction.type.startsWith('accepter') ? 'Confirmer l\'acceptation' : 'Confirmer le refus'}
+            </h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              Es-tu sûr(e) de vouloir {confirmAction.type.startsWith('accepter') ? 'accepter' : 'refuser'} cette demande ?
+              {confirmAction.type.startsWith('refuser') && ' Cette action est irréversible et un message sera envoyé au client.'}
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setConfirmAction(null)}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  switch (confirmAction.type) {
+                    case 'accepter_traiteur': handleAccepterTraiteur(confirmAction.item); break;
+                    case 'refuser_traiteur': handleRefuserTraiteur(confirmAction.item); break;
+                    case 'accepter_order': handleAccepterOrder(confirmAction.item); break;
+                    case 'refuser_order': handleRefuserOrder(confirmAction.item); break;
+                    case 'accepter_gp': handleAccepterGp(confirmAction.item); break;
+                    case 'refuser_gp': handleRefuserGp(confirmAction.item); break;
+                  }
+                  setConfirmAction(null);
+                }}
+                className={`flex-1 py-3 rounded-xl text-white font-medium text-sm transition-colors flex items-center justify-center ${
+                  confirmAction.type.startsWith('accepter') ? 'bg-[#1D6B45] hover:bg-[#0F4A30]' : 'bg-red-600 hover:bg-red-700'
+                }`}
+              >
+                Oui, {confirmAction.type.startsWith('accepter') ? 'accepter' : 'refuser'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

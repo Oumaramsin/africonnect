@@ -38,6 +38,7 @@ export default function CommandeForm({
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+    const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({
     date_evenement: "",
@@ -63,7 +64,7 @@ export default function CommandeForm({
     setForm((prev) => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = async () => {
+  const handlePreSubmit = async () => {
     if (!form.date_evenement || !form.nb_personnes || !form.adresse) {
       setError("Merci de remplir les champs obligatoires");
       return;
@@ -80,6 +81,11 @@ export default function CommandeForm({
       return;
     }
 
+    setError(null);
+    setShowConfirmModal(true);
+  };
+
+  const confirmOrder = async () => {
     setLoading(true);
     setError(null);
 
@@ -181,6 +187,7 @@ export default function CommandeForm({
     }
 
     return (
+      <>
       <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-semibold text-gray-800">Passer une commande</h3>
@@ -275,7 +282,7 @@ export default function CommandeForm({
           </div>
 
           <button
-            onClick={handleSubmit}
+            onClick={handlePreSubmit}
             disabled={loading}
             className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
           >
@@ -289,7 +296,42 @@ export default function CommandeForm({
           )}
         </div>
       </div>
+      
+      {/* Pop-up (Modale) de confirmation */}
+      {showConfirmModal && (
+        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
+            <h3 className="text-lg font-bold text-gray-800 mb-2">
+              Envoyer la demande
+            </h3>
+            <p className="text-gray-600 mb-6 text-sm">
+              Es-tu sûr(e) de vouloir envoyer cette demande de prestation pour <span className="font-bold">{form.nb_personnes} personnes</span> le <span className="font-bold">{new Date(form.date_evenement).toLocaleDateString("fr-FR")}</span> ?
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                type="button"
+                onClick={() => setShowConfirmModal(false)}
+                disabled={loading}
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={confirmOrder}
+                disabled={loading}
+                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-medium text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center"
+              >
+                {loading ? "Envoi..." : "Oui, envoyer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+      </>
     );
+    
   } else {
     return (
       <Link href="/login" className="block">
