@@ -283,7 +283,7 @@ export default function CommandeForm({
 
           <button
             onClick={handlePreSubmit}
-            disabled={loading}
+            disabled={loading || !form.date_evenement || !form.nb_personnes || !form.adresse}
             className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
           >
             {loading ? "Envoi en cours..." : "Envoyer ma demande"}

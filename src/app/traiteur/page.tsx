@@ -92,19 +92,29 @@ export default function TraiteurPage() {
             {traiteurs.map(traiteur => (
               <Link key={traiteur.id} href={`/traiteur/${traiteur.id}`}>
                 <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
-                  <div className="h-36 bg-gradient-to-r from-[#E8F5E9] to-[#C8E6C9] flex items-center justify-center">
-                    <span className="text-5xl">
-                      {CUISINE_EMOJI[traiteur.cuisine_type?.[0]] || <ChefHat size={48} className="text-[#1D6B45]" />}
-                    </span>
+                  <div className="h-36 bg-gradient-to-r from-[#E8F5E9] to-[#C8E6C9] flex items-center justify-center overflow-hidden relative">
+                    {traiteur.image_url ? (
+                      <img src={traiteur.image_url} alt={traiteur.name} className="w-full h-full object-cover" />
+                    ) : (
+                      <span className="text-5xl">
+                        {CUISINE_EMOJI[traiteur.cuisine_type?.[0]] || <ChefHat size={48} className="text-[#1D6B45]" />}
+                      </span>
+                    )}
                   </div>
                   <div className="p-4">
                     <div className="flex justify-between items-start mb-1">
                       <h2 className="font-semibold text-gray-800 text-lg">{traiteur.name}</h2>
-                      <div className="flex items-center gap-1 bg-[#E8F5E9] px-2 py-1 rounded-lg">
-                        <Star size={12} className="text-yellow-500" fill="currentColor" />
-                        <span className="text-[#1D6B45] text-xs font-medium">{traiteur.rating}</span>
-                        <span className="text-gray-400 text-xs">({traiteur.review_count})</span>
-                      </div>
+                      {traiteur.review_count && traiteur.review_count > 0 ? (
+                        <div className="flex items-center gap-1 bg-[#E8F5E9] px-2 py-1 rounded-lg">
+                          <Star size={12} className="text-yellow-500" fill="currentColor" />
+                          <span className="text-[#1D6B45] text-xs font-medium">{traiteur.rating}</span>
+                          <span className="text-gray-400 text-xs">({traiteur.review_count})</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1 bg-gray-100 px-2 py-1 rounded-lg">
+                          <span className="text-gray-500 text-xs font-medium">Pas d'avis</span>
+                        </div>
+                      )}
                     </div>
                     <p className="text-gray-500 text-sm mb-3 line-clamp-2">{traiteur.bio}</p>
                     <div className="flex items-center justify-between">
@@ -116,7 +126,11 @@ export default function TraiteurPage() {
                         ))}
                       </div>
                       <span className="text-[#1D6B45] text-sm font-medium shrink-0 whitespace-nowrap ml-2">
-                        {traiteur.dishes?.length || 0} plat{(traiteur.dishes?.length || 0) > 1 ? 's' : ''} →
+                        {traiteur.dishes?.filter((d) => d.is_available).length || 0} plat
+                        {(traiteur.dishes?.filter((d) => d.is_available).length || 0) > 1
+                          ? "s"
+                          : ""}{" "}
+                        →
                       </span>
                     </div>
                   </div>

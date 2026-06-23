@@ -59,6 +59,10 @@ export default function CheckoutPage() {
     setShowConfirmModal(true)
   }
   const deliveryType = watch("delivery_type");
+  const deliveryDate = watch("delivery_date");
+  const deliveryTime = watch("delivery_time");
+  const deliveryAddress = watch("delivery_address");
+  const isFormValid = deliveryDate && deliveryTime && (deliveryType === "pickup" || (deliveryType === "delivery" && deliveryAddress));
 
   useEffect(() => {
     const load = async () => {
@@ -375,7 +379,7 @@ export default function CheckoutPage() {
           {/* Bouton commander */}
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !isFormValid}
             className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-base hover:bg-[#0F4A30] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
           >
             {loading ? (

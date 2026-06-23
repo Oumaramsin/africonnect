@@ -20,8 +20,10 @@ export type Dish = {
   description: string
   price: number
   image_url: string | null
+  image_urls?: string[]
   cuisine_type: string
   is_available: boolean
+  is_archived?: boolean
 }
 
 export type CartItem = {
@@ -47,7 +49,16 @@ export async function getTraiteurs(cuisine?: string) {
 
   const { data, error } = await query
   if (error) throw error
-  return data as Traiteur[]
+
+  // Filter out archived dishes
+  const traiteurs = data as Traiteur[]
+  traiteurs.forEach(t => {
+    if (t.dishes) {
+      t.dishes = t.dishes.filter(d => !d.is_archived)
+    }
+  })
+
+  return traiteurs
 }
 
 // Récupère un traiteur par son id
@@ -61,7 +72,13 @@ export async function getTraiteur(id: string) {
     .single()
 
   if (error) throw error
-  return data as Traiteur
+
+  const traiteur = data as Traiteur
+  if (traiteur.dishes) {
+    traiteur.dishes = traiteur.dishes.filter(d => !d.is_archived)
+  }
+
+  return traiteur
 }
 
 // Crée une commande
