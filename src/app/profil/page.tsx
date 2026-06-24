@@ -247,7 +247,7 @@ export default function ProfilPage() {
                 <span className="text-gray-400 text-sm">→</span>
             </Link>
 
-            <Link href="/gp/nouvelle" className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors border-t border-gray-50">
+            <Link href="profil/gp" className="flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors border-t border-gray-50">
                 <div className="flex items-center gap-3">
                 <Plane size={20} className="text-[#3B82F6]" />
                 <div>

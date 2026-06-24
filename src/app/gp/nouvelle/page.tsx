@@ -478,9 +478,18 @@ export default function NouvelleAnnoncePage() {
               Publier l'annonce
             </h3>
             <p className="text-gray-600 mb-6 text-sm">
-              Es-tu sûr(e) de vouloir publier cette annonce pour ton trajet de <span className="font-bold">{pendingData.departure_city}</span> vers <span className="font-bold">{pendingData.arrival_city}</span> le <span className="font-bold">{new Date(pendingData.departure_date).toLocaleDateString("fr-FR")}</span> ?
+              Es-tu sûr(e) de vouloir publier cette annonce pour ton trajet de{" "}
+              <span className="font-bold">{pendingData.departure_city}</span>{" "}
+              vers <span className="font-bold">{pendingData.arrival_city}</span>{" "}
+              le{" "}
+              <span className="font-bold">
+                {new Date(pendingData.departure_date).toLocaleDateString(
+                  "fr-FR",
+                )}
+              </span>{" "}
+              ?
             </p>
-            
+
             <div className="flex gap-3">
               <button
                 type="button"

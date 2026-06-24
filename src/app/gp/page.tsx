@@ -183,7 +183,7 @@ export default function GpPage() {
                 : null
 
               return (
-                <Link key={listing.id} href={`/gp/${listing.id}`}>
+                <Link key={listing.id} href={`/gp/${listing.id}`} className="block">
                   <div className="bg-white rounded-2xl border border-gray-100 p-5 hover:shadow-md transition-shadow">
 
                     {/* Route */}
