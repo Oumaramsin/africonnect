@@ -2,6 +2,8 @@ import { db } from "../db";
 import {
   CreateCommandeTraiteurInput,
   CreateDishesOrderInput,
+  CreateTraiteurProfileInput,
+  CreateDishInput,
 } from "../utils/types";
 
 export const getActiveTraiteur = async () => {
@@ -24,9 +26,7 @@ export const getTraiteurDishes = async (id: string) => {
   });
 };
 
-export const createOrderTraiteur = async (
-  commande: CreateCommandeTraiteurInput,
-) => {
+export const createOrderTraiteur = async (commande: CreateCommandeTraiteurInput) => {
   return await db.commandeTraiteur.create({
     data: {
       ...commande,
@@ -38,7 +38,7 @@ export const createOrderTraiteur = async (
 export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
   const total = commande.items.reduce(
     (sum, item) => sum + item.unit_price * item.quantity,
-    0,
+    0
   );
 
   return await db.order.create({
@@ -63,3 +63,124 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
     },
   });
 };
+
+
+export const getTraiteurByUserId = async (userId: string) => {
+  return await db.traiteur.findFirst({
+    where: { user_id: userId },
+    include: {
+      dishes: {
+        where: { is_archived: false },
+        orderBy: { created_at: "desc" },
+      },
+    },
+  });
+};
+
+export const createTraiteurProfile = async (
+  userId: string,
+  data: CreateTraiteurProfileInput
+) => {
+  return await db.$transaction(async (tx) => {
+    const traiteur = await tx.traiteur.create({
+      data: {
+        user_id: userId,
+        name: data.name,
+        bio: data.bio,
+        cuisine_type: data.cuisine_type,
+        delivery_zones: data.delivery_zones,
+        whatsapp: data.whatsapp || null,
+        image_url: data.image_url || null,
+        is_active: true,
+      },
+    });
+
+    await tx.profile.update({
+      where: { id: userId },
+      data: { role: "traiteur" },
+    });
+
+    return traiteur;
+  });
+};
+
+export const updateTraiteurProfile = async (
+  userId: string,
+  data: CreateTraiteurProfileInput
+) => {
+  const traiteur = await getTraiteurByUserId(userId);
+  if (!traiteur) {
+    throw new Error("Profil traiteur introuvable");
+  }
+
+  return await db.traiteur.update({
+    where: { id: traiteur.id },
+    data: {
+      name: data.name,
+      bio: data.bio,
+      cuisine_type: data.cuisine_type,
+      delivery_zones: data.delivery_zones,
+      whatsapp: data.whatsapp || null,
+      image_url: data.image_url || null,
+    },
+  });
+};
+
+export const addTraiteurDish = async (
+  traiteurId: string,
+  data: CreateDishInput
+) => {
+  return await db.dish.create({
+    data: {
+      traiteur_id: traiteurId,
+      name: data.name,
+      description: data.description,
+      price: data.price,
+      cuisine_type: data.cuisine_type,
+      image_urls: data.image_urls || [],
+      is_available: data.is_available ?? true,
+    },
+  });
+};
+
+export const updateTraiteurDish = async (
+  dishId: string,
+  traiteurId: string,
+  data: Partial<CreateDishInput>
+) => {
+  const dish = await db.dish.findFirst({
+    where: { id: dishId, traiteur_id: traiteurId },
+  });
+
+  if (!dish) {
+    throw new Error("Plat introuvable ou non autorisé");
+  }
+
+  return await db.dish.update({
+    where: { id: dishId },
+    data: {
+      name: data.name,
+      description: data.description,
+      price: data.price,
+      cuisine_type: data.cuisine_type,
+      image_urls: data.image_urls,
+      is_available: data.is_available,
+    },
+  });
+};
+
+export const deleteTraiteurDish = async (dishId: string, traiteurId: string) => {
+  const dish = await db.dish.findFirst({
+    where: { id: dishId, traiteur_id: traiteurId },
+  });
+
+  if (!dish) {
+    throw new Error("Plat introuvable ou non autorisé");
+  }
+
+  return await db.dish.update({
+    where: { id: dishId },
+    data: { is_archived: true },
+  });
+};
+

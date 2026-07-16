@@ -8,6 +8,7 @@ import paypalRouter from './routes/paypal';
 import traiteurRouter from './routes/traiteur';
 import commandeRouter from './routes/commande';
 import gpRouter from './routes/gp';
+import adminRouter from './routes/admin';
 
 dotenv.config();
 
@@ -25,6 +26,7 @@ app.use('/api/paypal', paypalRouter);
 app.use('/api/traiteur', traiteurRouter);
 app.use('/api/commande', commandeRouter);
 app.use('/api/gp', gpRouter);
+app.use('/api/admin', adminRouter);
 
 // Health Check Endpoint
 app.get('/api/health', async (req, res) => {

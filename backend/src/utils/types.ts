@@ -86,3 +86,21 @@ export interface GpRequest {
   notes: string | null;
   created_at: Date | string | null;
 }
+
+export interface CreateTraiteurProfileInput {
+  name: string;
+  bio: string;
+  cuisine_type: string[];
+  delivery_zones: string[];
+  whatsapp?: string;
+  image_url?: string;
+}
+
+export interface CreateDishInput {
+  name: string;
+  description: string;
+  price: number;
+  cuisine_type: string;
+  image_urls?: string[];
+  is_available?: boolean;
+}

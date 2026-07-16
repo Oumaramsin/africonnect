@@ -89,22 +89,27 @@ class AuthController {
 
   static updateUserById = async (req: Request, res: Response) => {
     try {
-      const user = (req as AuthenticatedRequest).user;
-      const userId = req.params.id;
+      const user = (req as AuthenticatedRequest).user as any;
+      const userId = req.params.id || user?.userId;
       const singleId = Array.isArray(userId) ? userId[0] : userId;
-      const { firstname, lastname, address } = req.body;
+      
+      const { full_name, phone, city, firstname, lastname, address } = req.body;
+
+      const finalName = full_name || (firstname && lastname ? `${firstname} ${lastname}` : undefined);
+      const finalCity = city || address;
+
       const foundUser = await AuthService.updateUser(
         singleId,
-        firstname,
-        lastname,
-        address,
+        finalName,
+        phone,
+        finalCity,
       );
       if (!foundUser) {
         return res.status(400).json({ message: "user not found with this id" });
       }
       return res.status(200).json({ foundUser: foundUser, user: user });
-    } catch (error) {
-      res.status(400).json({ message: "internal server error", error });
+    } catch (error: any) {
+      res.status(400).json({ message: "internal server error", error: error.message });
     }
   };
 }

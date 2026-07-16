@@ -69,12 +69,18 @@ class AuthService {
         });
     }
 
-    static updateUser = async (id: string, firstname: string, lastname: string, adress: string) => {
+    static updateUser = async (
+        id: string,
+        full_name?: string,
+        phone?: string,
+        city?: string
+    ) => {
         return prisma.profile.update({
             where: { id: id },
             data: {
-                full_name: `${firstname} ${lastname}`,
-                city: adress
+                full_name: full_name,
+                phone: phone,
+                city: city
             }
         });
     }
