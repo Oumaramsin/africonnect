@@ -18,10 +18,17 @@ export const getActiveTraiteur = async () => {
   });
 };
 
-export const getTraiteurDishes = async (id: string) => {
-  return await db.dish.findMany({
+export const getTraiteurById = async (id: string) => {
+  return await db.traiteur.findUnique({
     where: {
-      traiteur_id: id,
+      id: id,
+    },
+    include: {
+      dishes: {
+        where: {
+          is_archived: false,
+        },
+      },
     },
   });
 };

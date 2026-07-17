@@ -32,8 +32,8 @@ function DishCard({
     dish.image_urls && dish.image_urls.length > 0
       ? dish.image_urls
       : dish.image_url
-      ? [dish.image_url]
-      : [];
+        ? [dish.image_url]
+        : [];
 
   const handlePrev = (e: React.MouseEvent) => {
     e.stopPropagation();
@@ -123,7 +123,7 @@ function DishCard({
 
         <div className="flex items-center justify-between mt-5 pt-4 border-t border-gray-100">
           <span className="text-[#1D6B45] font-black text-xl">
-            {dish.price.toFixed(2)} €
+            {Number(dish.price).toFixed(2)} €
           </span>
 
           {isLoggedIn ? (
@@ -189,9 +189,26 @@ export default function TraiteurDetailPage() {
   }, []);
 
   useEffect(() => {
-    getTraiteur(id as string)
-      .then(setTraiteur)
-      .finally(() => setLoading(false));
+    async function fetchTraiteurs() {
+      setLoading(true);
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/traiteur/${id}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
+        );
+        const data = await response.json()
+        console.log(data.data)
+        setTraiteur(data.data.traiteur)
+        setLoading(false)
+      } catch (error) {
+        console.error("Une erreur est survenue", error);
+      }
+    }
+    fetchTraiteurs()
   }, [id]);
 
   const addToCart = (dish: Dish) => {
@@ -326,7 +343,8 @@ export default function TraiteurDetailPage() {
       {/* Menu */}
       <div className="px-4 py-8 max-w-2xl mx-auto">
         <h2 className="font-bold text-gray-800 text-xl mb-6">
-          Menu · {traiteur.dishes?.filter((d) => d.is_available).length || 0} plats
+          Menu · {traiteur.dishes?.filter((d) => d.is_available).length || 0}{" "}
+          plats
         </h2>
 
         <div className="space-y-6">

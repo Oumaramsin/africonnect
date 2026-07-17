@@ -4,7 +4,7 @@ import {
   createOrderTraiteur,
   createDishesOrder,
   getActiveTraiteur,
-  getTraiteurDishes,
+  getTraiteurById,
   getTraiteurByUserId,
   createTraiteurProfile,
   updateTraiteurProfile,
@@ -30,20 +30,27 @@ export const getActiveTraiteurController = async (
   }
 };
 
-export const getTraiteurDishesController = async (
+export const getTraiteurByIdController = async (
   req: Request,
   res: Response,
 ) => {
   try {
-    const traiteurIdString = req.query.traiteur_id as string;
-    const dishes = await getTraiteurDishes(traiteurIdString);
+    const { id } = req.params;
+    const traiteur = await getTraiteurById(id);
+
+    if (!traiteur) {
+      return res.status(404).json({
+        success: false,
+        error: "Traiteur introuvable",
+      });
+    }
 
     res.json({
       success: true,
-      data: { dishes },
+      data: { traiteur },
     });
   } catch (error) {
-    console.error("Erreur dans getTraiteurDishesController:", error);
+    console.error("Erreur dans getTraiteurByIdController:", error);
     res.status(500).json({ error: "Server error" });
   }
 };

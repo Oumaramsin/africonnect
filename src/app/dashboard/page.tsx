@@ -1,6 +1,17 @@
-import { createServerSupabase } from "@/lib/supabase-server";
 import Link from "next/link";
-import { Clock, CheckCircle2, XCircle, Bell, ChefHat, Plane, ShoppingCart, Scissors, Hand, User } from "lucide-react";
+import {
+  Clock,
+  CheckCircle2,
+  XCircle,
+  Bell,
+  ChefHat,
+  Plane,
+  ShoppingCart,
+  Scissors,
+  Hand,
+  User,
+} from "lucide-react";
+import { cookies } from "next/headers";
 
 type CommandeTraiteur = {
   id: string;
@@ -34,101 +45,36 @@ type GpRequest = {
   } | null;
 };
 
-type GpListing = {
-  id: string;
-};
-
 export default async function DashboardPage() {
-  const supabase = await createServerSupabase();
-  const {
-    data: { session },
-  } = await supabase.auth.getSession();
-
-  const isLoggedIn = !!session;
-
-  const { data: profile } = isLoggedIn
-    ? await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", session.user.id)
-        .single()
-    : { data: null };
-
-  // ── Dernières commandes traiteur ──
-  const { data: commandesTraiteur } = isLoggedIn
-    ? await supabase
-        .from("commandes_traiteur")
-        .select("*, traiteurs(name)")
-        .eq("client_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(2)
-    : { data: null };
-
-  // ── Dernières commandes plats ──
-  const { data: ordersPlats } = isLoggedIn
-    ? await supabase
-        .from("orders")
-        .select("*, traiteurs(name), order_items(id, quantity, dishes(name))")
-        .eq("client_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(2)
-    : { data: null };
-
-  // ── Dernières demandes GP ──
-  const { data: gpRequests } = isLoggedIn
-    ? await supabase
-        .from("gp_requests")
-        .select(
-          "*, gp_listings(departure_city, arrival_city, departure_country, arrival_country)",
-        )
-        .eq("sender_id", session.user.id)
-        .order("created_at", { ascending: false })
-        .limit(2)
-    : { data: null };
-
-  // ── Commandes reçues en attente (prestataire) ──
-  const { data: traiteurData } = isLoggedIn
-    ? await supabase
-        .from("traiteurs")
-        .select("id")
-        .eq("user_id", session.user.id)
-        .maybeSingle()
-    : { data: null };
-
+  let full_name = null;
+  let commandesTraiteur: any[] = [];
+  let ordersPlats: any[] = [];
+  let gpRequests: any[] = [];
   let pendingCount = 0;
 
-  if (traiteurData) {
-    const { count: cmdPending } = await supabase
-      .from("commandes_traiteur")
-      .select("id", { count: "exact" })
-      .eq("traiteur_id", traiteurData.id)
-      .eq("statut", "en_attente");
-
-    const { count: ordersPending } = await supabase
-      .from("orders")
-      .select("id", { count: "exact" })
-      .eq("traiteur_id", traiteurData.id)
-      .eq("status", "pending");
-
-    pendingCount += (cmdPending || 0) + (ordersPending || 0);
-  }
-
-  const { data: gpListings } = isLoggedIn
-    ? await supabase
-        .from("gp_listings")
-        .select("id")
-        .eq("gp_id", session.user.id)
-    : { data: null };
-
-  if (gpListings && gpListings.length > 0) {
-    const ids = (gpListings as GpListing[]).map((l) => l.id);
-    const { count: gpPending } = await supabase
-      .from("gp_requests")
-      .select("id", { count: "exact" })
-      .in("listing_id", ids)
-      .eq("status", "pending");
-
-    pendingCount += gpPending || 0;
+  const cookieStore = await cookies();
+  const token = cookieStore.get("token")?.value;
+  const isLoggedIn = !!token;
+  if (isLoggedIn) {
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/commande`,
+        {
+          headers: {
+            "Content-type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      const data = await response.json();
+      const userProfile = data.data.orders;
+      full_name = userProfile.full_name;
+      gpRequests = userProfile.gp_requests;
+      ordersPlats = userProfile.orders;
+      commandesTraiteur = userProfile.commandes;
+    } catch (error) {
+      console.error("Erreur dans le fetch du dashboard :", error);
+    }
   }
 
   const getStatutBadge = (statut: string) => {
@@ -178,7 +124,8 @@ export default async function DashboardPage() {
           <div className="flex items-center justify-between mb-8">
             <div>
               <h1 className="text-2xl font-bold text-[#1D6B45] flex items-center gap-2">
-                Bonjour, {profile?.full_name} <Hand className="text-[#D4870A]" size={24} />
+                Bonjour, {full_name}{" "}
+                <Hand className="text-[#D4870A]" size={24} />
               </h1>
               <p className="text-gray-500 mt-1 text-sm">
                 {"Que cherches-tu aujourd'hui ?"}
@@ -186,7 +133,7 @@ export default async function DashboardPage() {
             </div>
             <Link href="/profil">
               <div className="w-10 h-10 rounded-full bg-[#1D6B45] flex items-center justify-center text-white font-bold text-sm">
-                {profile?.full_name?.charAt(0).toUpperCase() || "?"}
+                {full_name?.charAt(0).toUpperCase() || "?"}
               </div>
             </Link>
           </div>
@@ -197,10 +144,13 @@ export default async function DashboardPage() {
                 Bonjour <Hand className="text-[#D4870A]" size={24} />
               </h1>
               <p className="text-gray-500 mt-1 text-sm">
-                <Link href="/login" className="text-[#1D6B45] font-semibold hover:underline">
+                <Link
+                  href="/login"
+                  className="text-[#1D6B45] font-semibold hover:underline"
+                >
                   Connectez-vous
-                </Link>
-                {" "}pour accéder à toutes les fonctionnalités
+                </Link>{" "}
+                pour accéder à toutes les fonctionnalités
               </p>
             </div>
             <Link href="/login">
@@ -236,7 +186,9 @@ export default async function DashboardPage() {
         <div className="grid grid-cols-2 gap-4 mb-6">
           <Link href="/traiteur">
             <div className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md hover:border-[#1D6B45]/20 transition-all">
-              <div className="mb-3"><ChefHat className="text-[#1D6B45]" size={32} /></div>
+              <div className="mb-3">
+                <ChefHat className="text-[#1D6B45]" size={32} />
+              </div>
               <div className="font-semibold text-gray-800">Traiteur</div>
               <div className="text-sm text-gray-500 mt-1">
                 Plats africains à domicile
@@ -246,7 +198,9 @@ export default async function DashboardPage() {
 
           <Link href="/gp">
             <div className="bg-white rounded-2xl p-6 border border-gray-100 hover:shadow-md hover:border-[#D4870A]/20 transition-all">
-              <div className="mb-3"><Plane className="text-[#D4870A]" size={32} /></div>
+              <div className="mb-3">
+                <Plane className="text-[#D4870A]" size={32} />
+              </div>
               <div className="font-semibold text-gray-800">GP Colis</div>
               <div className="text-sm text-gray-500 mt-1">
                 Envoie un colis au pays
@@ -255,13 +209,17 @@ export default async function DashboardPage() {
           </Link>
 
           <div className="bg-white rounded-2xl p-6 border border-gray-100 opacity-50">
-            <div className="mb-3"><ShoppingCart className="text-gray-600" size={32} /></div>
+            <div className="mb-3">
+              <ShoppingCart className="text-gray-600" size={32} />
+            </div>
             <div className="font-semibold text-gray-800">Épicerie</div>
             <div className="text-sm text-gray-600 mt-1">Bientôt disponible</div>
           </div>
 
           <div className="bg-white rounded-2xl p-6 border border-gray-100 opacity-50">
-            <div className="mb-3"><Scissors className="text-gray-600" size={32} /></div>
+            <div className="mb-3">
+              <Scissors className="text-gray-600" size={32} />
+            </div>
             <div className="font-semibold text-gray-800">Coiffure</div>
             <div className="text-sm text-gray-600 mt-1">Bientôt disponible</div>
           </div>

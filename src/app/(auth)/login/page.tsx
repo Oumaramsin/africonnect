@@ -1,52 +1,80 @@
-'use client'
+"use client";
 
-import { useState } from 'react'
-import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase'
-import Link from 'next/link'
+import { useState } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/lib/supabase";
+import Link from "next/link";
 import { Mail, Smartphone } from "lucide-react";
-
-type Method = 'email' | 'phone'
+import cookies from "js-cookie";
+type Method = "email" | "phone";
 
 export default function LoginPage() {
-  const router = useRouter()
-  const supabase = createClient()
-  const [method, setMethod] = useState<Method>('email')
-  const [email, setEmail] = useState('')
-  const [phone, setPhone] = useState('')
-  const [password, setPassword] = useState('')
-  const [loading, setLoading] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const router = useRouter();
+  const supabase = createClient();
+  const [method, setMethod] = useState<Method>("email");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [password, setPassword] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    setLoading(true)
+    e.preventDefault();
+    setError(null);
+    setLoading(true);
 
     // Si connexion par téléphone, on reconstitue l'email fictif
-    const authEmail = method === 'email'
-      ? email
-      : `${phone.replace(/\+/g, '').replace(/\s/g, '')}@africonnect.app`
+    const authEmail =
+      method === "email"
+        ? email
+        : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@africonnect.app`;
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
-      email: authEmail,
-      password,
-    })
-
-    if (signInError) {
-      setError('Identifiants incorrects')
-      setLoading(false)
-      return
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/login`,
+        {
+          method: "POST",
+          headers: {
+            "Content-type": "application/json",
+          },
+          body: JSON.stringify({
+            email: authEmail,
+            password: password,
+          }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || "Identifiants incorrects");
+        setLoading(false);
+        return;
+      }
+      console.log(data);
+      cookies.set("token", data.token, {
+        expires: 7,
+      });
+      router.push("/dashboard");
+      router.refresh();
+    } catch (error) {
+      setError("Impossible de contacter le serveur.");
+      setLoading(false);
     }
 
-    router.push('/dashboard')
-    router.refresh()
-  }
+    // const { error: signInError } = await supabase.auth.signInWithPassword({
+    //   email: authEmail,
+    //   password,
+    // });
+
+    // if (signInError) {
+    //   setError("Identifiants incorrects");
+    //   setLoading(false);
+    //   return;
+    // }
+  };
 
   return (
     <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
-
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-[#1D6B45]">
             Afri<span className="text-[#D4870A]">Connect</span>
@@ -57,21 +85,31 @@ export default function LoginPage() {
         </div>
 
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-8">
-
           {/* Choix méthode */}
           <div className="flex gap-2 mb-6">
-            {(['email', 'phone'] as Method[]).map(m => (
+            {(["email", "phone"] as Method[]).map((m) => (
               <button
                 key={m}
                 type="button"
-                onClick={() => { setMethod(m); setError(null) }}
+                onClick={() => {
+                  setMethod(m);
+                  setError(null);
+                }}
                 className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
                   method === m
-                    ? 'bg-[#1D6B45] text-white'
-                    : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+                    ? "bg-[#1D6B45] text-white"
+                    : "bg-gray-100 text-gray-500 hover:bg-gray-200"
                 }`}
               >
-                {m === 'email' ? <><Mail size={16} className="inline mr-1" /> Email</> : <><Smartphone size={16} className="inline mr-1" /> Téléphone</>}
+                {m === "email" ? (
+                  <>
+                    <Mail size={16} className="inline mr-1" /> Email
+                  </>
+                ) : (
+                  <>
+                    <Smartphone size={16} className="inline mr-1" /> Téléphone
+                  </>
+                )}
               </button>
             ))}
           </div>
@@ -87,8 +125,7 @@ export default function LoginPage() {
           )}
 
           <form onSubmit={handleSubmit} className="space-y-4">
-
-            {method === 'email' ? (
+            {method === "email" ? (
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Email
@@ -140,27 +177,29 @@ export default function LoginPage() {
               disabled={loading}
               className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-medium text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
             >
-              {loading ? 'Connexion...' : 'Se connecter'}
+              {loading ? "Connexion..." : "Se connecter"}
             </button>
-
           </form>
 
           <p className="text-center text-sm text-gray-500 mt-6">
             {"Pas encore de compte ? "}
-            <Link href="/register" className="text-[#1D6B45] font-medium hover:underline">
+            <Link
+              href="/register"
+              className="text-[#1D6B45] font-medium hover:underline"
+            >
               {"S'inscrire gratuitement"}
             </Link>
-            
           </p>
           <p className="text-center text-sm text-gray-500 mt-6">
-            <Link href="/dashboard" className="text-[#1D6B45] font-bold hover:underline">
+            <Link
+              href="/dashboard"
+              className="text-[#1D6B45] font-bold hover:underline"
+            >
               {"Continuer en tant qu'invité"}
             </Link>
-            
           </p>
-
         </div>
       </div>
     </div>
-  )
+  );
 }

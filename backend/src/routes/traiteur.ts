@@ -3,7 +3,7 @@ import {
   createCommandeTraiteurController,
   createDishesOrderController,
   getActiveTraiteurController,
-  getTraiteurDishesController,
+  getTraiteurByIdController,
   getTraiteurProfileController,
   createTraiteurProfileController,
   updateTraiteurProfileController,
@@ -26,6 +26,6 @@ traiteurRouter.delete("/dishes/:dishId", AuthMiddleware.authenticate, deleteTrai
 traiteurRouter.get("/", getActiveTraiteurController);
 traiteurRouter.post("/", AuthMiddleware.authenticate, createCommandeTraiteurController);
 traiteurRouter.post("/order", AuthMiddleware.authenticate, createDishesOrderController);
-traiteurRouter.get("/:id", getTraiteurDishesController);
+traiteurRouter.get("/:id", getTraiteurByIdController);
 
 export default traiteurRouter;

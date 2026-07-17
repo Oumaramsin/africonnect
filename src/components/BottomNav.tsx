@@ -4,7 +4,16 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase";
-import { Home, ChefHat, Plane, Package, User, ShieldCheck, LogIn } from "lucide-react";
+import {
+  Home,
+  ChefHat,
+  Plane,
+  Package,
+  User,
+  ShieldCheck,
+  LogIn,
+} from "lucide-react";
+import cookies from "js-cookie";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: <Home size={22} />, label: "Accueil" },
@@ -20,20 +29,34 @@ export default function BottomNav() {
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) return;
-      const { data } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("id", session.user.id)
-        .single();
-      setIsLoggedIn(true);
-      setIsAdmin(data?.role === "admin");
+      const token = cookies.get("token");
+      if (!token) {
+        return;
+      }
+      try {
+        const payloadBase64 = token.split(".")[1];
+        const decodedPayload = JSON.parse(
+          Buffer.from(payloadBase64, "base64").toString("utf-8"),
+        );
+        console.log(decodedPayload)
+        setIsLoggedIn(true);
+        setIsAdmin(decodedPayload.userId.role === "admin")
+        // const response = await fetch(
+        //   `${process.env.NEXT_PUBLIC_API_URL}/auth/user/${id}`,    // Implémenter le Fetch si on cherche a sécurisé au maximum
+        //   {
+        //     headers: {
+        //       "Content-type": "application/json",
+        //       Authorization: `Bearer ${token}`,
+        //     },
+        //   },
+        // );
+        // const data = await response.json();
+        // console.log(data)
+      } catch (error) {
+        console.error("Erreur dans le fetch du dashboard :", error);
+      }
     };
     load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const hideOn = ["/login", "/register", "/reset-password"];
@@ -47,11 +70,18 @@ export default function BottomNav() {
       { href: "/profil", icon: <User size={22} />, label: "Profil" },
     );
     if (isAdmin) {
-      items.push({ href: "/admin", icon: <ShieldCheck size={22} />, label: "Admin" });
+      items.push({
+        href: "/admin",
+        icon: <ShieldCheck size={22} />,
+        label: "Admin",
+      });
     }
-
-  }else{
-    items.push({ href: "/login", icon: <LogIn size={22} />, label: "Se Connecter" },)
+  } else {
+    items.push({
+      href: "/login",
+      icon: <LogIn size={22} />,
+      label: "Se Connecter",
+    });
   }
 
   return (
@@ -64,7 +94,6 @@ export default function BottomNav() {
         flexShrink: 0,
         position: "fixed",
         bottom: 0,
-        
       }}
     >
       <div
@@ -94,12 +123,14 @@ export default function BottomNav() {
                 textDecoration: "none",
               }}
             >
-              <span style={{ 
-                color: isActive ? "#1D6B45" : "#9ca3af",
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center"
-              }}>
+              <span
+                style={{
+                  color: isActive ? "#1D6B45" : "#9ca3af",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
                 {item.icon}
               </span>
               <span
