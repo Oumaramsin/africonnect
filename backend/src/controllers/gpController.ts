@@ -1,17 +1,52 @@
 import { Request, Response } from "express";
 import { AuthenticatedRequest } from "../utils/types";
-import { createGpOrder, createNewGp, getAllGp } from "../services/gpService";
+import {
+  createGpOrder,
+  createNewGp,
+  getAllGp,
+  getGpById,
+} from "../services/gpService";
 
 export const getAllGpController = async (req: Request, res: Response) => {
   try {
-    const gp = await getAllGp();
+    const gpListings = await getAllGp();
+    const gp = gpListings.map((item: any) => ({
+      ...item,
+      profiles: item.gp || null,
+    }));
 
     res.json({
       success: true,
       data: { gp },
     });
   } catch (error) {
-    console.error("Erreur dans getRecentOrderByClientIdController:", error);
+    console.error("Erreur dans getAllGpController:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const getGpByIdController = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const gpItem = await getGpById(id);
+
+    if (!gpItem) {
+      return res
+        .status(404)
+        .json({ success: false, error: "Annonce GP introuvable" });
+    }
+
+    const gp = {
+      ...gpItem,
+      profiles: (gpItem as any).gp || null,
+    };
+
+    res.json({
+      success: true,
+      data: { gp },
+    });
+  } catch (error) {
+    console.error("Erreur dans getGpByIdController:", error);
     res.status(500).json({ error: "Server error" });
   }
 };
@@ -21,9 +56,9 @@ export const createGpOrderController = async (req: Request, res: Response) => {
     const user = (req as AuthenticatedRequest).user as any;
 
     const sender_id = user?.userId || req.body.gp_id;
+    const listing_id = req.params.id;
 
     const {
-      listing_id,
       weight_kg,
       content_desc,
       declared_value,
@@ -94,6 +129,10 @@ export const createNewGpController = async (req: Request, res: Response) => {
       departure_date,
       available_kg,
       price_per_kg,
+      flight_type,
+      pickup_address,
+      pickup_city,
+      description,
     } = req.body;
 
     if (
@@ -121,7 +160,7 @@ export const createNewGpController = async (req: Request, res: Response) => {
     ) {
       return res.status(400).json({
         success: false,
-        error: "Le nombre de personnes doit être un nombre supérieur à 0.",
+        error: "Les valeurs de kilos et prix doivent être des nombres supérieurs à 0.",
       });
     }
     const gp = await createNewGp({
@@ -133,6 +172,10 @@ export const createNewGpController = async (req: Request, res: Response) => {
       departure_date,
       available_kg: available_kgParsed,
       price_per_kg: price_per_kgParsed,
+      flight_type,
+      pickup_address,
+      pickup_city,
+      description,
     });
 
     res.json({

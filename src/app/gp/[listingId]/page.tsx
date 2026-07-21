@@ -16,6 +16,7 @@ import {
   Home,
 } from "lucide-react";
 import { getFlag } from "@/lib/api/gp";
+import cookies from "js-cookie";
 
 type GpListing = {
   id: string;
@@ -34,6 +35,11 @@ type GpListing = {
   is_active: boolean;
   rating: number;
   review_count: number;
+  gp?: {
+    full_name: string;
+    phone: string | null;
+    whatsapp: string | null;
+  } | null;
   profiles?: {
     full_name: string;
     phone: string | null;
@@ -75,18 +81,27 @@ export default function GpDetailPage() {
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
+      const token = cookies.get("token");
+      if (token) {
         setIsLoggedIn(true);
       }
-      const { data } = await supabase
-        .from("gp_listings")
-        .select("*, profiles(full_name, phone, whatsapp)")
-        .eq("id", listingId as string)
-        .single();
-      setListing(data);
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/gp/${listingId}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || "Erreur de lors du chargement du GP");
+        setLoading(false);
+        return;
+      }
+      setListing(data.data.gp);
+      console.log(data);
       setLoading(false);
     };
     load();
@@ -96,71 +111,90 @@ export default function GpDetailPage() {
     ? parseFloat(form.weight_kg || "0") * listing.price_per_kg
     : 0;
 
+  const cleanWeightStr = form.weight_kg.trim().replace(",", ".");
+  const cleanDeclaredStr = form.declared_value.trim().replace(",", ".");
+
+  const weightNum = parseFloat(cleanWeightStr);
+  const declaredValNum = parseFloat(cleanDeclaredStr);
+
+  const isValidNumberFormat = (str: string) => /^\d+([.,]\d+)?$/.test(str);
+
+  const isWeightInvalid =
+    !form.weight_kg.trim() ||
+    !isValidNumberFormat(form.weight_kg.trim()) ||
+    isNaN(weightNum) ||
+    weightNum <= 0;
+
+  const isDeclaredValInvalid =
+    form.declared_value.trim() !== "" &&
+    (!isValidNumberFormat(form.declared_value.trim()) ||
+      isNaN(declaredValNum) ||
+      declaredValNum < 0);
+
+  const isSubmitDisabled =
+    submitting ||
+    isWeightInvalid ||
+    !form.content_desc.trim() ||
+    isDeclaredValInvalid;
+
   const handlePreSubmit = async () => {
-    if (!form.weight_kg || !form.content_desc) {
-      setError("Poids et description requis");
+    if (isWeightInvalid) {
+      setError("Le poids doit être un nombre valide supérieur à 0 (ex: 2.5)");
       return;
     }
 
-    if (parseFloat(form.weight_kg) <= 0) {
-      setError("Le poids doit être supérieur à 0");
+    if (!form.content_desc.trim()) {
+      setError("La description du contenu est requise");
       return;
     }
 
-    if (form.declared_value && parseFloat(form.declared_value) < 0) {
-      setError("La valeur déclarée ne peut pas être négative");
+    if (isDeclaredValInvalid) {
+      setError("La valeur déclarée doit être un nombre positif valide (ex: 100)");
       return;
     }
+
     setShowConfirmModal(true);
     setError(null);
   };
   const confirmOrder = async () => {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
+    setSubmitting(true);
+    const token = cookies.get("token");
+    if (!token) {
       router.push("/login");
-      return;
-    }
-
-    const { error: insertError } = await supabase.from("gp_requests").insert({
-      listing_id: listingId,
-      sender_id: session.user.id,
-      weight_kg: parseFloat(form.weight_kg),
-      content_desc: form.content_desc,
-      declared_value: parseFloat(form.declared_value || "0"),
-      total_amount: total,
-      notes: form.notes || null,
-      status: "pending",
-    });
-
-    if (insertError) {
-      setError(insertError.message);
       setSubmitting(false);
       return;
     }
 
-    // Notifie le GP
-    const { data: gpProfile } = await supabase
-      .from("profiles")
-      .select("id")
-      .eq("id", listing!.gp_id)
-      .single();
+    const safeDeclaredValue =
+      form.declared_value.trim() !== "" && !isDeclaredValInvalid
+        ? declaredValNum
+        : 0;
 
-    if (gpProfile) {
-      await fetch("/api/notify", {
+    const response = await fetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/gp/${listingId}/order`,
+      {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
         body: JSON.stringify({
-          user_id: gpProfile.id,
-          type: "nouvelle_demande_colis",
-          titre: "📦 Nouvelle demande de colis !",
-          message: `${form.weight_kg}kg — ${form.content_desc} — ${total.toFixed(2)}€`,
-          data: { listing_id: listingId },
+          weight_kg: weightNum,
+          content_desc: form.content_desc,
+          declared_value: safeDeclaredValue,
+          total_amount: total,
+          notes: form.notes || null,
+          status: "pending",
         }),
-      });
+      },
+    );
+    const data = await response.json();
+    if(!response.ok){
+      setError(data.message || "Erreur lors de l'envois de la commande");
+      setSubmitting(false);
+      return;
     }
-    setSubmitting(true);
+    console.log(data)
     setSuccess(true);
     setSubmitting(false);
   };
@@ -197,14 +231,15 @@ export default function GpDetailPage() {
             Demande envoyée !
           </h2>
           <p className="text-gray-500 mb-6">
-            {listing.profiles?.full_name || "Le GP"} a reçu ta demande et va te
+            {(listing.gp?.full_name || listing.profiles?.full_name || "Le GP")} a reçu ta demande et va te
             contacter rapidement.
           </p>
-          {listing.profiles?.whatsapp && (
+          {(listing.gp?.whatsapp || listing.profiles?.whatsapp) && (
             <button
               onClick={() => {
-                const num = listing
-                  .profiles!.whatsapp!.replace(/\+/g, "")
+                const whatsappNum = (listing.gp?.whatsapp || listing.profiles?.whatsapp)!;
+                const num = whatsappNum
+                  .replace(/\+/g, "")
                   .replace(/\s/g, "");
                 const msg = encodeURIComponent(
                   `Bonjour, je viens d'envoyer une demande de colis sur AfriConnect. ${form.weight_kg}kg — ${form.content_desc}`,
@@ -264,49 +299,54 @@ export default function GpDetailPage() {
 
       <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
         {/* Infos GP */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">
-            <User size={16} className="inline mr-1 text-[#1D6B45]" /> À propos
-            du GP
-          </h2>
-          <div className="flex items-center gap-4">
-            <div className="w-14 h-14 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xl font-bold">
-              {listing.profiles?.full_name?.charAt(0).toUpperCase() || "?"}
+        {(() => {
+          const gpProfile = listing.gp || listing.profiles;
+          return (
+            <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
+              <h2 className="font-semibold text-gray-800 mb-4">
+                <User size={16} className="inline mr-1 text-[#1D6B45]" /> À propos
+                du GP
+              </h2>
+              <div className="flex items-center gap-4">
+                <div className="w-14 h-14 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xl font-bold">
+                  {gpProfile?.full_name?.charAt(0).toUpperCase() || "?"}
+                </div>
+                <div className="flex-1">
+                  <p className="font-semibold text-gray-800">
+                    {gpProfile?.full_name || "GP Anonyme"}
+                  </p>
+                  {gpProfile?.phone && (
+                    <p className="text-sm text-gray-500 mt-0.5 flex items-center">
+                      <Smartphone size={16} className="inline mr-1" />{" "}
+                      {gpProfile.phone}
+                    </p>
+                  )}
+                  {listing.review_count > 0 && (
+                    <p className="text-sm text-yellow-500 mt-0.5">
+                      ★ {listing.rating} ({listing.review_count} avis)
+                    </p>
+                  )}
+                </div>
+                {gpProfile?.whatsapp && (
+                  <button
+                    onClick={() => {
+                      const num = gpProfile
+                        .whatsapp!.replace(/\+/g, "")
+                        .replace(/\s/g, "");
+                      const msg = encodeURIComponent(
+                        `Bonjour, j'ai vu votre annonce GP sur AfriConnect pour ${listing.departure_city} → ${listing.arrival_city}`,
+                      );
+                      window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
+                    }}
+                    className="bg-[#25D366] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#1da851] transition-colors flex items-center gap-2"
+                  >
+                    💬 WhatsApp
+                  </button>
+                )}
+              </div>
             </div>
-            <div className="flex-1">
-              <p className="font-semibold text-gray-800">
-                {listing.profiles?.full_name || "GP Anonyme"}
-              </p>
-              {listing.profiles?.phone && (
-                <p className="text-sm text-gray-500 mt-0.5 flex items-center">
-                  <Smartphone size={16} className="inline mr-1" />{" "}
-                  {listing.profiles.phone}
-                </p>
-              )}
-              {listing.review_count > 0 && (
-                <p className="text-sm text-yellow-500 mt-0.5">
-                  ★ {listing.rating} ({listing.review_count} avis)
-                </p>
-              )}
-            </div>
-            {listing.profiles?.whatsapp && (
-              <button
-                onClick={() => {
-                  const num = listing
-                    .profiles!.whatsapp!.replace(/\+/g, "")
-                    .replace(/\s/g, "");
-                  const msg = encodeURIComponent(
-                    `Bonjour, j'ai vu votre annonce GP sur AfriConnect pour ${listing.departure_city} → ${listing.arrival_city}`,
-                  );
-                  window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
-                }}
-                className="bg-[#25D366] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#1da851] transition-colors flex items-center gap-2"
-              >
-                💬 WhatsApp
-              </button>
-            )}
-          </div>
-        </div>
+          );
+        })()}
 
         {/* Détails annonce */}
         <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
@@ -382,10 +422,8 @@ export default function GpDetailPage() {
                   Poids du colis (kg) *
                 </label>
                 <input
-                  type="number"
-                  step="0.1"
-                  min="0.1"
-                  max={listing.available_kg}
+                  type="text"
+                  inputMode="decimal"
                   value={form.weight_kg}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, weight_kg: e.target.value }))
@@ -415,8 +453,8 @@ export default function GpDetailPage() {
                   Valeur déclarée (€)
                 </label>
                 <input
-                  type="number"
-                  min="0"
+                  type="text"
+                  inputMode="decimal"
                   value={form.declared_value}
                   onChange={(e) =>
                     setForm((p) => ({ ...p, declared_value: e.target.value }))
@@ -455,8 +493,8 @@ export default function GpDetailPage() {
 
               <button
                 onClick={handlePreSubmit}
-                disabled={submitting}
-                className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
+                disabled={isSubmitDisabled}
+                className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
               >
                 {submitting ? "Envoi..." : "Envoyer ma demande"}
               </button>
@@ -486,9 +524,15 @@ export default function GpDetailPage() {
               Confirmer l'envoi
             </h3>
             <p className="text-gray-600 mb-6 text-sm">
-              Es-tu sûr(e) de vouloir envoyer cette demande pour <span className="font-bold">{form.weight_kg} kg</span> d'un montant estimé à <span className="font-bold text-[#1D6B45]">{total.toFixed(2)} €</span> ?
+              Es-tu sûr(e) de vouloir envoyer cette demande pour{" "}
+              <span className="font-bold">{form.weight_kg} kg</span> d'un
+              montant estimé à{" "}
+              <span className="font-bold text-[#1D6B45]">
+                {total.toFixed(2)} €
+              </span>{" "}
+              ?
             </p>
-            
+
             <div className="flex gap-3">
               <button
                 type="button"
@@ -511,6 +555,5 @@ export default function GpDetailPage() {
         </div>
       )}
     </div>
-    
   );
 }

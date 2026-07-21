@@ -62,6 +62,10 @@ export interface CreateGpListingInput {
   departure_date: Date | string;
   available_kg: number;
   price_per_kg: number;
+  flight_type?: string;
+  pickup_address?: string;
+  pickup_city?: string;
+  description?: string;
 }
 
 export interface CreateGpRequestInput {

@@ -5,6 +5,7 @@ import { getGpListings, getFlag, getDistance, formatDistance, type GpListing } f
 import Link from 'next/link'
 import { createClient } from '@/lib/supabase'
 import { Plane, MapPin, Lock, Star, Plus } from 'lucide-react'
+import cookies from 'js-cookie'
 
 const DESTINATIONS = [
   { label: 'Tout', value: 'tout' },
@@ -46,25 +47,31 @@ export default function GpPage() {
     async function fetchListings() {
       setLoading(true)
       try {
-        const data = await getGpListings(
-          destination !== 'tout' ? { arrival_country: destination } : undefined
-        )
-        if (!ignore) setListings(data)
-      } finally {
-        if (!ignore) setLoading(false)
-      }
+        const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gp`,{
+          headers:{
+            "Content-Type": "application/json"
+          }
+        })
+        const data = await response.json()
+        if(!response.ok){
+          console.error(data.message || 'Erreur de fetch des gp');
+          return;
+        }
+        console.log(data)
+        setListings(data.data.gp)
+        setLoading(false);
+    }catch(error){
+      console.error(error)
     }
-
+  }
     fetchListings()
     return () => { ignore = true }
   }, [destination])
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
+      const token = cookies.get('token')
+      if(token){
         return setIsLoggedIn(true);
       }
     };

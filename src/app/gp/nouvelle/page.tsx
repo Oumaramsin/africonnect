@@ -15,6 +15,7 @@ import {
   Lock,
   PenLine,
 } from "lucide-react";
+import cookies from "js-cookie";
 
 const schema = z.object({
   departure_city: z.string().min(2, "Ville de départ requise"),
@@ -74,14 +75,12 @@ export default function NouvelleAnnoncePage() {
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
+      const token = cookies.get("token");
+      if (!token) {
         router.push("/login");
-      } else {
-        setIsLoggedIn(true);
+        return;
       }
+      setIsLoggedIn(true);
     };
     load();
   });
@@ -108,37 +107,29 @@ export default function NouvelleAnnoncePage() {
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     setError(null);
-
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
+    const token = cookies.get("token");
+    if (!token) {
       router.push("/login");
       return;
     }
-
-    const { error } = await supabase.from("gp_listings").insert({
-      gp_id: session.user.id,
-      departure_city: data.departure_city,
-      departure_country: data.departure_country,
-      arrival_city: data.arrival_city,
-      arrival_country: data.arrival_country,
-      departure_date: data.departure_date,
-      available_kg: data.available_kg,
-      price_per_kg: data.price_per_kg,
-      flight_type: data.flight_type,
-      pickup_address: data.pickup_address,
-      pickup_city: data.pickup_city,
-      description: data.description,
-      is_active: true,
+    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/gp`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`,
+      },
+      body: JSON.stringify({
+        ...data,
+        is_active: true,
+      }),
     });
-
-    if (error) {
-      setError(error.message);
+    const dataR = await response.json();
+    console.log(dataR)
+    if (!response.ok) {
+      setError(dataR.message);
       setLoading(false);
       return;
     }
-
     setSuccess(true);
   };
 

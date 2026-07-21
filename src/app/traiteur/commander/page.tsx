@@ -9,6 +9,7 @@ import { createOrder, type CartItem } from "@/lib/api/traiteur";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { PartyPopper, Car, Home } from "lucide-react";
+import cookies from "js-cookie";
 
 const schema = z
   .object({
@@ -54,25 +55,27 @@ export default function CheckoutPage() {
     defaultValues: { delivery_type: "delivery" },
   });
 
-  const handlePreSubmit = (data:FormData) => {
+  const handlePreSubmit = (data: FormData) => {
     setPendingData(data);
-    setShowConfirmModal(true)
-  }
+    setShowConfirmModal(true);
+  };
   const deliveryType = watch("delivery_type");
   const deliveryDate = watch("delivery_date");
   const deliveryTime = watch("delivery_time");
   const deliveryAddress = watch("delivery_address");
-  const isFormValid = deliveryDate && deliveryTime && (deliveryType === "pickup" || (deliveryType === "delivery" && deliveryAddress));
+  const isFormValid =
+    deliveryDate &&
+    deliveryTime &&
+    (deliveryType === "pickup" ||
+      (deliveryType === "delivery" && deliveryAddress));
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
+      const token = cookies.get("token");
+      if (token) {
         setIsLoggedIn(true);
-      }else{
-        router.push('/login')
+      } else {
+        router.push("/login");
       }
     };
     load();
@@ -96,47 +99,36 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const order = await createOrder({
-        traiteur_id: cart[0].traiteur_id,
-        items: cart,
-        delivery_address: data.delivery_address || "Retrait sur place",
-        delivery_date: `${data.delivery_date}T${data.delivery_time}`,
-        delivery_type: data.delivery_type,
-        notes: data.notes,
-      });
-
-      console.log("Commande créée:", order);
-
-      const { data: traiteurData, error: traiteurError } = await supabase
-        .from("traiteurs")
-        .select("user_id")
-        .eq("id", cart[0].traiteur_id)
-        .single();
-
-      console.log("Traiteur data:", traiteurData, "error:", traiteurError);
-
-      if (traiteurData?.user_id) {
-        const notifRes = await fetch("/api/notify", {
+      const token = cookies.get("token");
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/order`,
+        {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
           body: JSON.stringify({
-            user_id: traiteurData.user_id,
-            type: "nouvelle_commande_plats",
-            titre: "🛒 Nouvelle commande de plats !",
-            message: `${cart.map((i) => `${i.dish.name} x${i.quantity}`).join(", ")} — ${total.toFixed(2)} €`,
-            data: {
-              traiteur_id: cart[0].traiteur_id,
-              total: total.toFixed(2),
-              items: cart.map((i) => ({
-                name: i.dish.name,
-                quantity: i.quantity,
-              })),
-            },
+            traiteur_id: cart[0].traiteur_id,
+            delivery_address: data.delivery_address || "Retrait sur place",
+            delivery_date: `${data.delivery_date}T${data.delivery_time}`,
+            delivery_type: data.delivery_type,
+            notes: data.notes,
+            items: cart.map((item) => ({
+              dish_id: item.dish.id,
+              quantity: item.quantity,
+              unit_price: item.dish.price,
+            })),
           }),
-        });
-        const notifJson = await notifRes.json();
-        console.log("Notification result:", notifJson);
+        },
+      );
+      const dataR = await response.json();
+      if (!response.ok) {
+        setError(dataR.message || "Erreur dans la commande du panier");
+        setLoading(false);
+        return;
       }
+      console.log(dataR);
 
       localStorage.removeItem("africonnect_cart");
       setSuccess(true);
@@ -149,10 +141,8 @@ export default function CheckoutPage() {
     }
   };
 
-  if(!isLoggedIn){
-    return (
-      <h1>Chargement</h1>
-    )
+  if (!isLoggedIn) {
+    return <h1>Chargement</h1>;
   }
 
   // Page succès
@@ -179,254 +169,261 @@ export default function CheckoutPage() {
       </div>
     );
   }
-  if(isLoggedIn){
-  return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-32">
-      {/* Header */}
-      <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
-        <button
-          onClick={() => router.back()}
-          className="text-white/70 text-sm mb-4 inline-block"
-        >
-          ← Retour
-        </button>
-        <h1 className="text-2xl font-bold text-white">Ma commande</h1>
-        <p className="text-white/70 text-sm mt-1">
-          {cart[0]?.traiteur_name || "Traiteur"}
-        </p>
-      </div>
+  if (isLoggedIn) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] pb-32">
+        {/* Header */}
+        <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
+          <button
+            onClick={() => router.back()}
+            className="text-white/70 text-sm mb-4 inline-block"
+          >
+            ← Retour
+          </button>
+          <h1 className="text-2xl font-bold text-white">Ma commande</h1>
+          <p className="text-white/70 text-sm mt-1">
+            {cart[0]?.traiteur_name || "Traiteur"}
+          </p>
+        </div>
 
-      <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
-        {/* Récapitulatif panier */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5">
-          <h2 className="font-semibold text-gray-800 mb-4">
-            Récapitulatif · {totalItems} article{totalItems > 1 ? "s" : ""}
-          </h2>
-          <div className="space-y-3">
-            {cart.map((item) => (
-              <div
-                key={item.dish.id}
-                className="flex justify-between items-center"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="bg-[#E8F5E9] text-[#1D6B45] text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
-                    {item.quantity}
-                  </span>
-                  <span className="text-gray-700 text-sm">
-                    {item.dish.name}
+        <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
+          {/* Récapitulatif panier */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <h2 className="font-semibold text-gray-800 mb-4">
+              Récapitulatif · {totalItems} article{totalItems > 1 ? "s" : ""}
+            </h2>
+            <div className="space-y-3">
+              {cart.map((item) => (
+                <div
+                  key={item.dish.id}
+                  className="flex justify-between items-center"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="bg-[#E8F5E9] text-[#1D6B45] text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">
+                      {item.quantity}
+                    </span>
+                    <span className="text-gray-700 text-sm">
+                      {item.dish.name}
+                    </span>
+                  </div>
+                  <span className="text-gray-800 font-medium text-sm">
+                    {(item.dish.price * item.quantity).toFixed(2)} €
                   </span>
                 </div>
-                <span className="text-gray-800 font-medium text-sm">
-                  {(item.dish.price * item.quantity).toFixed(2)} €
-                </span>
-              </div>
-            ))}
-          </div>
-          <div className="border-t border-gray-100 mt-4 pt-4 flex justify-between items-center">
-            <span className="font-semibold text-gray-800">Total</span>
-            <span className="font-bold text-[#1D6B45] text-lg">
-              {total.toFixed(2)} €
-            </span>
-          </div>
-        </div>
-
-        {/* Formulaire livraison */}
-        <form onSubmit={handleSubmit(handlePreSubmit)} className="space-y-4">
-          {/* Mode de livraison */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">
-              Mode de réception
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              <label
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                  deliveryType === "delivery"
-                    ? "border-[#1D6B45] bg-[#E8F5E9]"
-                    : "border-gray-200"
-                }`}
-              >
-                <input
-                  {...register("delivery_type")}
-                  type="radio"
-                  value="delivery"
-                  className="hidden"
-                />
-                <Car
-                  size={24}
-                  className={
-                    deliveryType === "delivery"
-                      ? "text-[#1D6B45]"
-                      : "text-gray-400"
-                  }
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  Livraison
-                </span>
-              </label>
-
-              <label
-                className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
-                  deliveryType === "pickup"
-                    ? "border-[#1D6B45] bg-[#E8F5E9]"
-                    : "border-gray-200"
-                }`}
-              >
-                <input
-                  {...register("delivery_type")}
-                  type="radio"
-                  value="pickup"
-                  className="hidden"
-                />
-                <Home
-                  size={24}
-                  className={
-                    deliveryType === "pickup"
-                      ? "text-[#1D6B45]"
-                      : "text-gray-400"
-                  }
-                />
-                <span className="text-sm font-medium text-gray-700">
-                  Retrait
-                </span>
-              </label>
+              ))}
+            </div>
+            <div className="border-t border-gray-100 mt-4 pt-4 flex justify-between items-center">
+              <span className="font-semibold text-gray-800">Total</span>
+              <span className="font-bold text-[#1D6B45] text-lg">
+                {total.toFixed(2)} €
+              </span>
             </div>
           </div>
 
-          {/* Adresse si livraison */}
-          {deliveryType === "delivery" && (
+          {/* Formulaire livraison */}
+          <form onSubmit={handleSubmit(handlePreSubmit)} className="space-y-4">
+            {/* Mode de livraison */}
             <div className="bg-white rounded-2xl border border-gray-100 p-5">
               <h2 className="font-semibold text-gray-800 mb-4">
-                Adresse de livraison
+                Mode de réception
               </h2>
-              <input
-                {...register("delivery_address")}
-                type="text"
-                placeholder="12 rue de la Paix, 75001 Paris"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-              />
-              {errors.delivery_address && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.delivery_address.message}
-                </p>
-              )}
-            </div>
-          )}
-
-          {/* Date et heure */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">
-              Date et heure souhaitées
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">Date</label>
-                <input
-                  {...register("delivery_date")}
-                  type="date"
-                  min={
-                    new Date(Date.now() + 24 * 60 * 60 * 1000)
-                      .toISOString()
-                      .split("T")[0]
-                  }
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-                />
-                {errors.delivery_date && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.delivery_date.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Heure
+              <div className="grid grid-cols-2 gap-3">
+                <label
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    deliveryType === "delivery"
+                      ? "border-[#1D6B45] bg-[#E8F5E9]"
+                      : "border-gray-200"
+                  }`}
+                >
+                  <input
+                    {...register("delivery_type")}
+                    type="radio"
+                    value="delivery"
+                    className="hidden"
+                  />
+                  <Car
+                    size={24}
+                    className={
+                      deliveryType === "delivery"
+                        ? "text-[#1D6B45]"
+                        : "text-gray-400"
+                    }
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Livraison
+                  </span>
                 </label>
+
+                <label
+                  className={`flex flex-col items-center gap-2 p-4 rounded-xl border-2 cursor-pointer transition-all ${
+                    deliveryType === "pickup"
+                      ? "border-[#1D6B45] bg-[#E8F5E9]"
+                      : "border-gray-200"
+                  }`}
+                >
+                  <input
+                    {...register("delivery_type")}
+                    type="radio"
+                    value="pickup"
+                    className="hidden"
+                  />
+                  <Home
+                    size={24}
+                    className={
+                      deliveryType === "pickup"
+                        ? "text-[#1D6B45]"
+                        : "text-gray-400"
+                    }
+                  />
+                  <span className="text-sm font-medium text-gray-700">
+                    Retrait
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            {/* Adresse si livraison */}
+            {deliveryType === "delivery" && (
+              <div className="bg-white rounded-2xl border border-gray-100 p-5">
+                <h2 className="font-semibold text-gray-800 mb-4">
+                  Adresse de livraison
+                </h2>
                 <input
-                  {...register("delivery_time")}
-                  type="time"
+                  {...register("delivery_address")}
+                  type="text"
+                  placeholder="12 rue de la Paix, 75001 Paris"
                   className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                 />
-                {errors.delivery_time && (
+                {errors.delivery_address && (
                   <p className="text-red-500 text-xs mt-1">
-                    {errors.delivery_time.message}
+                    {errors.delivery_address.message}
                   </p>
                 )}
               </div>
-            </div>
-          </div>
-
-          {/* Notes */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5">
-            <h2 className="font-semibold text-gray-800 mb-4">
-              Notes pour le traiteur
-              <span className="text-gray-400 font-normal text-sm ml-1">
-                (optionnel)
-              </span>
-            </h2>
-            <textarea
-              {...register("notes")}
-              placeholder="Allergies, préférences, instructions particulières..."
-              rows={3}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
-            />
-          </div>
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-              {error}
-            </div>
-          )}
-
-          {/* Bouton commander */}
-          <button
-            type="submit"
-            disabled={loading || !isFormValid}
-            className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-base hover:bg-[#0F4A30] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
-          >
-            {loading ? (
-              "Envoi de la commande..."
-            ) : (
-              <>
-                <span>Confirmer la commande</span>
-                <span className="font-bold">{total.toFixed(2)} €</span>
-              </>
             )}
-          </button>
-        </form>
-      </div>
 
-      {/* Pop-up (Modale) de confirmation */}
-      {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">
-              Confirmer la commande
-            </h3>
-            <p className="text-gray-600 mb-6 text-sm">
-              Es-tu sûr(e) de vouloir confirmer cette commande d'un montant total de <span className="font-bold text-[#1D6B45]">{total.toFixed(2)} €</span> ?
-            </p>
-            
-            <div className="flex gap-3">
-              <button
-                type="button"
-                onClick={() => setShowConfirmModal(false)}
-                disabled={loading}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                onClick={() => pendingData && onSubmit(pendingData)}
-                disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-medium text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center"
-              >
-                {loading ? "En cours..." : "Oui, confirmer"}
-              </button>
+            {/* Date et heure */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h2 className="font-semibold text-gray-800 mb-4">
+                Date et heure souhaitées
+              </h2>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Date
+                  </label>
+                  <input
+                    {...register("delivery_date")}
+                    type="date"
+                    min={
+                      new Date(Date.now() + 24 * 60 * 60 * 1000)
+                        .toISOString()
+                        .split("T")[0]
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                  />
+                  {errors.delivery_date && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.delivery_date.message}
+                    </p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 mb-1">
+                    Heure
+                  </label>
+                  <input
+                    {...register("delivery_time")}
+                    type="time"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                  />
+                  {errors.delivery_time && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.delivery_time.message}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+              <h2 className="font-semibold text-gray-800 mb-4">
+                Notes pour le traiteur
+                <span className="text-gray-400 font-normal text-sm ml-1">
+                  (optionnel)
+                </span>
+              </h2>
+              <textarea
+                {...register("notes")}
+                placeholder="Allergies, préférences, instructions particulières..."
+                rows={3}
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
+              />
+            </div>
+
+            {error && (
+              <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
+                {error}
+              </div>
+            )}
+
+            {/* Bouton commander */}
+            <button
+              type="submit"
+              disabled={loading || !isFormValid}
+              className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-base hover:bg-[#0F4A30] transition-colors disabled:opacity-60 flex items-center justify-center gap-2"
+            >
+              {loading ? (
+                "Envoi de la commande..."
+              ) : (
+                <>
+                  <span>Confirmer la commande</span>
+                  <span className="font-bold">{total.toFixed(2)} €</span>
+                </>
+              )}
+            </button>
+          </form>
+        </div>
+
+        {/* Pop-up (Modale) de confirmation */}
+        {showConfirmModal && (
+          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+            <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
+              <h3 className="text-lg font-bold text-gray-800 mb-2">
+                Confirmer la commande
+              </h3>
+              <p className="text-gray-600 mb-6 text-sm">
+                Es-tu sûr(e) de vouloir confirmer cette commande d'un montant
+                total de{" "}
+                <span className="font-bold text-[#1D6B45]">
+                  {total.toFixed(2)} €
+                </span>{" "}
+                ?
+              </p>
+
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={loading}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+                >
+                  Annuler
+                </button>
+                <button
+                  type="button"
+                  onClick={() => pendingData && onSubmit(pendingData)}
+                  disabled={loading}
+                  className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-medium text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center"
+                >
+                  {loading ? "En cours..." : "Oui, confirmer"}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
-    </div>
-  );
-}
+        )}
+      </div>
+    );
+  }
 }

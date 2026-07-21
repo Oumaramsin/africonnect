@@ -4,12 +4,14 @@ import {
   createGpOrderController,
   createNewGpController,
   getAllGpController,
+  getGpByIdController,
 } from "../controllers/gpController";
 
 const gpRouter = Router();
 
 gpRouter.get("/", getAllGpController);
 gpRouter.post("/", AuthMiddleware.authenticate, createNewGpController);
-gpRouter.post("/order", AuthMiddleware.authenticate, createGpOrderController);
+gpRouter.post("/:id/order", AuthMiddleware.authenticate, createGpOrderController);
+gpRouter.get("/:id", getGpByIdController);
 
 export default gpRouter;

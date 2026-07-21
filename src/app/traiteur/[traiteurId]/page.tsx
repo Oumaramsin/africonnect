@@ -12,6 +12,7 @@ import Link from "next/link";
 import { Star, MapPin, ChefHat, Lock } from "lucide-react";
 import CommandeForm from "./CommandeForm";
 import { createClient } from "@/lib/supabase";
+import cookies from 'js-cookie';
 
 // Helper DishCard component to manage image navigation locally
 function DishCard({
@@ -178,10 +179,8 @@ export default function TraiteurDetailPage() {
 
   useEffect(() => {
     const load = async () => {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (session) {
+      const token = cookies.get('token')
+      if(token){
         setIsLoggedIn(true);
       }
     };

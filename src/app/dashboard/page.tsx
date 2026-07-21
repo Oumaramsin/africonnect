@@ -18,6 +18,7 @@ type CommandeTraiteur = {
   statut: string;
   created_at: string;
   nb_personnes: number;
+  traiteur?: { name: string } | null;
   traiteurs?: { name: string } | null;
 };
 
@@ -26,6 +27,7 @@ type OrderPlat = {
   status: string;
   created_at: string;
   total_amount: number;
+  traiteur?: { name: string } | null;
   traiteurs?: { name: string } | null;
   order_items?: {
     id: string;
@@ -39,6 +41,10 @@ type GpRequest = {
   status: string;
   created_at: string;
   weight_kg: number;
+  listing?: {
+    departure_city: string;
+    arrival_city: string;
+  } | null;
   gp_listings?: {
     departure_city: string;
     arrival_city: string;
@@ -247,70 +253,80 @@ export default async function DashboardPage() {
             ) : (
               <div className="space-y-3">
                 {/* Commandes traiteur */}
-                {commandesTraiteur?.map((cmd: CommandeTraiteur) => (
-                  <div
-                    key={cmd.id}
-                    className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ChefHat className="text-[#1D6B45]" size={20} />
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {cmd.traiteurs?.name || "Traiteur"}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          {formatDate(cmd.created_at)} · {cmd.nb_personnes}{" "}
-                          pers.
-                        </p>
+                {commandesTraiteur?.map((cmd: CommandeTraiteur) => {
+                  const traiteurName =
+                    cmd.traiteur?.name || cmd.traiteurs?.name || "Traiteur";
+                  return (
+                    <div
+                      key={cmd.id}
+                      className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ChefHat className="text-[#1D6B45]" size={20} />
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">
+                            {traiteurName}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {formatDate(cmd.created_at)} · {cmd.nb_personnes}{" "}
+                            pers.
+                          </p>
+                        </div>
                       </div>
+                      {getStatutBadge(cmd.statut)}
                     </div>
-                    {getStatutBadge(cmd.statut)}
-                  </div>
-                ))}
+                  );
+                })}
 
                 {/* Commandes plats */}
-                {ordersPlats?.map((order: OrderPlat) => (
-                  <div
-                    key={order.id}
-                    className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <ShoppingCart className="text-[#D4870A]" size={20} />
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {order.traiteurs?.name || "Traiteur"}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          {formatDate(order.created_at)} ·{" "}
-                          {Number(order.total_amount).toFixed(2)} €
-                        </p>
+                {ordersPlats?.map((order: OrderPlat) => {
+                  const traiteurName =
+                    order.traiteur?.name || order.traiteurs?.name || "Traiteur";
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <ShoppingCart className="text-[#D4870A]" size={20} />
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">
+                            {traiteurName}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {formatDate(order.created_at)} ·{" "}
+                            {Number(order.total_amount).toFixed(2)} €
+                          </p>
+                        </div>
                       </div>
+                      {getStatutBadge(order.status)}
                     </div>
-                    {getStatutBadge(order.status)}
-                  </div>
-                ))}
+                  );
+                })}
 
                 {/* Demandes GP */}
-                {gpRequests?.map((req: GpRequest) => (
-                  <div
-                    key={req.id}
-                    className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
-                  >
-                    <div className="flex items-center gap-3">
-                      <Plane className="text-[#1D6B45]" size={20} />
-                      <div>
-                        <p className="text-sm font-medium text-gray-800">
-                          {req.gp_listings?.departure_city} →{" "}
-                          {req.gp_listings?.arrival_city}
-                        </p>
-                        <p className="text-xs text-gray-600">
-                          {formatDate(req.created_at)} · {req.weight_kg} kg
-                        </p>
+                {gpRequests?.map((req: GpRequest) => {
+                  const listing = req.listing || req.gp_listings;
+                  return (
+                    <div
+                      key={req.id}
+                      className="flex items-center justify-between py-2 border-b border-gray-50 last:border-0"
+                    >
+                      <div className="flex items-center gap-3">
+                        <Plane className="text-[#1D6B45]" size={20} />
+                        <div>
+                          <p className="text-sm font-medium text-gray-800">
+                            {listing?.departure_city} → {listing?.arrival_city}
+                          </p>
+                          <p className="text-xs text-gray-600">
+                            {formatDate(req.created_at)} · {req.weight_kg} kg
+                          </p>
+                        </div>
                       </div>
+                      {getStatutBadge(req.status)}
                     </div>
-                    {getStatutBadge(req.status)}
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             )}
           </div>
