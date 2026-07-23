@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, User, Utensils, Eye, ImagePlus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import Link from "next/link";
+import cookies from "js-cookie";
 
 type Dish = {
   id: string;
@@ -82,36 +83,41 @@ export default function TraiteurEspacePage() {
   const [error, setError] = useState<string | null>(null);
   const [dishToDelete, setDishToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-
-  async function loadTraiteur() {
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) {
+  async function loadTraiteur() {
+    const token = cookies.get("token");
+    if (!token) {
       router.push("/login");
       return;
     }
-
-    const { data: t } = await supabase
-      .from("traiteurs")
-      .select("*")
-      .eq("user_id", session.user.id)
-      .single();
-
-    if (t) {
-      setTraiteur(t);
-      setView("profil");
-      const { data: d } = await supabase
-        .from("dishes")
-        .select("*")
-        .eq("traiteur_id", t.id)
-        .eq("is_archived", false)
-        .order("created_at", { ascending: false });
-      setDishes(d || []);
-    } else {
-      setView("setup");
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/me`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.error || data.message || "Erreur lors de la récupération du profil");
+        setLoading(false);
+        return;
+      }
+      if (data.isTraiteur && data.traiteur) {
+        setTraiteur(data.traiteur);
+        setView("profil");
+        setDishes(data.traiteur.dishes || []);
+      } else {
+        setView("setup");
+      }
+    } catch (err: any) {
+      console.error(err);
+      setError("Erreur de chargement du profil traiteur");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }
 
   useEffect(() => {
@@ -132,10 +138,11 @@ export default function TraiteurEspacePage() {
     }
     setSavingSetup(true);
     setError(null);
-    const {
-      data: { session },
-    } = await supabase.auth.getSession();
-    if (!session) return;
+    const token = cookies.get("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
 
     try {
       let finalImageUrl = setupData.image_url;
@@ -153,29 +160,31 @@ export default function TraiteurEspacePage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      const { data, error } = await supabase
-        .from("traiteurs")
-        .insert({
-          user_id: session.user.id,
-          name: setupData.name,
-          bio: setupData.bio,
-          cuisine_type: setupData.cuisine_type,
-          delivery_zones: setupData.delivery_zones,
-          whatsapp: setupData.whatsapp || null,
-          image_url: finalImageUrl || null,
-          is_active: true,
-        })
-        .select()
-        .single();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/setup`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: setupData.name,
+            bio: setupData.bio,
+            cuisine_type: setupData.cuisine_type,
+            delivery_zones: setupData.delivery_zones,
+            whatsapp: setupData.whatsapp || null,
+            image_url: finalImageUrl || null,
+          }),
+        },
+      );
 
-      if (error) throw error;
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de la création de l'espace traiteur");
+      }
 
-      await supabase
-        .from("profiles")
-        .update({ role: "traiteur" })
-        .eq("id", session.user.id);
-      
-      setTraiteur(data);
+      setTraiteur(data.data.traiteur);
       setView("profil");
       setProfileImageFile(null);
     } catch (err: any) {
@@ -196,6 +205,11 @@ export default function TraiteurEspacePage() {
     }
     setSavingSetup(true);
     setError(null);
+    const token = cookies.get("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
 
     try {
       let finalImageUrl = setupData.image_url;
@@ -213,23 +227,31 @@ export default function TraiteurEspacePage() {
         finalImageUrl = urlData.publicUrl;
       }
 
-      const { data, error } = await supabase
-        .from("traiteurs")
-        .update({
-          name: setupData.name,
-          bio: setupData.bio,
-          cuisine_type: setupData.cuisine_type,
-          delivery_zones: setupData.delivery_zones,
-          whatsapp: setupData.whatsapp || null,
-          image_url: finalImageUrl || null,
-        })
-        .eq("id", traiteur!.id)
-        .select()
-        .single();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/profile`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: setupData.name,
+            bio: setupData.bio,
+            cuisine_type: setupData.cuisine_type,
+            delivery_zones: setupData.delivery_zones,
+            whatsapp: setupData.whatsapp || null,
+            image_url: finalImageUrl || null,
+          }),
+        },
+      );
 
-      if (error) throw error;
-      
-      setTraiteur(data);
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de la modification du profil");
+      }
+
+      setTraiteur(data.data.traiteur);
       setSuccess("Profil mis à jour avec succès !");
       setTimeout(() => setSuccess(null), 3000);
       setView("profil");
@@ -258,12 +280,16 @@ export default function TraiteurEspacePage() {
     }
     setSavingDish(true);
     setError(null);
+    const token = cookies.get("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
 
     try {
       const uploadedUrls: string[] = [];
 
       for (const file of selectedFiles) {
-        // Crée un nom unique pour ne pas écraser une image existante
         const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
 
         const { error: uploadError } = await supabase.storage
@@ -274,27 +300,38 @@ export default function TraiteurEspacePage() {
             "Erreur lors de l'upload de l'image : " + uploadError.message,
           );
         }
-        // Création d'URL publique
         const { data: urlData } = supabase.storage
           .from("images")
           .getPublicUrl(fileName);
         uploadedUrls.push(urlData.publicUrl);
       }
-      const { data, error } = await supabase
-        .from("dishes")
-        .insert({
-          traiteur_id: traiteur!.id,
-          name: newDish.name,
-          description: newDish.description,
-          price: parseFloat(newDish.price),
-          cuisine_type: newDish.cuisine_type,
-          is_available: newDish.is_available,
-          image_urls: uploadedUrls,
-        })
-        .select()
-        .single();
-      if (error) throw error;
-      setDishes((prev) => [data, ...prev]);
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: newDish.name,
+            description: newDish.description,
+            price: parseFloat(newDish.price),
+            cuisine_type: newDish.cuisine_type,
+            is_available: newDish.is_available,
+            image_urls: uploadedUrls,
+          }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de l'ajout du plat");
+      }
+
+      const createdDish = data.data.dish;
+      setDishes((prev) => [createdDish, ...prev]);
       setNewDish({
         name: "",
         description: "",
@@ -332,22 +369,29 @@ export default function TraiteurEspacePage() {
     }
     setSavingDish(true);
     setError(null);
+    const token = cookies.get("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
 
     try {
-      // Nettoyage des images supprimées du Storage
       const originalUrls = editDish?.image_urls || [];
       const keptUrls = newDish.image_urls || [];
-      const urlsToDelete = originalUrls.filter((url) => !keptUrls.includes(url));
-      
+      const urlsToDelete = originalUrls.filter(
+        (url) => !keptUrls.includes(url),
+      );
+
       if (urlsToDelete.length > 0) {
-        const fileNames = urlsToDelete.map((url) => url.split("/").pop() as string);
+        const fileNames = urlsToDelete.map(
+          (url) => url.split("/").pop() as string,
+        );
         await supabase.storage.from("images").remove(fileNames);
       }
 
       const uploadedUrls: string[] = [];
 
       for (const file of selectedFiles) {
-        // Crée un nom unique pour ne pas écraser une image existante
         const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
 
         const { error: uploadError } = await supabase.storage
@@ -358,29 +402,39 @@ export default function TraiteurEspacePage() {
             "Erreur lors de l'upload de l'image : " + uploadError.message,
           );
         }
-        // Création d'URL publique
         const { data: urlData } = supabase.storage
           .from("images")
           .getPublicUrl(fileName);
         uploadedUrls.push(urlData.publicUrl);
       }
-      const { data, error } = await supabase
-        .from("dishes")
-        .update({
-          traiteur_id: traiteur!.id,
-          name: newDish.name,
-          description: newDish.description,
-          price: parseFloat(newDish.price),
-          cuisine_type: newDish.cuisine_type,
-          is_available: newDish.is_available,
-          image_urls: [...newDish.image_urls, ...uploadedUrls],
-        })
-        .eq("id", editDish!.id)
-        .select()
-        .single();
-      if (error) throw error;
+
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${editDish!.id}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            name: newDish.name,
+            description: newDish.description,
+            price: parseFloat(newDish.price),
+            cuisine_type: newDish.cuisine_type,
+            is_available: newDish.is_available,
+            image_urls: [...newDish.image_urls, ...uploadedUrls],
+          }),
+        },
+      );
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Erreur lors de la modification du plat");
+      }
+
+      const updatedDish = data.data.dish;
       setDishes((prev) =>
-        prev.map((d) => (d.id === editDish!.id ? data : d))
+        prev.map((d) => (d.id === editDish!.id ? updatedDish : d)),
       );
       setNewDish({
         name: "",
@@ -403,10 +457,20 @@ export default function TraiteurEspacePage() {
   }
 
   async function toggleDish(dishId: string, current: boolean) {
-    await supabase
-      .from("dishes")
-      .update({ is_available: !current })
-      .eq("id", dishId);
+    const token = cookies.get("token");
+    if (token) {
+      await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${dishId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ is_available: !current }),
+        },
+      );
+    }
     setDishes((prev) =>
       prev.map((d) => (d.id === dishId ? { ...d, is_available: !current } : d)),
     );
@@ -415,24 +479,27 @@ export default function TraiteurEspacePage() {
   async function confirmDeleteDish() {
     if (!dishToDelete) return;
     setIsDeleting(true);
+    const token = cookies.get("token");
     try {
-      const dish = await supabase
-        .from("dishes")
-        .select("*")
-        .eq("id", dishToDelete)
-        .single();
-
-      if (dish.data && dish.data.image_urls) {
-        const fileNames = dish.data.image_urls.map((url: string) =>
-          url.split("/").pop(),
-        );
+      const dish = dishes.find((d) => d.id === dishToDelete);
+      if (dish && dish.image_urls && dish.image_urls.length > 0) {
+        const fileNames = dish.image_urls
+          .map((url: string) => url.split("/").pop())
+          .filter((name): name is string => Boolean(name));
         await supabase.storage.from("images").remove(fileNames);
       }
 
-      await supabase
-        .from("dishes")
-        .update({ is_archived: true })
-        .eq("id", dishToDelete);
+      if (token) {
+        await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${dishToDelete}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+      }
 
       setDishes((prev) => prev.filter((d) => d.id !== dishToDelete));
     } catch (err) {
@@ -463,7 +530,8 @@ export default function TraiteurEspacePage() {
     newDish.name.trim() !== "" &&
     newDish.price !== "" &&
     newDish.cuisine_type !== "" &&
-    (selectedFiles.length > 0 || (newDish.image_urls && newDish.image_urls.length > 0));
+    (selectedFiles.length > 0 ||
+      (newDish.image_urls && newDish.image_urls.length > 0));
 
   if (loading)
     return (
@@ -486,7 +554,9 @@ export default function TraiteurEspacePage() {
             {editProfile ? "Modifier mon profil" : "Devenir Traiteur"}
           </h1>
           <p className="text-white/70 text-sm mt-1">
-            {editProfile ? "Mets à jour tes informations" : "Configure ton espace traiteur"}
+            {editProfile
+              ? "Mets à jour tes informations"
+              : "Configure ton espace traiteur"}
           </p>
         </div>
         <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
@@ -507,16 +577,26 @@ export default function TraiteurEspacePage() {
                 <div className="flex items-center gap-4">
                   <div className="relative w-20 h-20 rounded-full bg-gray-100 border-2 border-dashed border-gray-300 flex items-center justify-center overflow-hidden shrink-0">
                     {profileImageFile ? (
-                      <img src={URL.createObjectURL(profileImageFile)} alt="Preview" className="w-full h-full object-cover" />
+                      <img
+                        src={URL.createObjectURL(profileImageFile)}
+                        alt="Preview"
+                        className="w-full h-full object-cover"
+                      />
                     ) : setupData.image_url ? (
-                      <img src={setupData.image_url} alt="Current profile" className="w-full h-full object-cover" />
+                      <img
+                        src={setupData.image_url}
+                        alt="Current profile"
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <ImagePlus className="w-8 h-8 text-gray-400" />
                     )}
                   </div>
                   <div className="flex-1">
                     <label className="cursor-pointer bg-[#E8F5E9] text-[#1D6B45] px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#C8E6C9] transition-colors inline-block">
-                      {profileImageFile || setupData.image_url ? "Changer la photo" : "Ajouter une photo"}
+                      {profileImageFile || setupData.image_url
+                        ? "Changer la photo"
+                        : "Ajouter une photo"}
                       <input
                         type="file"
                         accept="image/jpeg, image/png, image/webp"
@@ -625,9 +705,13 @@ export default function TraiteurEspacePage() {
             disabled={savingSetup}
             className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold hover:bg-[#0F4A30] transition-colors disabled:opacity-60"
           >
-            {savingSetup 
-              ? (editProfile ? "Modification..." : "Création...") 
-              : (editProfile ? "Enregistrer les modifications" : "Créer mon espace traiteur")}
+            {savingSetup
+              ? editProfile
+                ? "Modification..."
+                : "Création..."
+              : editProfile
+                ? "Enregistrer les modifications"
+                : "Créer mon espace traiteur"}
           </button>
         </div>
       </div>
@@ -856,10 +940,10 @@ export default function TraiteurEspacePage() {
         </Link>
         <div className="flex items-center gap-3">
           {traiteur?.image_url && (
-            <img 
-              src={traiteur.image_url} 
-              alt="Profil traiteur" 
-              className="w-16 h-16 rounded-full object-cover border-2 border-white/20" 
+            <img
+              src={traiteur.image_url}
+              alt="Profil traiteur"
+              className="w-16 h-16 rounded-full object-cover border-2 border-white/20"
             />
           )}
           <div>

@@ -45,6 +45,7 @@ class AuthService {
                 full_name: true,
                 email: true,
                 role: true,
+                phone:true,
                 city: true,
                 created_at: true
             }

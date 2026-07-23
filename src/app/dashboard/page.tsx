@@ -41,13 +41,17 @@ type GpRequest = {
   status: string;
   created_at: string;
   weight_kg: number;
+  departure_city?: string | null;
+  arrival_city?: string | null;
   listing?: {
     departure_city: string;
     arrival_city: string;
+    is_active?: boolean | null;
   } | null;
   gp_listings?: {
     departure_city: string;
     arrival_city: string;
+    is_active?: boolean | null;
   } | null;
 };
 
@@ -307,6 +311,10 @@ export default async function DashboardPage() {
                 {/* Demandes GP */}
                 {gpRequests?.map((req: GpRequest) => {
                   const listing = req.listing || req.gp_listings;
+                  const depCity = req.departure_city || listing?.departure_city;
+                  const arrCity = req.arrival_city || listing?.arrival_city;
+                  const isListingDeleted = !listing || listing.is_active === false;
+
                   return (
                     <div
                       key={req.id}
@@ -315,8 +323,17 @@ export default async function DashboardPage() {
                       <div className="flex items-center gap-3">
                         <Plane className="text-[#1D6B45]" size={20} />
                         <div>
-                          <p className="text-sm font-medium text-gray-800">
-                            {listing?.departure_city} → {listing?.arrival_city}
+                          <p className="text-sm font-medium text-gray-800 flex items-center gap-1.5 flex-wrap">
+                            <span>
+                              {depCity && arrCity
+                                ? `${depCity} → ${arrCity}`
+                                : "Annonce retirée"}
+                            </span>
+                            {isListingDeleted && (
+                              <span className="text-[10px] bg-red-50 text-red-600 px-1.5 py-0.5 rounded font-medium border border-red-100">
+                                Annonce supprimée
+                              </span>
+                            )}
                           </p>
                           <p className="text-xs text-gray-600">
                             {formatDate(req.created_at)} · {req.weight_kg} kg

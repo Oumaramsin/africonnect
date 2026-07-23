@@ -75,6 +75,11 @@ type GpRequest = {
   status: string;
   total_amount: number;
   notes: string | null;
+  departure_city?: string | null;
+  departure_country?: string | null;
+  arrival_city?: string | null;
+  arrival_country?: string | null;
+  departure_date?: string | null;
   created_at: string;
   listing?: {
     departure_city: string;
@@ -83,6 +88,7 @@ type GpRequest = {
     arrival_country: string;
     departure_date: string;
     gp_id: string;
+    is_active?: boolean | null;
   } | null;
   gp_listings?: {
     departure_city: string;
@@ -91,6 +97,7 @@ type GpRequest = {
     arrival_country: string;
     departure_date: string;
     gp_id: string;
+    is_active?: boolean | null;
   } | null;
   sender?: { full_name: string; phone: string | null } | null;
   profiles?: { full_name: string; phone: string | null } | null;
@@ -685,6 +692,13 @@ export default function CommandesPage() {
                   <div className="space-y-3">
                     {gpEnvoyees.map((request) => {
                       const listing = request.listing || request.gp_listings;
+                      const depCity = request.departure_city || listing?.departure_city;
+                      const depCountry = request.departure_country || listing?.departure_country;
+                      const arrCity = request.arrival_city || listing?.arrival_city;
+                      const arrCountry = request.arrival_country || listing?.arrival_country;
+                      const depDate = request.departure_date || listing?.departure_date;
+                      const isListingDeleted = !listing || listing.is_active === false;
+
                       return (
                         <div
                           key={request.id}
@@ -692,15 +706,21 @@ export default function CommandesPage() {
                         >
                           <div className="flex items-start justify-between mb-3">
                             <div>
-                              <p className="font-semibold text-gray-800">
+                              <p className="font-semibold text-gray-800 flex items-center flex-wrap gap-1">
                                 <Plane
                                   size={16}
                                   className="inline mr-1 text-[#1D6B45]"
                                 />{" "}
-                                {listing?.departure_city} (
-                                {listing?.departure_country}) →{" "}
-                                {listing?.arrival_city} (
-                                {listing?.arrival_country})
+                                <span>
+                                  {depCity && arrCity
+                                    ? `${depCity} (${depCountry || ""}) → ${arrCity} (${arrCountry || ""})`
+                                    : "Annonce retirée"}
+                                </span>
+                                {isListingDeleted && (
+                                  <span className="text-[11px] bg-red-50 text-red-600 px-2 py-0.5 rounded-md font-medium border border-red-100">
+                                    Annonce supprimée
+                                  </span>
+                                )}
                               </p>
                               <p className="text-xs text-gray-600 mt-0.5">
                                 {formatDate(request.created_at)}
@@ -716,9 +736,7 @@ export default function CommandesPage() {
                               />
                               <span>
                                 Départ :{" "}
-                                {listing?.departure_date
-                                  ? formatDate(listing.departure_date)
-                                  : "N/A"}
+                                {depDate ? formatDate(depDate) : "N/A"}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -1086,6 +1104,14 @@ export default function CommandesPage() {
                     {gpRecues.map((request) => {
                       const senderInfo = request.sender || request.profiles;
                       const listing = request.listing || request.gp_listings;
+                      const depCity = request.departure_city || listing?.departure_city;
+                      const depCountry = request.departure_country || listing?.departure_country;
+                      const arrCity = request.arrival_city || listing?.arrival_city;
+                      const arrCountry = request.arrival_country || listing?.arrival_country;
+                      const depDate = request.departure_date || listing?.departure_date;
+
+                      const isListingDeleted = !listing || listing.is_active === false;
+
                       return (
                         <div
                           key={request.id}
@@ -1107,17 +1133,21 @@ export default function CommandesPage() {
                             {getStatutBadge(request.status)}
                           </div>
                           <div className="bg-gray-50 rounded-xl p-3 space-y-1.5 mb-4">
-                            <div className="flex items-center gap-2 text-sm text-gray-600">
+                            <div className="flex items-center gap-2 text-sm text-gray-600 flex-wrap">
                               <Plane
                                 size={16}
                                 className="text-[#1D6B45] inline mr-1"
                               />
                               <span>
-                                {listing?.departure_city} (
-                                {listing?.departure_country}) →{" "}
-                                {listing?.arrival_city} (
-                                {listing?.arrival_country})
+                                {depCity && arrCity
+                                  ? `${depCity} (${depCountry || ""}) → ${arrCity} (${arrCountry || ""})`
+                                  : "Annonce retirée"}
                               </span>
+                              {isListingDeleted && (
+                                <span className="text-[11px] bg-red-50 text-red-600 px-2 py-0.5 rounded-md font-medium border border-red-100">
+                                  Annonce supprimée
+                                </span>
+                              )}
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-600">
                               <Calendar
@@ -1125,9 +1155,7 @@ export default function CommandesPage() {
                                 className="text-[#1D6B45] inline mr-1"
                               />
                               <span>
-                                {listing?.departure_date
-                                  ? formatDate(listing.departure_date)
-                                  : "N/A"}
+                                {depDate ? formatDate(depDate) : "N/A"}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-600">

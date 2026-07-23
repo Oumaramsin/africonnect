@@ -3,8 +3,11 @@ import { AuthenticatedRequest } from "../utils/types";
 import {
   createGpOrder,
   createNewGp,
+  deleteGpListing,
   getAllGp,
   getGpById,
+  getGpByUserId,
+  updateGpListing,
 } from "../services/gpService";
 
 export const getAllGpController = async (req: Request, res: Response) => {
@@ -184,6 +187,76 @@ export const createNewGpController = async (req: Request, res: Response) => {
     });
   } catch (error) {
     console.error("Erreur dans createNewGpController:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const getUserGpListingsController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const user = (req as AuthenticatedRequest).user as any;
+    const gp_id = user?.userId;
+
+    if (!gp_id) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+
+    const gp = await getGpByUserId(gp_id);
+
+    res.json({
+      success: true,
+      data: { gp },
+    });
+  } catch (error) {
+    console.error("Erreur dans getUserGpListingsController:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const updateGpListingController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const { id } = req.params;
+    const body = req.body;
+
+    if (body.available_kg) {
+      body.available_kg = parseFloat(body.available_kg);
+    }
+    if (body.price_per_kg) {
+      body.price_per_kg = parseFloat(body.price_per_kg);
+    }
+
+    const gp = await updateGpListing(id, body);
+
+    res.json({
+      success: true,
+      data: { gp },
+    });
+  } catch (error) {
+    console.error("Erreur dans updateGpListingController:", error);
+    res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const deleteGpListingController = async (
+  req: Request,
+  res: Response
+) => {
+  try {
+    const { id } = req.params;
+
+    await deleteGpListing(id);
+
+    res.json({
+      success: true,
+      message: "Annonce supprimée avec succès",
+    });
+  } catch (error) {
+    console.error("Erreur dans deleteGpListingController:", error);
     res.status(500).json({ error: "Server error" });
   }
 };

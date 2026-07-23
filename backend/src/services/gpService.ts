@@ -51,7 +51,12 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
         declared_value: order.declared_value,
         notes: order.notes,
         total_amount: order.total_amount,
-      },
+        departure_city: gpListing?.departure_city || null,
+        departure_country: gpListing?.departure_country || null,
+        arrival_city: gpListing?.arrival_city || null,
+        arrival_country: gpListing?.arrival_country || null,
+        departure_date: gpListing?.departure_date || null,
+      } as any,
     });
 
     if (gpListing?.gp_id) {
@@ -72,5 +77,45 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
     }
 
     return newOrder;
+  });
+};
+
+export const getGpByUserId = async (gp_id: string) => {
+  return await db.gpListing.findMany({
+    where: {
+      gp_id: gp_id,
+      is_active: true,
+    },
+    orderBy: {
+      created_at: "desc",
+    },
+  });
+};
+
+export const updateGpListing = async (id: string, data: any) => {
+  const updateData: any = { ...data };
+  if (data.departure_date) {
+    updateData.departure_date = new Date(data.departure_date);
+  }
+  return await db.gpListing.update({
+    where: { id },
+    data: updateData,
+  });
+};
+
+export const deleteGpListing = async (id: string) => {
+  const hasRequests = await db.gpRequest.findFirst({
+    where: { listing_id: id },
+  });
+
+  if (hasRequests) {
+    return await db.gpListing.update({
+      where: { id },
+      data: { is_active: false },
+    });
+  }
+
+  return await db.gpListing.delete({
+    where: { id },
   });
 };

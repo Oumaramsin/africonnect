@@ -16,6 +16,7 @@ import {
 } from "lucide-react";
 import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
+import cookies  from "js-cookie";
 
 interface Gp {
   id: string;
@@ -105,16 +106,27 @@ export default function GpEspacePage() {
     });
   }
 
-  async function handleDeleteGp(){
-     try {
-      const { data, error } = await supabase
-        .from("gp_listings")
-        .delete()
-        .eq("id", deleteGpId)
-      if (error) throw error;
+  async function handleDeleteGp() {
+    try {
+      const token = cookies.get("token");
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/gp/${deleteGpId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (!response.ok) {
+        const res = await response.json();
+        throw new Error(res.error || "Erreur lors de la suppression");
+      }
 
-      setGP((prev) => prev ? prev.filter((item) => item.id !== deleteGpId) : []);
-      
+      setGP((prev) =>
+        prev ? prev.filter((item) => item.id !== deleteGpId) : [],
+      );
+      setDeleteGpId(null);
     } catch (error: any) {
       console.error("Erreur lors de la suppression :", error);
       alert("Une erreur est survenue : " + error.message);
@@ -123,6 +135,7 @@ export default function GpEspacePage() {
 
   async function handleEditGp() {
     try {
+      const token = cookies.get("token");
       const payload = {
         departure_city: formData.departure_city,
         departure_country: formData.departure_country,
@@ -138,17 +151,28 @@ export default function GpEspacePage() {
         is_active: formData.is_active,
       };
 
-      const { data, error } = await supabase
-        .from("gp_listings")
-        .update(payload)
-        .eq("id", editGpId)
-        .select()
-        .single();
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/gp/${editGpId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify(payload),
+        },
+      );
 
-      if (error) throw error;
+      const res = await response.json();
+      if (!response.ok) {
+        throw new Error(res.error || "Erreur lors de la mise à jour");
+      }
 
+      const updatedGp = res.data.gp;
       setGP((prev) =>
-        prev ? prev.map((item) => (item.id === editGpId ? data : item)) : []
+        prev
+          ? prev.map((item) => (item.id === editGpId ? updatedGp : item))
+          : [],
       );
 
       setView("annonces");
@@ -160,19 +184,31 @@ export default function GpEspacePage() {
 
   useEffect(() => {
     async function loadGP() {
-      const {
-        data: { session },
-      } = await supabase.auth.getSession();
-      if (!session) {
+      const token = cookies.get("token");
+      if (!token) {
         router.push("/login");
         return;
       }
 
-      const { data: gp } = await supabase
-        .from("gp_listings")
-        .select("*")
-        .eq("gp_id", session.user.id);
-      setGP(gp);
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/gp/me`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+        const res = await response.json();
+        if (!response.ok) {
+          console.error(res.error || "Erreur de chargement des trajets");
+          return;
+        }
+        setGP(res.data.gp || []);
+      } catch (err) {
+        console.error("Erreur récupération GP me:", err);
+      }
     }
     loadGP();
   }, []);
@@ -307,7 +343,7 @@ export default function GpEspacePage() {
                   >
                     Modifier
                   </button>
-                  <button 
+                  <button
                     onClick={() => setDeleteGpId(annonce.id)}
                     className="text-xs font-medium text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
                   >
@@ -323,9 +359,12 @@ export default function GpEspacePage() {
         {deleteGpId && (
           <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
             <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-              <h3 className="text-lg font-bold text-gray-800 mb-2">Supprimer ce trajet ?</h3>
+              <h3 className="text-lg font-bold text-gray-800 mb-2">
+                Supprimer ce trajet ?
+              </h3>
               <p className="text-sm text-gray-500 mb-6">
-                Cette action est irréversible. Le trajet sera définitivement effacé.
+                Cette action est irréversible. Le trajet sera définitivement
+                effacé.
               </p>
               <div className="flex gap-3">
                 <button
@@ -375,7 +414,12 @@ export default function GpEspacePage() {
                   </label>
                   <select
                     value={formData.departure_city}
-                    onChange={(e) => setFormData({ ...formData, departure_city: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        departure_city: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   >
                     <option value="">Choisir</option>
@@ -392,7 +436,12 @@ export default function GpEspacePage() {
                   </label>
                   <select
                     value={formData.departure_country}
-                    onChange={(e) => setFormData({ ...formData, departure_country: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        departure_country: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   >
                     {COUNTRIES_FR.map((c) => (
@@ -416,7 +465,9 @@ export default function GpEspacePage() {
                   <input
                     type="text"
                     value={formData.arrival_city}
-                    onChange={(e) => setFormData({ ...formData, arrival_city: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, arrival_city: e.target.value })
+                    }
                     placeholder="Ex: Dakar"
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                   />
@@ -427,7 +478,12 @@ export default function GpEspacePage() {
                   </label>
                   <select
                     value={formData.arrival_country}
-                    onChange={(e) => setFormData({ ...formData, arrival_country: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        arrival_country: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   >
                     <option value="">Choisir</option>
@@ -455,7 +511,12 @@ export default function GpEspacePage() {
                   <input
                     type="date"
                     value={formData.departure_date}
-                    onChange={(e) => setFormData({ ...formData, departure_date: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        departure_date: e.target.value,
+                      })
+                    }
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                   />
                 </div>
@@ -463,9 +524,14 @@ export default function GpEspacePage() {
                   <label className="block text-xs text-gray-500 mb-1">
                     Statut
                   </label>
-                  <select 
+                  <select
                     value={formData.is_active ? "actif" : "termine"}
-                    onChange={(e) => setFormData({ ...formData, is_active: e.target.value === "actif" })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        is_active: e.target.value === "actif",
+                      })
+                    }
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   >
                     <option value="actif">Actif (En cours)</option>
@@ -489,7 +555,9 @@ export default function GpEspacePage() {
                         name="flight_type"
                         value={type}
                         checked={formData.flight_type === type}
-                        onChange={() => setFormData({ ...formData, flight_type: type })}
+                        onChange={() =>
+                          setFormData({ ...formData, flight_type: type })
+                        }
                         className="accent-[#1D6B45]"
                       />
                       <span className="text-sm text-gray-700 capitalize">
@@ -518,7 +586,9 @@ export default function GpEspacePage() {
                     min="0.5"
                     max="30"
                     value={formData.available_kg}
-                    onChange={(e) => setFormData({ ...formData, available_kg: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, available_kg: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                   />
                 </div>
@@ -531,7 +601,9 @@ export default function GpEspacePage() {
                     step="0.5"
                     min="1"
                     value={formData.price_per_kg}
-                    onChange={(e) => setFormData({ ...formData, price_per_kg: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, price_per_kg: e.target.value })
+                    }
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                   />
                 </div>
@@ -555,7 +627,9 @@ export default function GpEspacePage() {
                   <input
                     type="text"
                     value={formData.pickup_city}
-                    onChange={(e) => setFormData({ ...formData, pickup_city: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({ ...formData, pickup_city: e.target.value })
+                    }
                     placeholder="Ex: Paris 10e, Aubervilliers..."
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                   />
@@ -570,7 +644,12 @@ export default function GpEspacePage() {
                   <input
                     type="text"
                     value={formData.pickup_address}
-                    onChange={(e) => setFormData({ ...formData, pickup_address: e.target.value })}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        pickup_address: e.target.value,
+                      })
+                    }
                     placeholder="Ex: Gare du Nord, Paris"
                     className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
                   />
@@ -588,7 +667,9 @@ export default function GpEspacePage() {
               </p>
               <textarea
                 value={formData.description}
-                onChange={(e) => setFormData({ ...formData, description: e.target.value })}
+                onChange={(e) =>
+                  setFormData({ ...formData, description: e.target.value })
+                }
                 placeholder="Ex: Voyageur régulier Paris-Dakar depuis 3 ans. Sérieux et ponctuel. Colis remis en main propre à destination. Pas de liquides ni produits périssables."
                 rows={4}
                 className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
