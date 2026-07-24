@@ -5,8 +5,7 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { createOrder, type CartItem } from "@/lib/api/traiteur";
-import { createClient } from "@/lib/supabase";
+import { type CartItem } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { PartyPopper, Car, Home } from "lucide-react";
 import cookies from "js-cookie";
@@ -36,7 +35,6 @@ type FormData = z.infer<typeof schema>;
 
 export default function CheckoutPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -128,7 +126,6 @@ export default function CheckoutPage() {
         setLoading(false);
         return;
       }
-      console.log(dataR);
 
       localStorage.removeItem("africonnect_cart");
       setSuccess(true);

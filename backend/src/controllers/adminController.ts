@@ -1,26 +1,26 @@
 import { Request, Response } from "express";
 import {
   deleteTraiteur,
-  getAllTraiteur,
   updateStateTraiteur,
   createTraiteurFromUser,
-  getAllGp,
   updateStateGp,
   deleteGp,
   createGpFromUser,
+  getAdminOverview,
 } from "../services/adminService";
 
-export const getAllTraiteurController = async (req: Request, res: Response) => {
+export const getAdminOverviewController = async (
+  req: Request,
+  res: Response,
+) => {
   try {
-    const traiteur = await getAllTraiteur();
-
+    const overview = await getAdminOverview();
     res.json({
       success: true,
-      data: { traiteur },
+      data: overview,
     });
-  } catch (error) {
-    console.error("Erreur dans getAllTraiteurController:", error);
-    res.status(500).json({ error: "Server error" });
+  } catch (error: any) {
+    res.status(500).json({ success: false, error: error.message });
   }
 };
 
@@ -120,19 +120,6 @@ export const createTraiteurFromUserController = async (
   }
 };
 
-export const getAllGpController = async (req: Request, res: Response) => {
-  try {
-    const gp = await getAllGp();
-
-    res.json({
-      success: true,
-      data: { gp },
-    });
-  } catch (error) {
-    console.error("Erreur dans getAllGpController:", error);
-    res.status(500).json({ error: "Server error" });
-  }
-};
 
 export const updateStateGpController = async (req: Request, res: Response) => {
   try {
@@ -249,16 +236,3 @@ export const createGpFromUserController = async (
   }
 };
 
-// export const createNewUserController = async (req: Request, res: Response) => {
-//   try {
-//     const user = await createNewUser();
-
-//     res.json({
-//       success: true,
-//       data: { user },
-//     });
-//   } catch (error) {
-//     console.error("Erreur dans getAllTraiteurController:", error);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// };

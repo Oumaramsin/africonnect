@@ -5,9 +5,8 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
-import { ChefHat, Plane, User, Package, LogOut } from "lucide-react";
+import { ChefHat, Plane, User, Package, LogOut, Lock } from "lucide-react";
 import cookies from "js-cookie";
 
 const schema = z.object({
@@ -36,7 +35,6 @@ const CITIES = [
 
 export default function ProfilPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -64,7 +62,6 @@ export default function ProfilPage() {
       const decodedPayload = JSON.parse(
         Buffer.from(payloadBase64, "base64").toString("utf-8"),
       );
-      console.log(decodedPayload);
       const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/user/${decodedPayload.userId}`,{
         headers:{
           "Content-Type": "application/json",
@@ -76,7 +73,6 @@ export default function ProfilPage() {
         setError(data.message || "Errueur lors de la récupération du profil utilisateur");
         return;
       }
-      console.log(data)
       setUserEmail(data.foundUser.email)
       setUserRole(data.foundUser.role || "client");
       reset({
@@ -87,7 +83,7 @@ export default function ProfilPage() {
       setLoading(false);
     }
     loadProfile();
-  }, [router, supabase, reset]);
+  }, [router, reset]);
 
   const onSubmit = async (formData: FormData) => {
     setSaving(true);
@@ -193,7 +189,10 @@ export default function ProfilPage() {
               <>
                 <Plane size={16} className="inline mr-1" /> GP
               </>
-            ) : (
+            ) : userRole === "admin" ? (
+              <>
+                <Lock size={16} className="inline mr-1" /> Admin
+              </>) : (
               <>
                 <User size={16} className="inline mr-1" /> Client
               </>

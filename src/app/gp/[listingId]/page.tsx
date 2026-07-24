@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -15,7 +14,7 @@ import {
   Package,
   Home,
 } from "lucide-react";
-import { getFlag } from "@/lib/api/gp";
+import { getFlag } from "@/lib/types/gp";
 import cookies from "js-cookie";
 
 type GpListing = {
@@ -61,7 +60,6 @@ type GpRequest = {
 export default function GpDetailPage() {
   const { listingId } = useParams();
   const router = useRouter();
-  const supabase = createClient();
 
   const [listing, setListing] = useState<GpListing | null>(null);
   const [loading, setLoading] = useState(true);
@@ -101,7 +99,6 @@ export default function GpDetailPage() {
         return;
       }
       setListing(data.data.gp);
-      console.log(data);
       setLoading(false);
     };
     load();
@@ -149,7 +146,9 @@ export default function GpDetailPage() {
     }
 
     if (isDeclaredValInvalid) {
-      setError("La valeur déclarée doit être un nombre positif valide (ex: 100)");
+      setError(
+        "La valeur déclarée doit être un nombre positif valide (ex: 100)",
+      );
       return;
     }
 
@@ -189,12 +188,11 @@ export default function GpDetailPage() {
       },
     );
     const data = await response.json();
-    if(!response.ok){
+    if (!response.ok) {
       setError(data.message || "Erreur lors de l'envois de la commande");
       setSubmitting(false);
       return;
     }
-    console.log(data)
     setSuccess(true);
     setSubmitting(false);
   };
@@ -231,16 +229,15 @@ export default function GpDetailPage() {
             Demande envoyée !
           </h2>
           <p className="text-gray-500 mb-6">
-            {(listing.gp?.full_name || listing.profiles?.full_name || "Le GP")} a reçu ta demande et va te
-            contacter rapidement.
+            {listing.gp?.full_name || listing.profiles?.full_name || "Le GP"} a
+            reçu ta demande et va te contacter rapidement.
           </p>
           {(listing.gp?.whatsapp || listing.profiles?.whatsapp) && (
             <button
               onClick={() => {
-                const whatsappNum = (listing.gp?.whatsapp || listing.profiles?.whatsapp)!;
-                const num = whatsappNum
-                  .replace(/\+/g, "")
-                  .replace(/\s/g, "");
+                const whatsappNum = (listing.gp?.whatsapp ||
+                  listing.profiles?.whatsapp)!;
+                const num = whatsappNum.replace(/\+/g, "").replace(/\s/g, "");
                 const msg = encodeURIComponent(
                   `Bonjour, je viens d'envoyer une demande de colis sur AfriConnect. ${form.weight_kg}kg — ${form.content_desc}`,
                 );
@@ -304,8 +301,8 @@ export default function GpDetailPage() {
           return (
             <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
               <h2 className="font-semibold text-gray-800 mb-4">
-                <User size={16} className="inline mr-1 text-[#1D6B45]" /> À propos
-                du GP
+                <User size={16} className="inline mr-1 text-[#1D6B45]" /> À
+                propos du GP
               </h2>
               <div className="flex items-center gap-4">
                 <div className="w-14 h-14 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xl font-bold">

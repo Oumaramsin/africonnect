@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { Mail, Smartphone } from "lucide-react";
 import cookies from "js-cookie";
@@ -10,7 +9,6 @@ type Method = "email" | "phone";
 
 export default function LoginPage() {
   const router = useRouter();
-  const supabase = createClient();
   const [method, setMethod] = useState<Method>("email");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
@@ -49,7 +47,6 @@ export default function LoginPage() {
         setLoading(false);
         return;
       }
-      console.log(data);
       cookies.set("token", data.token, {
         expires: 7,
       });
@@ -59,17 +56,6 @@ export default function LoginPage() {
       setError("Impossible de contacter le serveur.");
       setLoading(false);
     }
-
-    // const { error: signInError } = await supabase.auth.signInWithPassword({
-    //   email: authEmail,
-    //   password,
-    // });
-
-    // if (signInError) {
-    //   setError("Identifiants incorrects");
-    //   setLoading(false);
-    //   return;
-    // }
   };
 
   return (

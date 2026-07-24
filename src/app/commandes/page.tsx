@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import cookies from "js-cookie";
 import {
@@ -106,7 +105,6 @@ type GpRequest = {
 type Tab = "envoyees" | "recues";
 
 export default function CommandesPage() {
-  const supabase = createClient();
   const [tab, setTab] = useState<Tab>("envoyees");
   const [serviceFilter, setServiceFilter] = useState<
     "tout" | "traiteur" | "gp"

@@ -3,7 +3,6 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase";
 import {
   Home,
   ChefHat,
@@ -23,7 +22,6 @@ const NAV_ITEMS = [
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const supabase = createClient();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
@@ -38,20 +36,8 @@ export default function BottomNav() {
         const decodedPayload = JSON.parse(
           Buffer.from(payloadBase64, "base64").toString("utf-8"),
         );
-        console.log(decodedPayload)
         setIsLoggedIn(true);
-        setIsAdmin(decodedPayload.userId.role === "admin")
-        // const response = await fetch(
-        //   `${process.env.NEXT_PUBLIC_API_URL}/auth/user/${id}`,    // Implémenter le Fetch si on cherche a sécurisé au maximum
-        //   {
-        //     headers: {
-        //       "Content-type": "application/json",
-        //       Authorization: `Bearer ${token}`,
-        //     },
-        //   },
-        // );
-        // const data = await response.json();
-        // console.log(data)
+        setIsAdmin(decodedPayload.role === "admin")
       } catch (error) {
         console.error("Erreur dans le fetch du dashboard :", error);
       }

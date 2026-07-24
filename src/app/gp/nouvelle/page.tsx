@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import {
   Plane,
@@ -65,7 +64,6 @@ const CITIES_FR = [
 
 export default function NouvelleAnnoncePage() {
   const router = useRouter();
-  const supabase = createClient();
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
@@ -124,7 +122,6 @@ export default function NouvelleAnnoncePage() {
       }),
     });
     const dataR = await response.json();
-    console.log(dataR)
     if (!response.ok) {
       setError(dataR.message);
       setLoading(false);

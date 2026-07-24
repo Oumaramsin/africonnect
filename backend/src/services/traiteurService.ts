@@ -5,14 +5,29 @@ import {
   CreateTraiteurProfileInput,
   CreateDishInput,
 } from "../utils/types";
+import { deleteFromR2 } from "./storageService";
 
 export const getActiveTraiteur = async () => {
   return await db.traiteur.findMany({
     where: {
       is_active: true,
+      dishes: {
+        some: {
+          is_archived: false,
+          is_available: true,
+        },
+      },
     },
     include: {
-      dishes: true,
+      dishes: {
+        where: {
+          is_archived: false,
+          is_available: true,
+        },
+        orderBy: {
+          created_at: "desc",
+        },
+      },
       profile: true,
     },
   });
@@ -27,8 +42,13 @@ export const getTraiteurById = async (id: string) => {
       dishes: {
         where: {
           is_archived: false,
+          is_available: true,
+        },
+        orderBy: {
+          created_at: "desc",
         },
       },
+      profile: true,
     },
   });
 };
@@ -151,10 +171,13 @@ export const createTraiteurProfile = async (
       },
     });
 
-    await tx.profile.update({
-      where: { id: userId },
-      data: { role: "traiteur" },
-    });
+    const p = await tx.profile.findUnique({ where: { id: userId } });
+    if (p && p.role !== "admin") {
+      await tx.profile.update({
+        where: { id: userId },
+        data: { role: "traiteur" },
+      });
+    }
 
     return traiteur;
   });
@@ -167,6 +190,11 @@ export const updateTraiteurProfile = async (
   const traiteur = await getTraiteurByUserId(userId);
   if (!traiteur) {
     throw new Error("Profil traiteur introuvable");
+  }
+
+  // Suppression automatique de l'ancienne photo de profil du stockage
+  if (data.image_url && traiteur.image_url && data.image_url !== traiteur.image_url) {
+    await deleteFromR2(traiteur.image_url);
   }
 
   return await db.traiteur.update({
@@ -212,6 +240,15 @@ export const updateTraiteurDish = async (
     throw new Error("Plat introuvable ou non autorisé");
   }
 
+  // Suppression automatique des images retirées lors de l'édition du plat
+  if (data.image_urls && dish.image_urls) {
+    const keptUrls = data.image_urls;
+    const removedUrls = dish.image_urls.filter((url) => !keptUrls.includes(url));
+    for (const oldUrl of removedUrls) {
+      await deleteFromR2(oldUrl);
+    }
+  }
+
   return await db.dish.update({
     where: { id: dishId },
     data: {
@@ -232,6 +269,13 @@ export const deleteTraiteurDish = async (dishId: string, traiteurId: string) => 
 
   if (!dish) {
     throw new Error("Plat introuvable ou non autorisé");
+  }
+
+  // Suppression de toutes les images du plat du stockage
+  if (dish.image_urls && dish.image_urls.length > 0) {
+    for (const url of dish.image_urls) {
+      await deleteFromR2(url);
+    }
   }
 
   return await db.dish.update({

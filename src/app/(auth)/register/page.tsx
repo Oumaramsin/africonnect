@@ -1,14 +1,12 @@
 "use client";
 
 import { useState } from "react";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { Mail, Smartphone, PartyPopper } from "lucide-react";
 
 type Method = "email" | "phone";
 
 export default function RegisterPage() {
-  const supabase = createClient();
   const [method, setMethod] = useState<Method>("email");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -69,7 +67,6 @@ export default function RegisterPage() {
       );
 
       const data = await response.json();
-      console.log(data)
 
       if (!response.ok) {
         setError(data.message || "Une erreur est survenue lors de l'inscription.");

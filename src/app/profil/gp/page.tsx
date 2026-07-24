@@ -14,7 +14,6 @@ import {
   Lock,
   PenLine,
 } from "lucide-react";
-import { createClient } from "@/lib/supabase";
 import { useRouter } from "next/navigation";
 import cookies  from "js-cookie";
 
@@ -67,7 +66,6 @@ export default function GpEspacePage() {
     "annonces",
   );
   const router = useRouter();
-  const supabase = createClient();
   const [gp, setGP] = useState<Gp[] | null>([]);
   const [editGpId, setEditGpId] = useState<string | null>(null);
   const [formData, setFormData] = useState({

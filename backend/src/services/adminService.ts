@@ -1,12 +1,5 @@
 import { db } from "../db";
 
-export const getAllTraiteur = async () => {
-  return await db.traiteur.findMany({
-    orderBy: {
-      name: "desc",
-    },
-  });
-};
 
 export const updateStateTraiteur = async (id: string, is_active: boolean) => {
   return await db.traiteur.update({
@@ -27,10 +20,13 @@ export const deleteTraiteur = async (id: string) => {
     }
 
     if (traiteur.user_id) {
-      await tx.profile.update({
-        where: { id: traiteur.user_id },
-        data: { role: "client" },
-      });
+      const p = await tx.profile.findUnique({ where: { id: traiteur.user_id } });
+      if (p && p.role !== "admin") {
+        await tx.profile.update({
+          where: { id: traiteur.user_id },
+          data: { role: "client" },
+        });
+      }
     }
 
     return await tx.traiteur.delete({
@@ -82,24 +78,32 @@ export const createTraiteurFromUser = async (
       },
     });
 
-    await tx.profile.update({
-      where: { id: userId },
-      data: { role: "traiteur" },
-    });
+    if (profile.role !== "admin") {
+      await tx.profile.update({
+        where: { id: userId },
+        data: { role: "traiteur" },
+      });
+    }
 
     return traiteur;
   });
 };
 
-export const getAllGp = async () => {
-  return await db.gpListing.findMany({
-    orderBy: {
-      created_at: "desc",
-    },
-    include: {
-      gp: true,
-    },
-  });
+export const getAdminOverview = async () => {
+  const [traiteurs, gpListings, profiles] = await Promise.all([
+    db.traiteur.findMany({
+      orderBy: { created_at: "desc" },
+      include: { profile: true },
+    }),
+    db.gpListing.findMany({
+      orderBy: { created_at: "desc" },
+      include: { gp: true },
+    }),
+    db.profile.findMany({
+      orderBy: { full_name: "asc" },
+    }),
+  ]);
+  return { traiteurs, gpListings, profiles };
 };
 
 export const updateStateGp = async (id: string, is_active: boolean) => {
@@ -129,38 +133,40 @@ export const createGpFromUser = async (
     price_per_kg: number;
   },
 ) => {
-  const profile = await db.profile.findUnique({
-    where: { id: userId },
-  });
+  return await db.$transaction(async (tx) => {
+    const profile = await tx.profile.findUnique({
+      where: { id: userId },
+    });
 
-  if (!profile) {
-    throw new Error("L'utilisateur spécifié n'existe pas.");
-  }
+    if (!profile) {
+      throw new Error("L'utilisateur spécifié n'existe pas.");
+    }
 
-  return await db.gpListing.create({
-    data: {
-      gp_id: userId,
-      departure_city: data.departure_city,
-      departure_country: data.departure_country,
-      arrival_city: data.arrival_city,
-      arrival_country: data.arrival_country,
-      departure_date: new Date(data.departure_date),
-      available_kg: data.available_kg,
-      price_per_kg: data.price_per_kg,
-      is_active: true,
-    },
+    const gpListing = await tx.gpListing.create({
+      data: {
+        gp_id: userId,
+        departure_city: data.departure_city,
+        departure_country: data.departure_country,
+        arrival_city: data.arrival_city,
+        arrival_country: data.arrival_country,
+        departure_date: new Date(data.departure_date),
+        available_kg: data.available_kg,
+        price_per_kg: data.price_per_kg,
+        is_active: true,
+      },
+      include: {
+        gp: true,
+      },
+    });
+
+    if (profile.role !== "admin") {
+      await tx.profile.update({
+        where: { id: userId },
+        data: { role: "gp" },
+      });
+    }
+
+    return gpListing;
   });
 };
 
-// A voir la création d'un nouveau utilisateur 
-// export const createNewUser = async (
-//   name: string,
-//   phone: string,
-//   email?: string,
-// ) => {
-//   return await db.user.create({
-//     data: {
-//         email:
-//     }
-//   });
-// };

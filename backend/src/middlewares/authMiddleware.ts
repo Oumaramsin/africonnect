@@ -18,7 +18,7 @@ class AuthMiddleware {
   };
   static isAdmin = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as any).user; 
-  if (!user || user.role !== "Admin") {
+  if (!user || user.role !== "admin") {
     return res.status(403).json({ message: "Accès refusé. Réservé aux administrateurs." });
   }
   next(); 

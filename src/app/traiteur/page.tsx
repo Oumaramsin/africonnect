@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { getTraiteurs, type Traiteur } from "@/lib/api/traiteur";
+import { type Traiteur } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { ChefHat, Star } from "lucide-react";
 
@@ -44,9 +44,9 @@ export default function TraiteurPage() {
           return;
         }
         const data = await response.json();
-        if (!ignore){
-          setTraiteurs(data.data.activeTraiteur)
-        } 
+        if (!ignore) {
+          setTraiteurs(data.data.activeTraiteur);
+        }
       } finally {
         if (!ignore) setLoading(false);
       }

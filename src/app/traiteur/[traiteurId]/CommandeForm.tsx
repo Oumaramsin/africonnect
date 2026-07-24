@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import { CheckCircle2, MessageSquare, Lock } from "lucide-react";
 import cookies from "js-cookie";
@@ -34,7 +33,6 @@ export default function CommandeForm({
   traiteurName,
   whatsapp,
 }: Props) {
-  const supabase = createClient();
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -115,8 +113,6 @@ export default function CommandeForm({
       setLoading(false);
       return;
     }
-    console.log(data);
-
     setSuccess(true);
     setLoading(false);
   };

@@ -2,17 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
-import {
-  getTraiteur,
-  type Traiteur,
-  type Dish,
-  type CartItem,
-} from "@/lib/api/traiteur";
+import { type Traiteur, type Dish, type CartItem } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { Star, MapPin, ChefHat, Lock } from "lucide-react";
 import CommandeForm from "./CommandeForm";
-import { createClient } from "@/lib/supabase";
-import cookies from 'js-cookie';
+import cookies from "js-cookie";
 
 // Helper DishCard component to manage image navigation locally
 function DishCard({
@@ -171,7 +165,6 @@ function DishCard({
 export default function TraiteurDetailPage() {
   const { traiteurId: id } = useParams();
   const router = useRouter();
-  const supabase = createClient();
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
   const [loading, setLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -179,8 +172,8 @@ export default function TraiteurDetailPage() {
 
   useEffect(() => {
     const load = async () => {
-      const token = cookies.get('token')
-      if(token){
+      const token = cookies.get("token");
+      if (token) {
         setIsLoggedIn(true);
       }
     };
@@ -199,15 +192,14 @@ export default function TraiteurDetailPage() {
             },
           },
         );
-        const data = await response.json()
-        console.log(data.data)
-        setTraiteur(data.data.traiteur)
-        setLoading(false)
+        const data = await response.json();
+        setTraiteur(data.data.traiteur);
+        setLoading(false);
       } catch (error) {
         console.error("Une erreur est survenue", error);
       }
     }
-    fetchTraiteurs()
+    fetchTraiteurs();
   }, [id]);
 
   const addToCart = (dish: Dish) => {

@@ -1,3 +1,4 @@
+import path from 'path';
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
@@ -9,6 +10,7 @@ import traiteurRouter from './routes/traiteur';
 import commandeRouter from './routes/commande';
 import gpRouter from './routes/gp';
 import adminRouter from './routes/admin';
+import uploadRouter from './routes/upload';
 
 dotenv.config();
 
@@ -18,6 +20,7 @@ const prisma = new PrismaClient();
 
 app.use(cors());
 app.use(express.json());
+app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
 
 // Mount API routes
 app.use('/api/auth', authRouter);
@@ -27,6 +30,7 @@ app.use('/api/traiteur', traiteurRouter);
 app.use('/api/commande', commandeRouter);
 app.use('/api/gp', gpRouter);
 app.use('/api/admin', adminRouter);
+app.use('/api/upload', uploadRouter);
 
 // Health Check Endpoint
 app.get('/api/health', async (req, res) => {

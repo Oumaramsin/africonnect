@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { MapPin, User, Utensils, Eye, ImagePlus, X } from "lucide-react";
-import { createClient } from "@/lib/supabase";
 import Link from "next/link";
 import cookies from "js-cookie";
 
@@ -49,7 +48,6 @@ const ZONES = [
 
 export default function TraiteurEspacePage() {
   const router = useRouter();
-  const supabase = createClient();
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [loading, setLoading] = useState(true);
   const [traiteur, setTraiteur] = useState<TraiteurProfile | null>(null);
@@ -83,7 +81,8 @@ export default function TraiteurEspacePage() {
   const [error, setError] = useState<string | null>(null);
   const [dishToDelete, setDishToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  async function loadTraiteur() {
+
+  async function loadTraiteur() {
     const token = cookies.get("token");
     if (!token) {
       router.push("/login");
@@ -148,16 +147,24 @@ export default function TraiteurEspacePage() {
       let finalImageUrl = setupData.image_url;
 
       if (profileImageFile) {
-        const fileName = `profil-${Date.now()}-${profileImageFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-        const { error: uploadError } = await supabase.storage
-          .from("images")
-          .upload(fileName, profileImageFile);
-        if (uploadError) throw new Error("Erreur upload photo de profil");
+        const formData = new FormData();
+        formData.append("file", profileImageFile);
+        formData.append("folder", "profiles");
 
-        const { data: urlData } = supabase.storage
-          .from("images")
-          .getPublicUrl(fileName);
-        finalImageUrl = urlData.publicUrl;
+        const uploadRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/upload/single`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          },
+        );
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok)
+          throw new Error(uploadData.error || "Erreur upload photo de profil");
+        finalImageUrl = uploadData.url;
       }
 
       const response = await fetch(
@@ -215,16 +222,24 @@ export default function TraiteurEspacePage() {
       let finalImageUrl = setupData.image_url;
 
       if (profileImageFile) {
-        const fileName = `profil-${Date.now()}-${profileImageFile.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-        const { error: uploadError } = await supabase.storage
-          .from("images")
-          .upload(fileName, profileImageFile);
-        if (uploadError) throw new Error("Erreur upload photo de profil");
+        const formData = new FormData();
+        formData.append("file", profileImageFile);
+        formData.append("folder", "profiles");
 
-        const { data: urlData } = supabase.storage
-          .from("images")
-          .getPublicUrl(fileName);
-        finalImageUrl = urlData.publicUrl;
+        const uploadRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/upload/single`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          },
+        );
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok)
+          throw new Error(uploadData.error || "Erreur upload photo de profil");
+        finalImageUrl = uploadData.url;
       }
 
       const response = await fetch(
@@ -287,23 +302,27 @@ export default function TraiteurEspacePage() {
     }
 
     try {
-      const uploadedUrls: string[] = [];
+      let uploadedUrls: string[] = [];
 
-      for (const file of selectedFiles) {
-        const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
+      if (selectedFiles.length > 0) {
+        const formData = new FormData();
+        selectedFiles.forEach((file) => formData.append("files", file));
+        formData.append("folder", "dishes");
 
-        const { error: uploadError } = await supabase.storage
-          .from("images")
-          .upload(fileName, file);
-        if (uploadError) {
-          throw new Error(
-            "Erreur lors de l'upload de l'image : " + uploadError.message,
-          );
-        }
-        const { data: urlData } = supabase.storage
-          .from("images")
-          .getPublicUrl(fileName);
-        uploadedUrls.push(urlData.publicUrl);
+        const uploadRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/upload/multiple`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          },
+        );
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok)
+          throw new Error(uploadData.error || "Erreur lors de l'upload des images");
+        uploadedUrls = uploadData.urls || [];
       }
 
       const response = await fetch(
@@ -376,36 +395,27 @@ export default function TraiteurEspacePage() {
     }
 
     try {
-      const originalUrls = editDish?.image_urls || [];
-      const keptUrls = newDish.image_urls || [];
-      const urlsToDelete = originalUrls.filter(
-        (url) => !keptUrls.includes(url),
-      );
+      let uploadedUrls: string[] = [];
 
-      if (urlsToDelete.length > 0) {
-        const fileNames = urlsToDelete.map(
-          (url) => url.split("/").pop() as string,
+      if (selectedFiles.length > 0) {
+        const formData = new FormData();
+        selectedFiles.forEach((file) => formData.append("files", file));
+        formData.append("folder", "dishes");
+
+        const uploadRes = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/upload/multiple`,
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+            body: formData,
+          },
         );
-        await supabase.storage.from("images").remove(fileNames);
-      }
-
-      const uploadedUrls: string[] = [];
-
-      for (const file of selectedFiles) {
-        const fileName = `${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, "_")}`;
-
-        const { error: uploadError } = await supabase.storage
-          .from("images")
-          .upload(fileName, file);
-        if (uploadError) {
-          throw new Error(
-            "Erreur lors de l'upload de l'image : " + uploadError.message,
-          );
-        }
-        const { data: urlData } = supabase.storage
-          .from("images")
-          .getPublicUrl(fileName);
-        uploadedUrls.push(urlData.publicUrl);
+        const uploadData = await uploadRes.json();
+        if (!uploadRes.ok)
+          throw new Error(uploadData.error || "Erreur lors de l'upload des images");
+        uploadedUrls = uploadData.urls || [];
       }
 
       const response = await fetch(
@@ -481,14 +491,6 @@ export default function TraiteurEspacePage() {
     setIsDeleting(true);
     const token = cookies.get("token");
     try {
-      const dish = dishes.find((d) => d.id === dishToDelete);
-      if (dish && dish.image_urls && dish.image_urls.length > 0) {
-        const fileNames = dish.image_urls
-          .map((url: string) => url.split("/").pop())
-          .filter((name): name is string => Boolean(name));
-        await supabase.storage.from("images").remove(fileNames);
-      }
-
       if (token) {
         await fetch(
           `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${dishToDelete}`,
@@ -1138,7 +1140,6 @@ export default function TraiteurEspacePage() {
                       </button>
                       <button
                         onClick={() => {
-                          console.log(dish);
                           setEditDish(dish);
                           setNewDish({
                             name: dish.name,

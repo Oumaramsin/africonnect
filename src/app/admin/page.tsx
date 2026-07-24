@@ -1,36 +1,39 @@
-import { redirect } from 'next/navigation'
-import { createServerSupabase } from '@/lib/supabase-server'
-import AdminAfriConnectClient from './AdminAfriConnectClient'
+import { redirect } from "next/navigation";
+import AdminAfriConnectClient from "./AdminAfriConnectClient";
+import { cookies } from "next/headers";
 
 export default async function AdminPage() {
-  const supabase = await createServerSupabase()
-  const { data: { session } } = await supabase.auth.getSession()
-  if (!session) redirect('/login')
+  const cookieStore = await cookies();
+  const token = cookieStore.get("token")?.value;
+  if (!token) {
+    redirect("/login");
+  }
+  const payloadBase64 = token.split(".")[1];
+  const decodedPayload = JSON.parse(
+    Buffer.from(payloadBase64, "base64").toString("utf-8"),
+  );
+  if(decodedPayload.role != "admin"){
+    redirect("/dashboard");
+  }
 
-  const { data: profile } = await supabase
-    .from('profiles').select('role').eq('id', session.user.id).single()
-  if (profile?.role !== 'admin') redirect('/dashboard')
+  const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin`,{
+    headers:{
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${token}`
+    }
+  })
+  const data = await response.json()
+  if(!response.ok){
+    console.error(data.message, "TETS")
+    return;
+  }
 
-  const { data: traiteurs } = await supabase
-    .from('traiteurs')
-    .select('*, profiles(full_name, phone, whatsapp)')
-    .order('created_at', { ascending: false })
-
-  const { data: gpListings } = await supabase
-    .from('gp_listings')
-    .select('*, profiles(full_name, phone, whatsapp)')
-    .order('created_at', { ascending: false })
-
-  const { data: profiles } = await supabase
-    .from('profiles')
-    .select('id, full_name, phone, whatsapp, email, role')
-    .order('full_name')
 
   return (
     <AdminAfriConnectClient
-      traiteurs={traiteurs ?? []}
-      gpListings={gpListings ?? []}
-      profiles={profiles ?? []}
+      traiteurs={data.data.traiteurs ?? []}
+      gpListings={data.data.gpListings ?? []}
+      profiles={data.data.profiles ?? []}
     />
-  )
+  );
 }
