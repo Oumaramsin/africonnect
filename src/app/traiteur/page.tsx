@@ -59,36 +59,40 @@ export default function TraiteurPage() {
   }, [cuisine]);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
-      <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
+    <div className="min-h-screen bg-[#F3F4F6]">
+      {/* Header */}
+      <div className="bg-gradient-to-br from-[#1D6B45] via-[#165637] to-[#0F4A30] px-4 pt-10 pb-6 text-white">
         <Link
           href="/dashboard"
-          className="text-white/70 text-sm mb-4 inline-block"
+          className="text-white/70 text-sm mb-3 inline-block hover:text-white transition-colors"
         >
           ← Accueil
         </Link>
         <h1 className="text-2xl font-bold text-white">Traiteurs africains</h1>
-        <p className="text-white/70 text-sm mt-1">
-          Commande un plat fait maison
+        <p className="text-white/80 text-xs mt-1">
+          Commandez de délicieux plats faits maison pour vos événements ou repas.
         </p>
+      </div>
 
-        <div className="relative mt-4 -mx-4 px-4">
-          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-8">
-            {CUISINES.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setCuisine(c.value)}
-                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                  cuisine === c.value
-                    ? "bg-white text-[#1D6B45] font-medium"
-                    : "bg-white/20 text-white"
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-          <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[#1D6B45] to-transparent pointer-events-none"></div>
+      {/* Barre de Filtres Cuisine */}
+      <div className="bg-white border-b border-gray-200/80 px-4 py-3 shadow-xs sticky top-0 z-30">
+        <div className="max-w-2xl mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
+            Cuisine :
+          </span>
+          {CUISINES.map((c) => (
+            <button
+              key={c.value}
+              onClick={() => setCuisine(c.value)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
+                cuisine === c.value
+                  ? "bg-[#1D6B45] text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {c.label}
+            </button>
+          ))}
         </div>
       </div>
 
@@ -110,10 +114,14 @@ export default function TraiteurPage() {
             <p>Aucun traiteur disponible pour cette cuisine</p>
           </div>
         ) : (
-          <div className="space-y-4">
+          <div className="space-y-6 pt-2">
             {traiteurs.map((traiteur) => (
-              <Link key={traiteur.id} href={`/traiteur/${traiteur.id}`}>
-                <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden hover:shadow-md transition-shadow">
+              <Link
+                key={traiteur.id}
+                href={`/traiteur/${traiteur.id}`}
+                className="block w-full mb-6 group"
+              >
+                <div className="bg-white rounded-3xl border border-gray-200/80 overflow-hidden shadow-sm group-hover:shadow-md transition-all duration-200">
                   <div className="h-36 bg-gradient-to-r from-[#E8F5E9] to-[#C8E6C9] flex items-center justify-center overflow-hidden relative">
                     {traiteur.image_url ? (
                       <img

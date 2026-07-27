@@ -159,6 +159,28 @@ export default function CommandesPage() {
     load();
   }, []);
 
+  const sortOrdersByPendingFirst = <
+    T extends { statut?: string; status?: string; created_at?: string },
+  >(
+    items: T[],
+  ): T[] => {
+    return [...items].sort((a, b) => {
+      const statusA = a.statut || a.status || "";
+      const statusB = b.statut || b.status || "";
+
+      const isPendingA = statusA === "en_attente" || statusA === "pending";
+      const isPendingB = statusB === "en_attente" || statusB === "pending";
+
+      if (isPendingA && !isPendingB) return -1;
+      if (!isPendingA && isPendingB) return 1;
+
+      //tri ordre décroissant
+      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+      return dateB - dateA;
+    });
+  };
+
   async function loadAll() {
     setLoading(true);
     const token = cookies.get("token");
@@ -190,15 +212,17 @@ export default function CommandesPage() {
       const profile = res.data.orders;
       if (!profile) return;
       // ── 1. Commandes envoyées (Client) ──
-      setCommandesEnvoyees(profile.commandes || []);
-      setOrdersEnvoyees(profile.orders || []);
-      setGpEnvoyees(profile.gp_requests || []);
+      setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
+      setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
+      setGpEnvoyees(sortOrdersByPendingFirst(profile.gp_requests || []));
       // ── 2. Statut & Commandes reçues (Traiteur) ──
       const traiteurData = profile.traiteurs?.[0];
       if (profile.role === "traiteur" || traiteurData) {
         setIsTraiteur(true);
-        setCommandesRecues(traiteurData?.commandes || []);
-        setOrdersRecues(traiteurData?.orders || []);
+        setCommandesRecues(
+          sortOrdersByPendingFirst(traiteurData?.commandes || []),
+        );
+        setOrdersRecues(sortOrdersByPendingFirst(traiteurData?.orders || []));
       }
       // ── 3. Statut & Demandes reçues (GP Voyageur) ──
       const gpListings = profile.gp_listings || [];
@@ -208,7 +232,7 @@ export default function CommandesPage() {
         const allGpRequestsReceived = gpListings.flatMap(
           (l: any) => l.requests || [],
         );
-        setGpRecues(allGpRequestsReceived);
+        setGpRecues(sortOrdersByPendingFirst(allGpRequestsReceived));
       }
     } catch (error) {
       console.error("Erreur lors de la récupération des commandes:", error);
@@ -233,10 +257,13 @@ export default function CommandesPage() {
     );
 
     setCommandesRecues((prev) =>
-      prev.map((c) =>
-        c.id === commande.id ? { ...c, statut: "acceptee" } : c,
+      sortOrdersByPendingFirst(
+        prev.map((c) =>
+          c.id === commande.id ? { ...c, statut: "acceptee" } : c,
+        ),
       ),
     );
+    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleRefuserTraiteur(commande: CommandeTraiteur) {
@@ -256,12 +283,15 @@ export default function CommandesPage() {
     );
 
     setCommandesRecues((prev) =>
-      prev.map((c) =>
-        c.id === commande.id
-          ? { ...c, statut: "refusee", message_traiteur: message }
-          : c,
+      sortOrdersByPendingFirst(
+        prev.map((c) =>
+          c.id === commande.id
+            ? { ...c, statut: "refusee", message_traiteur: message }
+            : c,
+        ),
       ),
     );
+    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleAccepterOrder(order: OrderPlat) {
@@ -280,8 +310,11 @@ export default function CommandesPage() {
     );
 
     setOrdersRecues((prev) =>
-      prev.map((o) => (o.id === order.id ? { ...o, status: "accepted" } : o)),
+      sortOrdersByPendingFirst(
+        prev.map((o) => (o.id === order.id ? { ...o, status: "accepted" } : o)),
+      ),
     );
+    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleRefuserOrder(order: OrderPlat) {
@@ -300,8 +333,11 @@ export default function CommandesPage() {
     );
 
     setOrdersRecues((prev) =>
-      prev.map((o) => (o.id === order.id ? { ...o, status: "rejected" } : o)),
+      sortOrdersByPendingFirst(
+        prev.map((o) => (o.id === order.id ? { ...o, status: "rejected" } : o)),
+      ),
     );
+    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleAccepterGp(request: GpRequest) {
@@ -320,8 +356,13 @@ export default function CommandesPage() {
     );
 
     setGpRecues((prev) =>
-      prev.map((r) => (r.id === request.id ? { ...r, status: "accepted" } : r)),
+      sortOrdersByPendingFirst(
+        prev.map((r) =>
+          r.id === request.id ? { ...r, status: "accepted" } : r,
+        ),
+      ),
     );
+    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleRefuserGp(request: GpRequest) {
@@ -341,8 +382,13 @@ export default function CommandesPage() {
     );
 
     setGpRecues((prev) =>
-      prev.map((r) => (r.id === request.id ? { ...r, status: "rejected" } : r)),
+      sortOrdersByPendingFirst(
+        prev.map((r) =>
+          r.id === request.id ? { ...r, status: "rejected" } : r,
+        ),
+      ),
     );
+    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   const getStatutBadge = (statut: string) => {
@@ -392,13 +438,13 @@ export default function CommandesPage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-[#1D6B45]">Chargement...</div>
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-24">
+    <div className="min-h-screen bg-[#F3F4F6] pb-24">
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <h1 className="text-2xl font-bold text-white">
@@ -554,7 +600,7 @@ export default function CommandesPage() {
                                     .whatsapp!.replace(/\+/g, "")
                                     .replace(/\s/g, "");
                                   const msg = encodeURIComponent(
-                                    `Bonjour, je vous contacte suite à ma commande du ${commande.date_evenement} sur AfriConnect.`,
+                                    `Bonjour, je vous contacte suite à ma commande du ${commande.date_evenement} sur Dabari.`,
                                   );
                                   window.open(
                                     `https://wa.me/${num}?text=${msg}`,
@@ -667,7 +713,7 @@ export default function CommandesPage() {
                                     .whatsapp!.replace(/\+/g, "")
                                     .replace(/\s/g, "");
                                   const msg = encodeURIComponent(
-                                    `Bonjour, je vous contacte suite à ma commande de plats sur AfriConnect.`,
+                                    `Bonjour, je vous contacte suite à ma commande de plats sur Dabari.`,
                                   );
                                   window.open(
                                     `https://wa.me/${num}?text=${msg}`,
@@ -1084,7 +1130,7 @@ export default function CommandesPage() {
                                   .phone!.replace(/\+/g, "")
                                   .replace(/\s/g, "");
                                 const msg = encodeURIComponent(
-                                  `Bonjour, j'ai accepté votre commande de plats sur AfriConnect !`,
+                                  `Bonjour, j'ai accepté votre commande de plats sur Dabari !`,
                                 );
                                 window.open(
                                   `https://wa.me/${num}?text=${msg}`,

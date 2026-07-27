@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import AdminAfriConnectClient from "./AdminAfriConnectClient";
+import AdminDabariClient from "./AdminDabariClient";
 import { cookies } from "next/headers";
 
 export default async function AdminPage() {
@@ -30,7 +30,7 @@ export default async function AdminPage() {
 
 
   return (
-    <AdminAfriConnectClient
+    <AdminDabariClient
       traiteurs={data.data.traiteurs ?? []}
       gpListings={data.data.gpListings ?? []}
       profiles={data.data.profiles ?? []}

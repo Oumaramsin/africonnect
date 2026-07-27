@@ -6,7 +6,7 @@ import BottomNavWrapper from '../components/BottomNavWrapper'
 const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
-  title: 'AfriConnect',
+  title: 'Dabari',
   description: 'La plateforme de services pour la diaspora africaine',
 }
 
@@ -33,7 +33,7 @@ export default function RootLayout({
           width: '100%',
           maxWidth: '430px',
           minHeight: '100vh',
-          background: '#FAF7F2',
+          background: '#F3F4F6', /* Ancienne couleur crème: #FAF7F2 */
           boxShadow: '0 0 60px rgba(0,0,0,0.3)',
           display: 'flex',
           flexDirection: 'column',

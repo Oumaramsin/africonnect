@@ -206,21 +206,21 @@ export default function GpDetailPage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-[#1D6B45]">Chargement...</div>
       </div>
     );
 
   if (!listing)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-gray-500">Annonce introuvable</div>
       </div>
     );
 
   if (success)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
           <div className="flex justify-center mb-4">
             <CheckCircle2 size={64} className="text-[#1D6B45]" />
@@ -239,7 +239,7 @@ export default function GpDetailPage() {
                   listing.profiles?.whatsapp)!;
                 const num = whatsappNum.replace(/\+/g, "").replace(/\s/g, "");
                 const msg = encodeURIComponent(
-                  `Bonjour, je viens d'envoyer une demande de colis sur AfriConnect. ${form.weight_kg}kg — ${form.content_desc}`,
+                  `Bonjour, je viens d'envoyer une demande de colis sur Dabari. ${form.weight_kg}kg — ${form.content_desc}`,
                 );
                 window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
               }}
@@ -263,7 +263,7 @@ export default function GpDetailPage() {
     );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-32">
+    <div className="min-h-screen bg-[#F3F4F6] pb-32">
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-8">
         <Link href="/gp" className="text-white/70 text-sm mb-4 inline-block">
@@ -331,7 +331,7 @@ export default function GpDetailPage() {
                         .whatsapp!.replace(/\+/g, "")
                         .replace(/\s/g, "");
                       const msg = encodeURIComponent(
-                        `Bonjour, j'ai vu votre annonce GP sur AfriConnect pour ${listing.departure_city} → ${listing.arrival_city}`,
+                        `Bonjour, j'ai vu votre annonce GP sur Dabari pour ${listing.departure_city} → ${listing.arrival_city}`,
                       );
                       window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
                     }}

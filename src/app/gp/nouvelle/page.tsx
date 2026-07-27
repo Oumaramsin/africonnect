@@ -132,7 +132,7 @@ export default function NouvelleAnnoncePage() {
 
   if (success)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
           <div className="flex justify-center mb-4">
             <Plane size={64} className="text-[#1D6B45]" />
@@ -164,14 +164,14 @@ export default function NouvelleAnnoncePage() {
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-[#1D6B45] text-lg font-medium">Chargement...</div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-36">
+    <div className="min-h-screen bg-[#F3F4F6] pb-36">
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <Link href="/gp" className="text-white/70 text-sm mb-4 inline-block">

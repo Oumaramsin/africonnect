@@ -40,7 +40,7 @@ export default function RegisterPage() {
     const authEmail =
       method === "email"
         ? email
-        : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@africonnect.app`;
+        : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@dabari.app`;
 
     // Découpage du nom complet pour correspondre à firstname / lastname requis par le backend
     const nameParts = fullName.trim().split(" ");
@@ -84,7 +84,7 @@ export default function RegisterPage() {
 
   if (success)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4">
         <div className="w-full max-w-md text-center">
           <div className="flex justify-center mb-4">
             <PartyPopper size={48} className="text-[#1D6B45]" />
@@ -108,7 +108,7 @@ export default function RegisterPage() {
     );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4 py-10">
+    <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-[#1D6B45]">

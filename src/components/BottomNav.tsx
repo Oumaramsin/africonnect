@@ -5,8 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import {
   Home,
-  ChefHat,
-  Plane,
+  LayoutGrid,
   Package,
   User,
   ShieldCheck,
@@ -16,8 +15,7 @@ import cookies from "js-cookie";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: <Home size={22} />, label: "Accueil" },
-  { href: "/traiteur", icon: <ChefHat size={22} />, label: "Traiteur" },
-  { href: "/gp", icon: <Plane size={22} />, label: "GP Colis" },
+  { href: "/services", icon: <LayoutGrid size={22} />, label: "Services" },
 ];
 
 export default function BottomNav() {
@@ -27,9 +25,11 @@ export default function BottomNav() {
   const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
-    const load = async () => {
+    const fetchUnread = async () => {
       const token = cookies.get("token");
       if (!token) {
+        setIsLoggedIn(false);
+        setUnreadCount(0);
         return;
       }
       try {
@@ -40,13 +40,13 @@ export default function BottomNav() {
         setIsLoggedIn(true);
         setIsAdmin(decodedPayload.role === "admin");
 
-        // Fetch unread notifications count
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/notifications`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
             },
+            cache: "no-store",
           }
         );
         if (res.ok) {
@@ -57,7 +57,12 @@ export default function BottomNav() {
         console.error("Erreur dans le fetch des notifications :", error);
       }
     };
-    load();
+
+    fetchUnread();
+
+    const handleRefresh = () => fetchUnread();
+    window.addEventListener("dabari_orders_updated", handleRefresh);
+    return () => window.removeEventListener("dabari_orders_updated", handleRefresh);
   }, [pathname]);
 
   const hideOn = ["/login", "/register", "/reset-password"];
@@ -78,11 +83,10 @@ export default function BottomNav() {
       });
     }
   } else {
-    items.push({
-      href: "/login",
-      icon: <LogIn size={22} />,
-      label: "Se Connecter",
-    });
+    items.push(
+      { href: "/commandes", icon: <Package size={22} />, label: "Commandes" },
+      { href: "/login", icon: <LogIn size={22} />, label: "Connexion" },
+    );
   }
 
   return (

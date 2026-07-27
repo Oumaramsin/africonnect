@@ -132,7 +132,7 @@ export default function CommandeForm({
       const waNumber = whatsapp
         ? whatsapp.replace(/\+/g, "").replace(/\s/g, "")
         : "";
-      const waUrl = `https://wa.me/${waNumber}?text=Bonjour%2C%20je%20viens%20de%20passer%20une%20commande%20sur%20AfriConnect.`;
+      const waUrl = `https://wa.me/${waNumber}?text=Bonjour%2C%20je%20viens%20de%20passer%20une%20commande%20sur%20Dabari.`;
 
       return (
         <div className="bg-[#E8F5E9] border border-[#1D6B45]/20 rounded-2xl p-6 text-center">

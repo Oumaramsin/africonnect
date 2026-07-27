@@ -53,3 +53,29 @@ select option {
   background-color: #ffffff !important;
   color: #111827 !important;
 }
+
+/* ── SCROLLBAR CUSTOM STYLED FOR DABARI ── */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.03);
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #1D6B45;
+  border-radius: 10px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #154d31;
+}
+
+/* Firefox Scrollbar */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #1D6B45 rgba(0, 0, 0, 0.03);
+}

@@ -92,7 +92,7 @@ const ZONES = [
   "Toulouse",
 ];
 
-export default function AdminAfriConnectClient({
+export default function AdminDabariClient({
   traiteurs: initialTraiteurs,
   gpListings: initialGpListings,
   profiles: initialProfiles,
@@ -179,7 +179,7 @@ export default function AdminAfriConnectClient({
 
     const authEmail =
       userForm.email ||
-      `${userForm.phone.replace(/\+/g, "").replace(/\s/g, "")}@africonnect.app`;
+      `${userForm.phone.replace(/\+/g, "").replace(/\s/g, "")}@dabari.app`;
 
     const pwd = Math.random().toString(36).slice(-8) + "A1!";
     const nameParts = userForm.full_name.trim().split(" ");
@@ -501,7 +501,7 @@ export default function AdminAfriConnectClient({
   const labelClass = "block text-sm font-medium text-gray-700 mb-1";
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-24">
+    <div className="min-h-screen bg-[#F3F4F6] pb-24">
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <Link
@@ -511,7 +511,7 @@ export default function AdminAfriConnectClient({
           ← Dashboard
         </Link>
         <h1 className="text-2xl font-bold text-white flex items-center">
-          <ShieldCheck size={28} className="inline mr-2" /> Admin AfriConnect
+          <ShieldCheck size={28} className="inline mr-2" /> Admin Dabari
         </h1>
         <p className="text-white/70 text-sm mt-1">
           Gérer les traiteurs, GP et utilisateurs
@@ -846,7 +846,7 @@ export default function AdminAfriConnectClient({
                       {profiles.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.full_name} {p.phone ? `— ${p.phone}` : ""}{" "}
-                          {p.email && !p.email.includes("@africonnect.app")
+                          {p.email && !p.email.includes("@dabari.app")
                             ? `— ${p.email}`
                             : ""}
                         </option>
@@ -1117,7 +1117,7 @@ export default function AdminAfriConnectClient({
                       {profiles.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.full_name} {p.phone ? `— ${p.phone}` : ""}{" "}
-                          {p.email && !p.email.includes("@africonnect.app")
+                          {p.email && !p.email.includes("@dabari.app")
                             ? `— ${p.email}`
                             : ""}
                         </option>

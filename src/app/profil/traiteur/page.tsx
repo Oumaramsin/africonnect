@@ -537,14 +537,14 @@ export default function TraiteurEspacePage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-[#1D6B45]">Chargement...</div>
       </div>
     );
 
   if (view === "setup")
     return (
-      <div className="min-h-screen bg-[#FAF7F2] pb-36">
+      <div className="min-h-screen bg-[#F3F4F6] pb-36">
         <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
           <button
             onClick={() => setView("profil")}
@@ -721,7 +721,7 @@ export default function TraiteurEspacePage() {
 
   if (view === "nouveau_plat")
     return (
-      <div className="min-h-screen bg-[#FAF7F2] pb-36">
+      <div className="min-h-screen bg-[#F3F4F6] pb-36">
         <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
           <button
             onClick={() => setView("plats")}
@@ -932,7 +932,7 @@ export default function TraiteurEspacePage() {
     );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-10">
+    <div className="min-h-screen bg-[#F3F4F6] pb-10">
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <Link
           href="/profil"

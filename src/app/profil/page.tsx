@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { ChefHat, Plane, User, Package, LogOut, Lock } from "lucide-react";
+import { ChefHat, Plane, User, Package, LogOut, Lock, ChevronDown, ChevronUp, Edit3, Phone, MapPin, Mail } from "lucide-react";
 import cookies from "js-cookie";
 
 const schema = z.object({
@@ -41,6 +41,7 @@ export default function ProfilPage() {
   const [error, setError] = useState<string | null>(null);
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("client");
+  const [showInfo, setShowInfo] = useState(false);
 
   const {
     register,
@@ -149,13 +150,13 @@ export default function ProfilPage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-[#1D6B45]">Chargement...</div>
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-10">
+    <div className="min-h-screen bg-[#F3F4F6] pb-10">
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-10">
         <Link
@@ -202,99 +203,121 @@ export default function ProfilPage() {
       </div>
 
       <div className="px-4 max-w-2xl mx-auto -mt-4 space-y-4">
-        {/* Formulaire */}
-        <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-          <h2 className="font-semibold text-gray-800 mb-5">Mes informations</h2>
-
-          {success && (
-            <div className="bg-[#E8F5E9] border border-[#1D6B45]/20 text-[#1D6B45] rounded-xl px-4 py-3 mb-4 text-sm font-medium">
-              ✓ Profil mis à jour avec succès
-            </div>
-          )}
-
-          {error && (
-            <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 mb-4 text-sm">
-              {error}
-            </div>
-          )}
-
-          <form onSubmit={handleSubmit(onSubmit)} className="space-y-4">
-            {/* Email (non modifiable) */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Email
-              </label>
-              <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-gray-400 text-sm">
-                {userEmail}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden transition-all">
+          <button
+            onClick={() => setShowInfo(!showInfo)}
+            className="w-full flex items-center justify-between p-5 hover:bg-gray-50/80 transition-colors text-left"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-[#1D6B45]/10 flex items-center justify-center text-[#1D6B45]">
+                <Edit3 size={18} />
               </div>
-              <p className="text-xs text-gray-400 mt-1">
-                L&apos;email ne peut pas être modifié
-              </p>
-            </div>
-
-            {/* Nom complet */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Nom complet
-              </label>
-              <input
-                {...register("full_name")}
-                type="text"
-                placeholder="Aminata Diallo"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-              />
-              {errors.full_name && (
-                <p className="text-red-500 text-xs mt-1">
-                  {errors.full_name.message}
+              <div>
+                <h2 className="font-semibold text-gray-800 text-base">Mes informations</h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {showInfo ? "Cliquez pour fermer l'édition" : "Consulter et modifier votre profil"}
                 </p>
+              </div>
+            </div>
+
+            <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-gray-600">
+              {showInfo ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </div>
+          </button>
+
+          {showInfo && (
+            <div className="p-5 pt-0 border-t border-gray-50 space-y-4">
+              {success && (
+                <div className="bg-[#E8F5E9] border border-[#1D6B45]/20 text-[#1D6B45] rounded-xl px-4 py-3 text-sm font-medium mt-4">
+                  ✓ Profil mis à jour avec succès
+                </div>
               )}
-            </div>
 
-            {/* Téléphone */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Téléphone
-                <span className="text-gray-400 font-normal ml-1">
-                  (optionnel)
-                </span>
-              </label>
-              <input
-                {...register("phone")}
-                type="tel"
-                placeholder="06 12 34 56 78"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-              />
-            </div>
+              {error && (
+                <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm mt-4">
+                  {error}
+                </div>
+              )}
 
-            {/* Ville */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                Ville
-                <span className="text-gray-400 font-normal ml-1">
-                  (optionnel)
-                </span>
-              </label>
-              <select
-                {...register("city")}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-              >
-                <option value="">Sélectionne ta ville</option>
-                {CITIES.map((city) => (
-                  <option key={city} value={city}>
-                    {city}
-                  </option>
-                ))}
-              </select>
-            </div>
+              <form onSubmit={handleSubmit(onSubmit)} className="space-y-4 mt-4">
+                {/* Email (non modifiable) */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    <Mail size={14} className="text-[#1D6B45]" /> Email
+                  </label>
+                  <div className="w-full px-4 py-3 rounded-xl border border-gray-100 bg-gray-50 text-gray-400 text-sm font-medium">
+                    {userEmail}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-1">
+                    L&apos;email ne peut pas être modifié
+                  </p>
+                </div>
 
-            <button
-              type="submit"
-              disabled={saving || !isDirty}
-              className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-medium text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {saving ? "Sauvegarde..." : "Sauvegarder les modifications"}
-            </button>
-          </form>
+                {/* Nom complet */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    <User size={14} className="text-[#1D6B45]" /> Nom complet
+                  </label>
+                  <input
+                    {...register("full_name")}
+                    type="text"
+                    placeholder="Aminata Diallo"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                  />
+                  {errors.full_name && (
+                    <p className="text-red-500 text-xs mt-1">
+                      {errors.full_name.message}
+                    </p>
+                  )}
+                </div>
+
+                {/* Téléphone */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    <Phone size={14} className="text-[#1D6B45]" /> Téléphone
+                    <span className="text-gray-400 font-normal ml-1">
+                      (optionnel)
+                    </span>
+                  </label>
+                  <input
+                    {...register("phone")}
+                    type="tel"
+                    placeholder="06 12 34 56 78"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                  />
+                </div>
+
+                {/* Ville */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
+                    <MapPin size={14} className="text-[#1D6B45]" /> Ville
+                    <span className="text-gray-400 font-normal ml-1">
+                      (optionnel)
+                    </span>
+                  </label>
+                  <select
+                    {...register("city")}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  >
+                    <option value="">Sélectionne ta ville</option>
+                    {CITIES.map((city) => (
+                      <option key={city} value={city}>
+                        {city}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={saving || !isDirty}
+                  className="w-full bg-[#1D6B45] text-white py-3 rounded-xl font-semibold text-sm hover:bg-[#0F4A30] transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-sm"
+                >
+                  {saving ? "Sauvegarde..." : "Sauvegarder les modifications"}
+                </button>
+              </form>
+            </div>
+          )}
         </div>
 
         {/* Liens rapides */}
@@ -367,7 +390,7 @@ export default function ProfilPage() {
 
         {/* Version */}
         <p className="text-center text-xs text-gray-300 pb-4">
-          AfriConnect v1.0 — MVP
+          Dabari v1.0 — MVP
         </p>
       </div>
     </div>

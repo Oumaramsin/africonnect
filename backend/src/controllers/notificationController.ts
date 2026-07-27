@@ -8,7 +8,7 @@ import {
 
 export const getNotifications = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = (req.user as any)?.id;
+    const userId = (req.user as any)?.userId || (req.user as any)?.id;
     if (!userId) {
       return res.status(401).json({ message: "Non autorisé" });
     }
@@ -23,7 +23,7 @@ export const getNotifications = async (req: AuthenticatedRequest, res: Response)
 
 export const markAsRead = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = (req.user as any)?.id;
+    const userId = (req.user as any)?.userId || (req.user as any)?.id;
     const { id } = req.params;
 
     if (!userId) {
@@ -40,7 +40,7 @@ export const markAsRead = async (req: AuthenticatedRequest, res: Response) => {
 
 export const markAllAsRead = async (req: AuthenticatedRequest, res: Response) => {
   try {
-    const userId = (req.user as any)?.id;
+    const userId = (req.user as any)?.userId || (req.user as any)?.id;
     if (!userId) {
       return res.status(401).json({ message: "Non autorisé" });
     }

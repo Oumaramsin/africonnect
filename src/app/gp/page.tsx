@@ -120,38 +120,40 @@ export default function GpPage() {
   });
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2]">
+    <div className="min-h-screen bg-[#F3F4F6]">
       {/* Header */}
-      <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
+      <div className="bg-gradient-to-br from-[#1D6B45] via-[#165637] to-[#0F4A30] px-4 pt-10 pb-6 text-white">
         <Link
           href="/dashboard"
-          className="text-white/70 text-sm mb-4 inline-block"
+          className="text-white/70 text-sm mb-3 inline-block hover:text-white transition-colors"
         >
           ← Accueil
         </Link>
         <h1 className="text-2xl font-bold text-white">GP Colis</h1>
-        <p className="text-white/70 text-sm mt-1">
-          Envoie un colis en toute sécurité
+        <p className="text-white/80 text-xs mt-1">
+          Envoyez vos colis en toute sécurité entre l&apos;Europe et l&apos;Afrique.
         </p>
+      </div>
 
-        {/* Filtres destination */}
-        <div className="relative mt-4 -mx-4 px-4">
-          <div className="flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden pr-8">
-            {DESTINATIONS.map((d) => (
-              <button
-                key={d.value}
-                onClick={() => setDestination(d.value)}
-                className={`px-4 py-2 rounded-full text-sm whitespace-nowrap transition-all ${
-                  destination === d.value
-                    ? "bg-white text-[#1D6B45] font-medium"
-                    : "bg-white/20 text-white"
-                }`}
-              >
-                {d.label}
-              </button>
-            ))}
-          </div>
-          <div className="absolute right-0 top-0 bottom-0 w-16 bg-gradient-to-l from-[#1D6B45] to-transparent pointer-events-none"></div>
+      {/* Barre de Filtres */}
+      <div className="bg-white border-b border-gray-200/80 px-4 py-3 shadow-xs sticky top-0 z-30">
+        <div className="max-w-2xl mx-auto flex items-center gap-2 overflow-x-auto no-scrollbar">
+          <span className="text-xs font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
+            Destination :
+          </span>
+          {DESTINATIONS.map((d) => (
+            <button
+              key={d.value}
+              onClick={() => setDestination(d.value)}
+              className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
+                destination === d.value
+                  ? "bg-[#D4870A] text-white shadow-sm"
+                  : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+              }`}
+            >
+              {d.label}
+            </button>
+          ))}
         </div>
       </div>
 

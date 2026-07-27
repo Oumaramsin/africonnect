@@ -1,7 +1,7 @@
 {
-  "name": "africonnect-backend",
+  "name": "dabari-backend",
   "version": "1.0.0",
-  "description": "Express Mock Backend for Africonnect",
+  "description": "Express Backend for Dabari",
   "main": "dist/index.js",
   "scripts": {
     "dev": "ts-node-dev --respawn --transpile-only src/index.ts",

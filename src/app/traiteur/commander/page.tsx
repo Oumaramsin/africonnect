@@ -80,7 +80,7 @@ export default function CheckoutPage() {
   }, []);
 
   useEffect(() => {
-    const stored = localStorage.getItem("africonnect_cart");
+    const stored = localStorage.getItem("dabari_cart");
     if (stored) {
       setCart(JSON.parse(stored));
     } else {
@@ -127,7 +127,7 @@ export default function CheckoutPage() {
         return;
       }
 
-      localStorage.removeItem("africonnect_cart");
+      localStorage.removeItem("dabari_cart");
       setSuccess(true);
     } catch (e: unknown) {
       const err = e as { message?: string };
@@ -145,7 +145,7 @@ export default function CheckoutPage() {
   // Page succès
   if (success) {
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4">
         <div className="text-center max-w-sm">
           <div className="flex justify-center mb-4">
             <PartyPopper size={64} className="text-[#1D6B45]" />
@@ -168,7 +168,7 @@ export default function CheckoutPage() {
   }
   if (isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#FAF7F2] pb-32">
+      <div className="min-h-screen bg-[#F3F4F6] pb-32">
         {/* Header */}
         <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
           <button

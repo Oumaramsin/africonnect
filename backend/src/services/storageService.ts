@@ -9,7 +9,7 @@ dotenv.config();
 const accountId = process.env.R2_ACCOUNT_ID || "";
 const accessKeyId = process.env.R2_ACCESS_KEY_ID || "";
 const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY || "";
-const bucketName = process.env.R2_BUCKET_NAME || "africonnect-media";
+const bucketName = process.env.R2_BUCKET_NAME || "dabari-media";
 const publicUrl = process.env.R2_PUBLIC_URL || "http://localhost:3001/uploads";
 
 const isR2Configured = Boolean(

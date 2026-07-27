@@ -212,7 +212,7 @@ export default function GpEspacePage() {
   }, []);
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-32">
+    <div className="min-h-screen bg-[#F3F4F6] pb-32">
       {/* Header Vert */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
         <Link
@@ -307,7 +307,7 @@ export default function GpEspacePage() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 bg-[#FAF7F2] p-3 rounded-xl mb-4">
+                <div className="grid grid-cols-3 gap-2 bg-[#F3F4F6] p-3 rounded-xl mb-4">
                   <div className="flex flex-col items-center justify-center border-r border-gray-200">
                     <Calendar size={14} className="text-gray-400 mb-1" />
                     <span className="text-xs font-medium text-gray-700">

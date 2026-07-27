@@ -240,26 +240,26 @@ export default function TraiteurDetailPage() {
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
 
   const goToCheckout = () => {
-    localStorage.setItem("africonnect_cart", JSON.stringify(cart));
+    localStorage.setItem("dabari_cart", JSON.stringify(cart));
     router.push("/traiteur/commander");
   };
 
   if (loading)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-[#1D6B45] text-lg">Chargement...</div>
       </div>
     );
 
   if (!traiteur)
     return (
-      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center">
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
         <div className="text-gray-500">Traiteur introuvable</div>
       </div>
     );
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] pb-32">
+    <div className="min-h-screen bg-[#F3F4F6] pb-32">
       {/* Header */}
       <div className="bg-[#1D6B45] px-4 pt-12 pb-8">
         <div className="max-w-2xl mx-auto">

@@ -25,7 +25,7 @@ export default function LoginPage() {
     const authEmail =
       method === "email"
         ? email
-        : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@africonnect.app`;
+        : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@dabari.app`;
 
     try {
       const response = await fetch(
@@ -59,7 +59,7 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center px-4 py-10">
+    <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4 py-10">
       <div className="w-full max-w-md">
         <div className="text-center mb-8">
           <h1 className="text-3xl font-bold text-[#1D6B45]">
