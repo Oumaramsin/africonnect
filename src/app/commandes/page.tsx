@@ -167,6 +167,11 @@ export default function CommandesPage() {
       return;
     }
     try {
+      fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/read-all`, {
+        method: "PATCH",
+        headers: { Authorization: `Bearer ${token}` },
+      }).catch((err) => console.error("Erreur mark-all-as-read:", err));
+
       const response = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/commande`,
         {
@@ -376,9 +381,14 @@ export default function CommandesPage() {
     });
 
   const pendingRecues =
-    commandesRecues.filter((c) => c.statut === "en_attente" || c.statut === "pending").length +
-    ordersRecues.filter((o) => o.status === "pending" || o.status === "en_attente").length +
-    gpRecues.filter((r) => r.status === "pending" || r.status === "en_attente").length;
+    commandesRecues.filter(
+      (c) => c.statut === "en_attente" || c.statut === "pending",
+    ).length +
+    ordersRecues.filter(
+      (o) => o.status === "pending" || o.status === "en_attente",
+    ).length +
+    gpRecues.filter((r) => r.status === "pending" || r.status === "en_attente")
+      .length;
 
   if (loading)
     return (
@@ -462,7 +472,8 @@ export default function CommandesPage() {
                   </h2>
                   <div className="space-y-3">
                     {commandesEnvoyees.map((commande) => {
-                      const traiteurInfo = commande.traiteur || commande.traiteurs;
+                      const traiteurInfo =
+                        commande.traiteur || commande.traiteurs;
                       return (
                         <div
                           key={commande.id}
@@ -614,9 +625,9 @@ export default function CommandesPage() {
                                   </span>
                                   <span className="font-medium text-[#1D6B45]">
                                     {dishInfo?.price
-                                      ? (dishInfo.price * item.quantity).toFixed(
-                                          2,
-                                        )
+                                      ? (
+                                          dishInfo.price * item.quantity
+                                        ).toFixed(2)
                                       : "0.00"}{" "}
                                     €
                                   </span>
@@ -690,12 +701,18 @@ export default function CommandesPage() {
                   <div className="space-y-3">
                     {gpEnvoyees.map((request) => {
                       const listing = request.listing || request.gp_listings;
-                      const depCity = request.departure_city || listing?.departure_city;
-                      const depCountry = request.departure_country || listing?.departure_country;
-                      const arrCity = request.arrival_city || listing?.arrival_city;
-                      const arrCountry = request.arrival_country || listing?.arrival_country;
-                      const depDate = request.departure_date || listing?.departure_date;
-                      const isListingDeleted = !listing || listing.is_active === false;
+                      const depCity =
+                        request.departure_city || listing?.departure_city;
+                      const depCountry =
+                        request.departure_country || listing?.departure_country;
+                      const arrCity =
+                        request.arrival_city || listing?.arrival_city;
+                      const arrCountry =
+                        request.arrival_country || listing?.arrival_country;
+                      const depDate =
+                        request.departure_date || listing?.departure_date;
+                      const isListingDeleted =
+                        !listing || listing.is_active === false;
 
                       return (
                         <div
@@ -733,8 +750,7 @@ export default function CommandesPage() {
                                 className="text-[#1D6B45] inline mr-1"
                               />
                               <span>
-                                Départ :{" "}
-                                {depDate ? formatDate(depDate) : "N/A"}
+                                Départ : {depDate ? formatDate(depDate) : "N/A"}
                               </span>
                             </div>
                             <div className="flex items-center gap-2 text-sm text-gray-600">
@@ -1006,9 +1022,9 @@ export default function CommandesPage() {
                                 </span>
                                 <span className="font-medium">
                                   {item.dishes?.price
-                                    ? (item.dishes.price * item.quantity).toFixed(
-                                        2,
-                                      )
+                                    ? (
+                                        item.dishes.price * item.quantity
+                                      ).toFixed(2)
                                     : "0.00"}{" "}
                                   €
                                 </span>
@@ -1041,7 +1057,10 @@ export default function CommandesPage() {
                                 }
                                 className="flex-1 bg-[#1D6B45] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#0F4A30] transition-colors"
                               >
-                                <CheckCircle2 size={16} className="inline mr-2" />{" "}
+                                <CheckCircle2
+                                  size={16}
+                                  className="inline mr-2"
+                                />{" "}
                                 Accepter
                               </button>
                               <button
@@ -1058,30 +1077,29 @@ export default function CommandesPage() {
                               </button>
                             </div>
                           )}
-                          {order.status === "accepted" &&
-                            clientInfo?.phone && (
-                              <button
-                                onClick={() => {
-                                  const num = clientInfo
-                                    .phone!.replace(/\+/g, "")
-                                    .replace(/\s/g, "");
-                                  const msg = encodeURIComponent(
-                                    `Bonjour, j'ai accepté votre commande de plats sur AfriConnect !`,
-                                  );
-                                  window.open(
-                                    `https://wa.me/${num}?text=${msg}`,
-                                    "_blank",
-                                  );
-                                }}
-                                className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
-                              >
-                                <MessageSquare
-                                  size={16}
-                                  className="inline mr-2"
-                                />{" "}
-                                Contacter le client sur WhatsApp
-                              </button>
-                            )}
+                          {order.status === "accepted" && clientInfo?.phone && (
+                            <button
+                              onClick={() => {
+                                const num = clientInfo
+                                  .phone!.replace(/\+/g, "")
+                                  .replace(/\s/g, "");
+                                const msg = encodeURIComponent(
+                                  `Bonjour, j'ai accepté votre commande de plats sur AfriConnect !`,
+                                );
+                                window.open(
+                                  `https://wa.me/${num}?text=${msg}`,
+                                  "_blank",
+                                );
+                              }}
+                              className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
+                            >
+                              <MessageSquare
+                                size={16}
+                                className="inline mr-2"
+                              />{" "}
+                              Contacter le client sur WhatsApp
+                            </button>
+                          )}
                         </div>
                       );
                     })}
@@ -1102,13 +1120,19 @@ export default function CommandesPage() {
                     {gpRecues.map((request) => {
                       const senderInfo = request.sender || request.profiles;
                       const listing = request.listing || request.gp_listings;
-                      const depCity = request.departure_city || listing?.departure_city;
-                      const depCountry = request.departure_country || listing?.departure_country;
-                      const arrCity = request.arrival_city || listing?.arrival_city;
-                      const arrCountry = request.arrival_country || listing?.arrival_country;
-                      const depDate = request.departure_date || listing?.departure_date;
+                      const depCity =
+                        request.departure_city || listing?.departure_city;
+                      const depCountry =
+                        request.departure_country || listing?.departure_country;
+                      const arrCity =
+                        request.arrival_city || listing?.arrival_city;
+                      const arrCountry =
+                        request.arrival_country || listing?.arrival_country;
+                      const depDate =
+                        request.departure_date || listing?.departure_date;
 
-                      const isListingDeleted = !listing || listing.is_active === false;
+                      const isListingDeleted =
+                        !listing || listing.is_active === false;
 
                       return (
                         <div

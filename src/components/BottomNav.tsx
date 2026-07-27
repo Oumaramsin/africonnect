@@ -24,6 +24,7 @@ export default function BottomNav() {
   const pathname = usePathname();
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   useEffect(() => {
     const load = async () => {
@@ -37,13 +38,27 @@ export default function BottomNav() {
           Buffer.from(payloadBase64, "base64").toString("utf-8"),
         );
         setIsLoggedIn(true);
-        setIsAdmin(decodedPayload.role === "admin")
+        setIsAdmin(decodedPayload.role === "admin");
+
+        // Fetch unread notifications count
+        const res = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/notifications`,
+          {
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          }
+        );
+        if (res.ok) {
+          const data = await res.json();
+          setUnreadCount(data.unread_count || 0);
+        }
       } catch (error) {
-        console.error("Erreur dans le fetch du dashboard :", error);
+        console.error("Erreur dans le fetch des notifications :", error);
       }
     };
     load();
-  }, []);
+  }, [pathname]);
 
   const hideOn = ["/login", "/register", "/reset-password"];
   if (hideOn.includes(pathname)) return null;
@@ -80,6 +95,7 @@ export default function BottomNav() {
         flexShrink: 0,
         position: "fixed",
         bottom: 0,
+        zIndex: 50,
       }}
     >
       <div
@@ -95,6 +111,8 @@ export default function BottomNav() {
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(item.href));
 
+          const isCommandes = item.href === "/commandes";
+
           return (
             <Link
               key={item.href}
@@ -107,18 +125,47 @@ export default function BottomNav() {
                 padding: "6px 12px",
                 borderRadius: "12px",
                 textDecoration: "none",
+                position: "relative",
               }}
             >
-              <span
-                style={{
-                  color: isActive ? "#1D6B45" : "#9ca3af",
-                  display: "flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                {item.icon}
-              </span>
+              <div style={{ position: "relative" }}>
+                <span
+                  style={{
+                    color: isActive ? "#1D6B45" : "#9ca3af",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {item.icon}
+                </span>
+
+                {isCommandes && unreadCount > 0 && (
+                  <span
+                    style={{
+                      position: "absolute",
+                      top: "-4px",
+                      right: "-8px",
+                      backgroundColor: "#EF4444",
+                      color: "white",
+                      fontSize: "9px",
+                      fontWeight: "bold",
+                      borderRadius: "10px",
+                      padding: "1px 5px",
+                      minWidth: "16px",
+                      height: "16px",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      border: "2px solid white",
+                      boxShadow: "0 1px 3px rgba(0,0,0,0.2)",
+                    }}
+                  >
+                    {unreadCount > 9 ? "9+" : unreadCount}
+                  </span>
+                )}
+              </div>
+
               <span
                 style={{
                   fontSize: "10px",

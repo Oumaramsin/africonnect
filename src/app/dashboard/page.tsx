@@ -10,6 +10,7 @@ import {
   Scissors,
   Hand,
   User,
+  Sparkles,
 } from "lucide-react";
 import { cookies } from "next/headers";
 
@@ -61,6 +62,8 @@ export default async function DashboardPage() {
   let ordersPlats: any[] = [];
   let gpRequests: any[] = [];
   let pendingCount = 0;
+  let unreadNotifications: any[] = [];
+  let unreadCount = 0;
 
   const cookieStore = await cookies();
   const token = cookieStore.get("token")?.value;
@@ -74,14 +77,40 @@ export default async function DashboardPage() {
             "Content-type": "application/json",
             Authorization: `Bearer ${token}`,
           },
+          cache: "no-store",
         },
       );
       const data = await response.json();
-      const userProfile = data.data.orders;
-      full_name = userProfile.full_name;
-      gpRequests = userProfile.gp_requests;
-      ordersPlats = userProfile.orders;
-      commandesTraiteur = userProfile.commandes;
+      const userProfile = data.data?.orders;
+      if (userProfile) {
+        full_name = userProfile.full_name;
+        gpRequests = userProfile.gp_requests || [];
+        ordersPlats = userProfile.orders || [];
+        commandesTraiteur = userProfile.commandes || [];
+
+        // Compter les commandes/demandes reçues en attente de traitement (Traiteur & GP)
+        const traiteurOrdersPending = userProfile.traiteurs?.flatMap((t: any) => t.orders || []).filter((o: any) => o.status === "pending" || o.status === "en_attente")?.length || 0;
+        const traiteurCommandesPending = userProfile.traiteurs?.flatMap((t: any) => t.commandes || []).filter((c: any) => c.statut === "en_attente" || c.statut === "pending")?.length || 0;
+        const gpRequestsPending = userProfile.gp_listings?.flatMap((g: any) => g.requests || []).filter((r: any) => r.status === "pending" || r.status === "en_attente")?.length || 0;
+
+        pendingCount = traiteurOrdersPending + traiteurCommandesPending + gpRequestsPending;
+      }
+
+      // Fetch notifications
+      const notifRes = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/notifications`,
+        {
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+          cache: "no-store",
+        }
+      );
+      if (notifRes.ok) {
+        const notifData = await notifRes.json();
+        unreadNotifications = notifData.notifications?.filter((n: any) => !n.is_read) || [];
+        unreadCount = notifData.unread_count || 0;
+      }
     } catch (error) {
       console.error("Erreur dans le fetch du dashboard :", error);
     }
@@ -171,23 +200,38 @@ export default async function DashboardPage() {
           </div>
         )}
 
-        {/* Alerte commandes en attente */}
-        {pendingCount > 0 && (
+        {/* Banner de Nouvelles Notifications / Commandes Reçues */}
+        {(unreadCount > 0 || pendingCount > 0) && (
           <Link href="/commandes">
-            <div className="bg-[#D4870A]/10 border border-[#D4870A]/30 rounded-2xl p-4 mb-6 flex items-center justify-between hover:bg-[#D4870A]/15 transition-all">
+            <div className="bg-gradient-to-r from-[#1D6B45]/15 via-[#1D6B45]/20 to-[#D4870A]/15 border-2 border-[#1D6B45]/40 rounded-2xl p-4 mb-6 flex items-center justify-between hover:shadow-lg transition-all transform hover:-translate-y-0.5">
               <div className="flex items-center gap-3">
-                <Bell className="text-[#D4870A]" size={24} />
+                <div className="relative flex-shrink-0">
+                  <div className="w-10 h-10 rounded-full bg-[#1D6B45] flex items-center justify-center text-white">
+                    <Bell className="animate-pulse" size={20} />
+                  </div>
+                  <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[10px] font-bold rounded-full w-5 h-5 flex items-center justify-center border-2 border-white">
+                    {Math.max(unreadCount, pendingCount)}
+                  </span>
+                </div>
                 <div>
-                  <p className="font-semibold text-[#D4870A] text-sm">
-                    {pendingCount} demande{pendingCount > 1 ? "s" : ""} en
-                    attente
+                  <p className="font-bold text-[#1A202C] text-sm flex items-center gap-1">
+                    <Sparkles className="text-[#D4870A] flex-shrink-0" size={16} />
+                    {pendingCount > 0
+                      ? `Vous avez ${pendingCount} nouvelle${pendingCount > 1 ? "s" : ""} commande${pendingCount > 1 ? "s" : ""} reçue${pendingCount > 1 ? "s" : ""} !`
+                      : unreadCount === 1
+                      ? "Vous avez 1 nouvelle notification !"
+                      : `Vous avez ${unreadCount} nouvelles notifications !`}
                   </p>
-                  <p className="text-xs text-gray-500">
-                    Cliquez pour accepter ou refuser
+                  <p className="text-xs text-gray-600 mt-0.5 font-medium">
+                    {pendingCount > 0
+                      ? "Cliquez pour consulter et valider vos commandes reçues."
+                      : unreadNotifications[0]?.message || "Cliquez pour consulter vos commandes."}
                   </p>
                 </div>
               </div>
-              <span className="text-[#D4870A] font-bold">→</span>
+              <span className="text-xs bg-[#1D6B45] text-white font-bold px-4 py-2 rounded-xl hover:bg-[#154d31] transition-all shadow-sm">
+                Voir
+              </span>
             </div>
           </Link>
         )}
