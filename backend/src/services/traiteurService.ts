@@ -6,6 +6,10 @@ import {
   CreateDishInput,
 } from "../utils/types";
 import { deleteFromR2 } from "./storageService";
+import {
+  sendNewOrderToTraiteurMail,
+  sendOrderNotificationToClientMail,
+} from "./emailService";
 
 export const getActiveTraiteur = async () => {
   return await db.traiteur.findMany({
@@ -57,7 +61,12 @@ export const createOrderTraiteur = async (commande: CreateCommandeTraiteurInput)
   return await db.$transaction(async (tx) => {
     const traiteur = await tx.traiteur.findUnique({
       where: { id: commande.traiteur_id },
+      include: { profile: true },
     });
+
+    const client = commande.client_id
+      ? await tx.profile.findUnique({ where: { id: commande.client_id } })
+      : null;
 
     const newCommande = await tx.commandeTraiteur.create({
       data: {
@@ -84,6 +93,31 @@ export const createOrderTraiteur = async (commande: CreateCommandeTraiteurInput)
       });
     }
 
+    // E-mails automatiques
+    if (traiteur?.profile?.email) {
+      sendNewOrderToTraiteurMail({
+        traiteurEmail: traiteur.profile.email,
+        traiteurName: traiteur.name,
+        clientName: client?.full_name || "Client",
+        clientPhone: client?.phone || undefined,
+        clientEmail: client?.email || undefined,
+        dateEvenement: new Date(commande.date_evenement).toLocaleDateString("fr-FR"),
+        details: `Type d'événement: ${commande.type_evenement || "Non spécifié"}\nNombre de personnes: ${commande.nb_personnes}\nAdresse: ${commande.adresse}\nNotes: ${commande.notes || "Aucune"}`,
+        type: "DEVIS",
+      }).catch((err) => console.error("Erreur e-mail traiteur:", err));
+    }
+
+    if (client?.email) {
+      sendOrderNotificationToClientMail({
+        clientEmail: client.email,
+        clientName: client.full_name || "Client",
+        traiteurName: traiteur?.name || "Traiteur",
+        traiteurWhatsapp: traiteur?.whatsapp || undefined,
+        status: "CRÉE",
+        details: `Demande enregistrée pour le ${new Date(commande.date_evenement).toLocaleDateString("fr-FR")} (${commande.nb_personnes} personnes).`,
+      }).catch((err) => console.error("Erreur e-mail client:", err));
+    }
+
     return newCommande;
   });
 };
@@ -97,7 +131,12 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
   return await db.$transaction(async (tx) => {
     const traiteur = await tx.traiteur.findUnique({
       where: { id: commande.traiteur_id },
+      include: { profile: true },
     });
+
+    const client = commande.client_id
+      ? await tx.profile.findUnique({ where: { id: commande.client_id } })
+      : null;
 
     const newOrder = await tx.order.create({
       data: {
@@ -134,6 +173,32 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
           },
         },
       });
+    }
+
+    // E-mails automatiques
+    if (traiteur?.profile?.email) {
+      sendNewOrderToTraiteurMail({
+        traiteurEmail: traiteur.profile.email,
+        traiteurName: traiteur.name,
+        clientName: client?.full_name || "Client",
+        clientPhone: client?.phone || undefined,
+        clientEmail: client?.email || undefined,
+        totalAmount: total,
+        details: `Commande de plats (${commande.items.length} produit(s)). Adresse: ${commande.delivery_address || "À emporter"}`,
+        type: "PLAT",
+      }).catch((err) => console.error("Erreur e-mail traiteur:", err));
+    }
+
+    if (client?.email) {
+      sendOrderNotificationToClientMail({
+        clientEmail: client.email,
+        clientName: client.full_name || "Client",
+        traiteurName: traiteur?.name || "Traiteur",
+        traiteurWhatsapp: traiteur?.whatsapp || undefined,
+        status: "CRÉE",
+        details: `Commande de plats enregistrée pour un montant total de ${total.toFixed(2)} €`,
+        totalAmount: total,
+      }).catch((err) => console.error("Erreur e-mail client:", err));
     }
 
     return newOrder;

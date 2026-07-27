@@ -1,5 +1,9 @@
 import { db } from "../db";
 import { CreateGpListingInput, CreateGpRequestInput } from "../utils/types";
+import {
+  sendNewGpRequestToGpMail,
+  sendGpRequestStatusToSenderMail,
+} from "./emailService";
 
 export const getAllGp = async () => {
   return await db.gpListing.findMany({
@@ -40,7 +44,12 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
   return await db.$transaction(async (tx) => {
     const gpListing = await tx.gpListing.findUnique({
       where: { id: order.listing_id },
+      include: { gp: true },
     });
+
+    const sender = order.sender_id
+      ? await tx.profile.findUnique({ where: { id: order.sender_id } })
+      : null;
 
     const newOrder = await tx.gpRequest.create({
       data: {
@@ -74,6 +83,34 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
           },
         },
       });
+    }
+
+    if (gpListing?.gp?.email) {
+      sendNewGpRequestToGpMail({
+        gpEmail: gpListing.gp.email,
+        gpName: gpListing.gp.full_name || "Transporteur GP",
+        senderName: sender?.full_name || "Expéditeur",
+        senderPhone: sender?.phone || undefined,
+        senderEmail: sender?.email || undefined,
+        departureCity: gpListing.departure_city || undefined,
+        arrivalCity: gpListing.arrival_city || undefined,
+        weightKg: order.weight_kg,
+        contentDesc: order.content_desc,
+        totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+      }).catch((err) => console.error("Erreur e-mail GP:", err));
+    }
+
+    if (sender?.email) {
+      sendGpRequestStatusToSenderMail({
+        senderEmail: sender.email,
+        senderName: sender.full_name || "Expéditeur",
+        gpName: gpListing?.gp?.full_name || "GP Transporteur",
+        status: "CRÉE",
+        departureCity: gpListing?.departure_city || undefined,
+        arrivalCity: gpListing?.arrival_city || undefined,
+        weightKg: order.weight_kg,
+        totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+      }).catch((err) => console.error("Erreur e-mail expéditeur:", err));
     }
 
     return newOrder;

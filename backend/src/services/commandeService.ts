@@ -1,4 +1,8 @@
 import { db } from "../db";
+import {
+  sendOrderNotificationToClientMail,
+  sendGpRequestStatusToSenderMail,
+} from "./emailService";
 
 export const getRecentOrderByClientId = async (client_id: string) => {
   return await db.order.findMany({
@@ -106,6 +110,10 @@ export const updateCommandeTraiteurStatus = async (
         statut,
         message_traiteur: message_traiteur || null,
       },
+      include: {
+        client: true,
+        traiteur: true,
+      },
     });
 
     if (commande.client_id) {
@@ -131,6 +139,18 @@ export const updateCommandeTraiteurStatus = async (
           data: { commande_id: id },
         },
       });
+
+      if (commande.client?.email) {
+        sendOrderNotificationToClientMail({
+          clientEmail: commande.client.email,
+          clientName: commande.client.full_name || "Client",
+          traiteurName: commande.traiteur?.name || "Traiteur",
+          traiteurWhatsapp: commande.traiteur?.whatsapp || undefined,
+          status: isAccepted ? "ACCEPTÉE" : "REFUSÉE",
+          details: `Événement prévu le ${dateStr} pour ${commande.nb_personnes || 1} personne(s).`,
+          messageTraiteur: message_traiteur,
+        }).catch((err) => console.error("Erreur envoi email client:", err));
+      }
     }
 
     return commande;
@@ -142,6 +162,15 @@ export const updateOrderPlatStatus = async (id: string, status: string) => {
     const order = await tx.order.update({
       where: { id },
       data: { status },
+      include: {
+        client: true,
+        traiteur: true,
+        order_items: {
+          include: {
+            dish: true,
+          },
+        },
+      },
     });
 
     if (order.client_id) {
@@ -157,6 +186,22 @@ export const updateOrderPlatStatus = async (id: string, status: string) => {
           data: { order_id: id },
         },
       });
+
+      if (order.client?.email) {
+        const dishSummary = order.order_items
+          .map((item) => `- ${item.dish?.name || "Plat"} x${item.quantity} (${(Number(item.unit_price) * item.quantity).toFixed(2)} €)`)
+          .join("\n");
+
+        sendOrderNotificationToClientMail({
+          clientEmail: order.client.email,
+          clientName: order.client.full_name || "Client",
+          traiteurName: order.traiteur?.name || "Traiteur",
+          traiteurWhatsapp: order.traiteur?.whatsapp || undefined,
+          status: isAccepted ? "ACCEPTÉE" : "REFUSÉE",
+          details: dishSummary || "Plats commandés sur la carte du traiteur",
+          totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+        }).catch((err) => console.error("Erreur envoi email client:", err));
+      }
     }
 
     return order;
@@ -172,6 +217,14 @@ export const updateGpRequestStatus = async (
     const request = await tx.gpRequest.update({
       where: { id },
       data: { status },
+      include: {
+        sender: true,
+        listing: {
+          include: {
+            gp: true,
+          },
+        },
+      },
     });
 
     if (request.sender_id) {
@@ -189,6 +242,21 @@ export const updateGpRequestStatus = async (
           data: { request_id: id },
         },
       });
+
+      if (request.sender?.email) {
+        sendGpRequestStatusToSenderMail({
+          senderEmail: request.sender.email,
+          senderName: request.sender.full_name || "Expéditeur",
+          gpName: request.listing?.gp?.full_name || "GP Transporteur",
+          gpPhone: request.listing?.gp?.phone || undefined,
+          status: isAccepted ? "ACCEPTÉE" : "REFUSÉE",
+          departureCity: request.departure_city || request.listing?.departure_city || undefined,
+          arrivalCity: request.arrival_city || request.listing?.arrival_city || undefined,
+          weightKg: request.weight_kg ? Number(request.weight_kg) : undefined,
+          totalAmount: request.total_amount ? Number(request.total_amount) : undefined,
+          messageGp: message,
+        }).catch((err) => console.error("Erreur e-mail expéditeur:", err));
+      }
     }
 
     return request;
