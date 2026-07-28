@@ -5,6 +5,11 @@ import { AuthenticatedRequest } from "../utils/types";
 class AuthController {
   static signup = async (req: Request, res: Response) => {
     try {
+      // Détection de bot via faux champ Honeypot
+      if (req.body.honeypot || req.body.website) {
+        return res.status(400).json({ message: "Requête refusée (détection de bot)." });
+      }
+
       const {
         firstname,
         lastname,
@@ -59,6 +64,11 @@ class AuthController {
 
   static login = async (req: Request, res: Response) => {
     try {
+      // Détection de bot via faux champ Honeypot
+      if (req.body.honeypot || req.body.website) {
+        return res.status(400).json({ message: "Requête refusée (détection de bot)." });
+      }
+
       const { email, phone, password } = req.body;
       const loginIdentifier = email || phone;
       if (!loginIdentifier || !password) {

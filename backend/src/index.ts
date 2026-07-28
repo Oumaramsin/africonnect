@@ -13,15 +13,33 @@ import adminRouter from "./routes/admin";
 import uploadRouter from "./routes/upload";
 import notificationRouter from "./routes/notification";
 
+import { generalLimiter, authLimiter } from "./middlewares/rateLimiter";
+
 dotenv.config();
 
 const app = express();
 const port = process.env.PORT || 3001;
 const prisma = new PrismaClient();
 
+// Security Headers Middleware (Anti-Clickjacking, Anti-XSS, Anti-MIME Sniffing)
+app.use((_req, res, next) => {
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Content-Security-Policy", "frame-ancestors 'none';");
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-XSS-Protection", "1; mode=block");
+  next();
+});
+
 app.use(cors());
 app.use(express.json());
 app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
+
+// Application du Rate Limiting Général sur toutes les requêtes API
+app.use("/api", generalLimiter);
+
+// Application du Rate Limiting Strict sur les routes d'authentification
+app.use("/api/auth/login", authLimiter);
+app.use("/api/auth/register", authLimiter);
 
 // Mount API routes
 app.use("/api/auth", authRouter);

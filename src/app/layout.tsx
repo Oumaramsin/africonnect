@@ -21,6 +21,11 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <meta name="theme-color" content="#1D6B45" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `if (window.top !== window.self) { window.top.location.href = window.self.location.href; }`,
+          }}
+        />
       </head>
       <body className={inter.className} style={{
         background: 'linear-gradient(135deg, #0F4A30 0%, #1D6B45 50%, #D4870A 100%)',

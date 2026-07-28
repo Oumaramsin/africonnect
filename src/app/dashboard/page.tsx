@@ -410,19 +410,6 @@ export default async function DashboardPage() {
               </div>
             </div>
           </div>
-
-          {/* Badges de Confiance Compacts */}
-          <div className="mt-5 flex items-center justify-center gap-2 flex-wrap">
-            <span className="inline-flex items-center gap-1.5 bg-white border border-gray-200/80 px-3 py-1.5 rounded-full text-[11px] font-semibold text-gray-700 shadow-2xs">
-              <ShieldCheck size={13} className="text-[#1D6B45]" /> Paiement 100% sécurisé
-            </span>
-            <span className="inline-flex items-center gap-1.5 bg-white border border-gray-200/80 px-3 py-1.5 rounded-full text-[11px] font-semibold text-gray-700 shadow-2xs">
-              <HeartHandshake size={13} className="text-[#D4870A]" /> Réseau de confiance
-            </span>
-            <span className="inline-flex items-center gap-1.5 bg-white border border-gray-200/80 px-3 py-1.5 rounded-full text-[11px] font-semibold text-gray-700 shadow-2xs">
-              <Headphones size={13} className="text-[#1D6B45]" /> Support 7j/7
-            </span>
-          </div>
         </div>
 
         {/* Commandes récentes */}
