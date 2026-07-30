@@ -11,25 +11,29 @@ import {
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
+import type { CommandeTraiteur, OrderPlat } from "../utils/types/traiteur";
+import { GpRequest } from "../utils/types/gp";
 
 export default function AccueilScreen() {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
-  let full_name = null;
-  let commandesTraiteur: any[] = [];
-  let ordersPlats: any[] = [];
-  let gpRequests: any[] = [];
-  let pendingCount = 0;
-  let unreadNotifications: any[] = [];
-  let unreadCount = 0;
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [fullname, setFullname] = useState("");
+  const [commandesTraiteur, setCommandesTraiteur] = useState<any[]>([]);
+  const [ordersPlats, setOrdersPlats] = useState<any[]>([]);
+  const [gpRequests, setGpRequests] = useState<any[]>([]);
+  const [pendingCount, setPendingCount] = useState<any[]>([]);
+  const [unreadNotifications, setUnreadNotifications] = useState<any[]>([]);
+  const [unreadCount, setUnreadCount] = useState<number>(0);
 
   useEffect(() => {
     async function loadData() {
       const token = await getSecureToken("token");
       if (!token) {
-        full_name = "";
+        setFullname("");
         return;
       }
+      setIsLoggedIn(true);
       try {
         const baseUrl =
           process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001/api";
@@ -50,10 +54,10 @@ export default function AccueilScreen() {
         console.log(data);
         const userProfile = data.data?.orders;
         if (userProfile) {
-          full_name = userProfile.full_name;
-          gpRequests = userProfile.gp_requests || [];
-          ordersPlats = userProfile.orders || [];
-          commandesTraiteur = userProfile.commandes || [];
+          setFullname(userProfile.full_name);
+          setGpRequests(userProfile.gp_requests || []);
+          setOrdersPlats(userProfile.orders || []);
+          setCommandesTraiteur(userProfile.commandes || []);
           const traiteurOrdersPending =
             userProfile.traiteurs
               ?.flatMap((t: any) => t.orders || [])
@@ -73,13 +77,14 @@ export default function AccueilScreen() {
                 (r: any) => r.status === "pending" || r.status === "en_attente",
               )?.length || 0;
 
-          pendingCount =
+          setPendingCount(
             traiteurOrdersPending +
-            traiteurCommandesPending +
-            gpRequestsPending;
+              traiteurCommandesPending +
+              gpRequestsPending,
+          );
         }
         const notifRes = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/notifications`,
+          `${process.env.EXPO_PUBLIC_API_URL}/notifications`,
           {
             headers: {
               Authorization: `Bearer ${token}`,
@@ -89,18 +94,52 @@ export default function AccueilScreen() {
         );
         if (notifRes.ok) {
           const notifData = await notifRes.json();
-          unreadNotifications =
-            notifData.notifications?.filter((n: any) => !n.is_read) || [];
-          unreadCount = notifData.unread_count || 0;
+          setUnreadNotifications(notifData.notifications?.filter((n: any) => !n.is_read) || []);
+          setUnreadCount(notifData.unread_count || 0);
         }
-        
       } catch (error) {
         console.error("Erreur dans le fetch du dashboard :", error);
       }
-      
     }
     loadData();
   }, []);
+
+  const formatDate = (d: string) =>
+    new Date(d).toLocaleDateString("fr-FR", {
+      day: "numeric",
+      month: "short",
+    });
+
+  const getStatutBadge = (statut: string) => {
+    switch (statut) {
+      case "en_attente":
+      case "pending":
+        return (
+          <View style={styles.badgePending}>
+            <Ionicons name="time-outline" size={10} color="#B45309" />
+            <Text style={styles.badgePendingText}>En attente</Text>
+          </View>
+        );
+      case "acceptee":
+      case "accepted":
+        return (
+          <View style={styles.badgeAccepted}>
+            <Ionicons name="checkmark-circle" size={10} color="#1D6B45" />
+            <Text style={styles.badgeAcceptedText}>Acceptée</Text>
+          </View>
+        );
+      case "refusee":
+      case "rejected":
+        return (
+          <View style={styles.badgeRefused}>
+            <Ionicons name="close-circle" size={10} color="#DC2626" />
+            <Text style={styles.badgeRefusedText}>Refusée</Text>
+          </View>
+        );
+      default:
+        return null;
+    }
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -122,7 +161,7 @@ export default function AccueilScreen() {
                 <Text style={styles.welcomePillText}>Bienvenue sur Dabari</Text>
               </View>
 
-              <Text style={styles.greetingText}>Bonjour, {full_name} 👋</Text>
+              <Text style={styles.greetingText}>Bonjour, {fullname} 👋</Text>
               <Text style={styles.greetingSubtext}>
                 Que souhaitez-vous commander ou envoyer aujourd'hui ?
               </Text>
@@ -131,7 +170,7 @@ export default function AccueilScreen() {
             <Link href="/profil" asChild>
               <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.8}>
                 <Text style={styles.avatarText}>
-                  {full_name ? full_name.charAt(0).toUpperCase : "?"}
+                  {fullname ? fullname.charAt(0).toUpperCase() : "?"}
                 </Text>
                 <View style={styles.avatarStatusDot} />
               </TouchableOpacity>
@@ -140,6 +179,14 @@ export default function AccueilScreen() {
         </View>
 
         <View style={styles.mainBody}>
+          {/* Alert Error Box (si une erreur de chargement survient) */}
+          {error && (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
           {/* Notification Alert Banner */}
           {unreadNotifications.length > 0 && (
             <TouchableOpacity style={styles.notifBanner} activeOpacity={0.9}>
@@ -186,7 +233,9 @@ export default function AccueilScreen() {
             <TouchableOpacity
               style={styles.serviceCardActiveTraiteur}
               activeOpacity={0.85}
-              onPress={()=>{router.push("/traiteur")}}
+              onPress={() => {
+                router.push("/traiteur");
+              }}
             >
               <View>
                 <View style={styles.serviceTopRow}>
@@ -222,7 +271,9 @@ export default function AccueilScreen() {
             <TouchableOpacity
               style={styles.serviceCardActiveGp}
               activeOpacity={0.85}
-              onPress={()=>{router.push("/gp")}}
+              onPress={() => {
+                router.push("/gp");
+              }}
             >
               <View>
                 <View style={styles.serviceTopRow}>
@@ -308,59 +359,83 @@ export default function AccueilScreen() {
           </View>
 
           {/* Section: Commandes Récentes */}
-          <View style={styles.recentOrdersCard}>
-            <View style={styles.recentOrdersHeader}>
-              <Text style={styles.recentOrdersTitle}>Commandes récentes</Text>
-              <TouchableOpacity onPress={()=>{router.push("/commande")}}>
-                <Text style={styles.seeAllText}>Voir tout →</Text>
-              </TouchableOpacity>
+          {isLoggedIn && (
+            <View style={styles.recentOrdersCard}>
+              <View style={styles.recentOrdersHeader}>
+                <Text style={styles.recentOrdersTitle}>Commandes récentes</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    router.push("/commande");
+                  }}
+                >
+                  <Text style={styles.seeAllText}>Voir tout →</Text>
+                </TouchableOpacity>
+              </View>
+
+              {/* Order Item 1 */}
+              {commandesTraiteur?.slice(0, 2).map((cmd: CommandeTraiteur) => {
+                const traiteurName =
+                  cmd.traiteur?.name || cmd.traiteurs?.name || "Traiteur";
+                return (
+                  <View key={cmd.id} style={styles.orderItemRow}>
+                    <View style={styles.orderItemLeft}>
+                      <View style={styles.orderIconBoxTraiteur}>
+                        <Ionicons name="restaurant" size={18} color="#1D6B45" />
+                      </View>
+                      <View>
+                        <Text style={styles.orderItemName}>{traiteurName}</Text>
+                        <Text style={styles.orderItemDate}>
+                          {formatDate(cmd.created_at)} · {cmd.nb_personnes}{" "}
+                          pers.
+                        </Text>
+                      </View>
+                    </View>
+                    {getStatutBadge(cmd.statut)}
+                  </View>
+                );
+              })}
+              {/* Order Item 2 */}
+              {ordersPlats?.slice(0, 2).map((order: OrderPlat) => {
+                const traiteurName =
+                  order.traiteur?.name || order.traiteurs?.name || "Traiteur";
+                return (
+                  <View key={order.id} style={styles.orderItemRow}>
+                    <View style={styles.orderItemLeft}>
+                      <View style={styles.orderIconBoxTraiteur}>
+                        <Ionicons name="restaurant" size={18} color="#1D6B45" />
+                      </View>
+                      <View>
+                        <Text style={styles.orderItemName}>{traiteurName}</Text>
+                        <Text style={styles.orderItemDate}>
+                          {formatDate(order.created_at)} · {order.total_amount}{" "}
+                          €
+                        </Text>
+                      </View>
+                    </View>
+                    {getStatutBadge(order.status)}
+                  </View>
+                );
+              })}
+              {gpRequests?.slice(0, 2).map((gp: GpRequest) => {
+                return (
+                  <View key={gp.id} style={styles.orderItemRow}>
+                    <View style={styles.orderItemLeft}>
+                      <View style={styles.orderIconBoxTraiteur}>
+                        <Ionicons name="airplane" size={18} color="#D4870A" />
+                      </View>
+                      <View>
+                        <Text style={styles.orderItemName}>{gp.departure_city} → {gp.arrival_city}</Text>
+                        <Text style={styles.orderItemDate}>
+                          {formatDate(gp.created_at)} · {gp.weight_kg}{" "}Kg
+                        </Text>
+                      </View>
+                    </View>
+                    {getStatutBadge(gp.status)}
+                  </View>
+                );
+              })}
             </View>
-
-            {/* Order Item 1 */}
-            {ordersPlats}
-            <View style={styles.orderItemRow}>
-              <View style={styles.orderItemLeft}>
-                <View style={styles.orderIconBoxTraiteur}>
-                  <Ionicons name="restaurant" size={18} color="#1D6B45" />
-                </View>
-                <View>
-                  <Text style={styles.orderItemName}>Traiteur Oumar</Text>
-                  <Text style={styles.orderItemDate}>
-                    29 Juil. • Menu Tiep & Poulet
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.badgePending}>
-                <Ionicons name="time-outline" size={12} color="#B45309" />
-                <Text style={styles.badgePendingText}>En attente</Text>
-              </View>
-            </View>
-
-            {/* Order Item 2 */}
-            <View style={[styles.orderItemRow, { borderBottomWidth: 0 }]}>
-              <View style={styles.orderItemLeft}>
-                <View style={styles.orderIconBoxGp}>
-                  <Ionicons name="airplane" size={18} color="#D4870A" />
-                </View>
-                <View>
-                  <Text style={styles.orderItemName}>GP Paris → Dakar</Text>
-                  <Text style={styles.orderItemDate}>
-                    26 Juil. • Colis 5 kg
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.badgeAccepted}>
-                <Ionicons
-                  name="checkmark-circle-outline"
-                  size={12}
-                  color="#1D6B45"
-                />
-                <Text style={styles.badgeAcceptedText}>Acceptée</Text>
-              </View>
-            </View>
-          </View>
+          )}
 
           {/* Footer Security Notice */}
           <View style={styles.footerTrustBar}>
@@ -859,6 +934,7 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
+
   badgeAccepted: {
     flexDirection: "row",
     alignItems: "center",
@@ -873,7 +949,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "700",
   },
+  badgeRefused: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    gap: 4,
+  },
 
+  badgeRefusedText: {
+    color: "#DC2626",
+    fontSize: 10,
+    fontWeight: "700",
+  },
   /* Footer Trust Notice */
   footerTrustBar: {
     flexDirection: "row",
@@ -886,5 +976,22 @@ const styles = StyleSheet.create({
     color: "#6B7280",
     fontSize: 11,
     fontWeight: "600",
+  },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  errorText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
   },
 });
