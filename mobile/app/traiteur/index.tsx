@@ -154,7 +154,7 @@ export default function TraiteurScreen() {
                 />
               ) : (
                 <View style={styles.emojiCircle}>
-                  <Text style={styles.emojiText}>👨‍🍳</Text>
+                  <Text style={styles.emojiText}></Text>
                 </View>
               )}
             </View>
