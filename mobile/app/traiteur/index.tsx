@@ -5,10 +5,10 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Traiteur } from "../../utils/types/traiteur";
@@ -31,9 +31,7 @@ const CUISINE_EMOJI: Record<string, string> = {
 export default function TraiteurScreen() {
   const router = useRouter();
 
-  // État local uniquement pour le visuel et les filtres
   const [selectedCuisine, setSelectedCuisine] = useState("tout");
-  const [error, setError] = useState("");
   const [traiteurs, setTraiteurs] = useState<Traiteur[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -69,151 +67,174 @@ export default function TraiteurScreen() {
     return () => {
       ignore = true;
     };
-  }, [selectedCuisine]);
+  }, []);
+
+  const filteredTraiteurs =
+    selectedCuisine === "tout"
+      ? traiteurs
+      : traiteurs.filter((traiteurs) =>
+          traiteurs.cuisine_type?.some((c) =>
+            c.toLowerCase().includes(selectedCuisine.toLowerCase()),
+          ),
+        );
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={styles.topGreenWrapper}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <StatusBar barStyle="light-content" />
 
-      {/* Top Header Card (Gradient Vert) */}
-      <View style={styles.headerCard}>
-        <TouchableOpacity
-          style={styles.backBtn}
-          onPress={() => router.back()}
-          activeOpacity={0.7}
-        >
-          <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-          <Text style={styles.backBtnText}>Accueil</Text>
-        </TouchableOpacity>
-
-        <Text style={styles.headerTitle}>Traiteurs africains</Text>
-        <Text style={styles.headerSubtitle}>
-          Commandez de délicieux plats faits maison pour vos événements ou
-          repas.
-        </Text>
-      </View>
-
-      {/* Sticky Horizontal Filter Bar */}
-      <View style={styles.filterBarContainer}>
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.filterScrollContent}
-        >
-          <Text style={styles.filterPrefixLabel}>CUISINE :</Text>
-          {CUISINES.map((c) => {
-            const isActive = selectedCuisine === c.value;
-            return (
-              <TouchableOpacity
-                key={c.value}
-                style={[
-                  styles.filterPill,
-                  isActive
-                    ? styles.filterPillActive
-                    : styles.filterPillInactive,
-                ]}
-                onPress={() => setSelectedCuisine(c.value)}
-                activeOpacity={0.8}
-              >
-                <Text
-                  style={[
-                    styles.filterPillText,
-                    isActive
-                      ? styles.filterPillTextActive
-                      : styles.filterPillTextInactive,
-                  ]}
-                >
-                  {c.label}
-                </Text>
-              </TouchableOpacity>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      {/* Main Content List (Vue Démonstration) */}
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* Card Traiteur Demo 1 */}
-        {traiteurs.map((traiteur) => (
+        {/* Top Header Card (Gradient Vert) */}
+        <View style={styles.headerCard}>
           <TouchableOpacity
-            key={traiteur.id}
-            style={styles.traiteurCard}
-            onPress={() => router.push(`/traiteur/${traiteur.id}`)}
-            activeOpacity={0.9}
+            style={styles.backBtn}
+            onPress={() => router.push("/accueil")}
+            activeOpacity={0.7}
           >
-            {/* Top Banner Image / Gradient Placeholder */}
-            <View style={styles.cardCoverBg}>
-              {traiteur.image_url ? (
-                <Image
-                  source={{ uri: traiteur.image_url }}
-                  style={{ width: "100%", height: "100%" }}
-                  resizeMode="cover"
-                />
-              ) : (
-                <View style={styles.emojiCircle}>
-                  <Text style={styles.emojiText}></Text>
+            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+            <Text style={styles.backBtnText}>Accueil</Text>
+          </TouchableOpacity>
+
+          <Text style={styles.headerTitle}>Traiteurs africains</Text>
+          <Text style={styles.headerSubtitle}>
+            Commandez de délicieux plats faits maison pour vos événements ou
+            repas.
+          </Text>
+        </View>
+
+        {/* Sticky Horizontal Filter Bar */}
+        <View style={styles.filterBarContainer}>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.filterScrollContent}
+          >
+            <Text style={styles.filterPrefixLabel}>CUISINE :</Text>
+            {CUISINES.map((c) => {
+              const isActive = selectedCuisine === c.value;
+              return (
+                <TouchableOpacity
+                  key={c.value}
+                  style={[
+                    styles.filterPill,
+                    isActive
+                      ? styles.filterPillActive
+                      : styles.filterPillInactive,
+                  ]}
+                  onPress={() => {
+                    setSelectedCuisine(c.value);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      isActive
+                        ? styles.filterPillTextActive
+                        : styles.filterPillTextInactive,
+                    ]}
+                  >
+                    {c.label}
+                  </Text>
+                </TouchableOpacity>
+              );
+            })}
+          </ScrollView>
+        </View>
+
+        {/* Main Content List (Vue Démonstration) */}
+        <ScrollView
+          style={styles.mainScrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Card Traiteur Demo 1 */}
+          {filteredTraiteurs.map((traiteur) => (
+            <TouchableOpacity
+              key={traiteur.id}
+              style={styles.traiteurCard}
+              onPress={() => router.push(`/traiteur/${traiteur.id}`)}
+              activeOpacity={0.9}
+            >
+              {/* Top Banner Image / Gradient Placeholder */}
+              <View style={styles.cardCoverBg}>
+                {traiteur.image_url ? (
+                  <Image
+                    source={{ uri: traiteur.image_url }}
+                    style={{ width: "100%", height: "100%" }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.emojiCircle}>
+                    <Text style={styles.emojiText}></Text>
+                  </View>
+                )}
+              </View>
+
+              {/* Card Details */}
+              <View style={styles.cardDetails}>
+                <View style={styles.cardHeaderRow}>
+                  <Text style={styles.traiteurName}>{traiteur.name}</Text>
+
+                  {/* Rating Badge */}
+                  <View style={styles.ratingBadge}>
+                    <Ionicons name="star" size={12} color="#EAB308" />
+                    {traiteur.review_count === 0 && (
+                      <Text style={styles.ratingValue}>Aucun Avis</Text>
+                    )}
+                    {traiteur.review_count > 0 && (
+                      <Text style={styles.ratingValue}>{traiteur.rating}</Text>
+                    )}
+                    <Text style={styles.ratingCount}>
+                      ({traiteur.review_count})
+                    </Text>
+                  </View>
                 </View>
-              )}
-            </View>
 
-            {/* Card Details */}
-            <View style={styles.cardDetails}>
-              <View style={styles.cardHeaderRow}>
-                <Text style={styles.traiteurName}>{traiteur.name}</Text>
+                <Text style={styles.traiteurBio} numberOfLines={2}>
+                  {traiteur.bio}
+                </Text>
 
-                {/* Rating Badge */}
-                <View style={styles.ratingBadge}>
-                  <Ionicons name="star" size={12} color="#EAB308" />
-                  {traiteur.review_count === 0 && (
-                    <Text style={styles.ratingValue}>Aucun Avis</Text>
-                  )}
-                  {traiteur.review_count > 0 && (
-                    <Text style={styles.ratingValue}>{traiteur.rating}</Text>
-                  )}
-                  <Text style={styles.ratingCount}>
-                    ({traiteur.review_count})
+                {/* Bottom Row */}
+                <View style={styles.cardFooterRow}>
+                  <View style={styles.cuisinePillsRow}>
+                    {traiteur.cuisine_type?.slice(0, 2).map((c) => (
+                      <View key={c} style={styles.cuisineTag}>
+                        <Text style={styles.cuisineTagText}>
+                          {CUISINE_EMOJI[c]} {c}
+                        </Text>
+                      </View>
+                    ))}
+                  </View>
+
+                  <Text style={styles.dishesCountText}>
+                    {traiteur.dishes?.filter((d) => d.is_available).length || 0}{" "}
+                    plat
+                    {(traiteur.dishes?.filter((d) => d.is_available).length ||
+                      0) > 1
+                      ? "s"
+                      : ""}{" "}
+                    →
                   </Text>
                 </View>
               </View>
-
-              <Text style={styles.traiteurBio} numberOfLines={2}>
-                {traiteur.bio}
-              </Text>
-
-              {/* Bottom Row */}
-              <View style={styles.cardFooterRow}>
-                <View style={styles.cuisinePillsRow}>
-                  {traiteur.cuisine_type?.slice(0, 2).map((c) => (
-                    <View key={c} style={styles.cuisineTag}>
-                      <Text style={styles.cuisineTagText}>
-                        {CUISINE_EMOJI[c]} {c}
-                      </Text>
-                    </View>
-                  ))}
-                </View>
-
-                <Text style={styles.dishesCountText}>
-                  {traiteur.dishes?.filter((d) => d.is_available).length || 0}{" "}
-                  plat
-                  {(traiteur.dishes?.filter((d) => d.is_available).length || 0) > 1
-                    ? "s"
-                    : ""}{" "}
-                  →
-                </Text>
-              </View>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-    </SafeAreaView>
+            </TouchableOpacity>
+          ))}
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topGreenWrapper: {
+    flex: 1,
+    backgroundColor: "#165034",
+  },
   container: {
+    flex: 1,
+    backgroundColor: "#165034",
+  },
+  mainScrollView: {
     flex: 1,
     backgroundColor: "#F3F4F6",
   },

@@ -5,9 +5,9 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   StatusBar,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
@@ -142,13 +142,15 @@ export default function AccueilScreen() {
   };
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={styles.topGreenWrapper}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <StatusBar barStyle="light-content" />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+        <ScrollView
+          style={styles.mainScrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Top Hero Header Card (Gradient Vert & Or) */}
         <View style={styles.heroCard}>
           {/* Background Gold Blur Decoration */}
@@ -447,11 +449,20 @@ export default function AccueilScreen() {
         </View>
       </ScrollView>
     </SafeAreaView>
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topGreenWrapper: {
+    flex: 1,
+    backgroundColor: "#165034",
+  },
   container: {
+    flex: 1,
+    backgroundColor: "#165034",
+  },
+  mainScrollView: {
     flex: 1,
     backgroundColor: "#F3F4F6",
   },

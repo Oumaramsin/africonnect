@@ -5,10 +5,10 @@ import {
   View,
   TouchableOpacity,
   ScrollView,
-  SafeAreaView,
   StatusBar,
   Image,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken, saveSecureToken } from "../../../utils/storage";
@@ -368,18 +368,20 @@ export default function TraiteurDetailScreen() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={styles.topGreenWrapper}>
+      <SafeAreaView style={styles.container} edges={["top"]}>
+        <StatusBar barStyle="light-content" />
 
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+        <ScrollView
+          style={styles.mainScrollView}
+          contentContainerStyle={styles.scrollContent}
+          showsVerticalScrollIndicator={false}
+        >
         {/* Top Header Card (Gradient Vert Vert & Or) */}
         <View style={styles.headerCard}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => router.back()}
+            onPress={() => router.push("/traiteur")}
             activeOpacity={0.7}
           >
             <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
@@ -424,7 +426,7 @@ export default function TraiteurDetailScreen() {
 
         {/* Section Demande de Devis sur-mesure */}
         <View style={styles.devisCardContainer}>
-          <TouchableOpacity style={styles.devisCard} activeOpacity={0.85}>
+          <TouchableOpacity style={styles.devisCard} activeOpacity={0.85} onPress={() => router.push(`/traiteur/${traiteurId}/devis`)}>
             <View style={styles.devisIconCircle}>
               <Ionicons name="calendar" size={22} color="#1D6B45" />
             </View>
@@ -464,13 +466,14 @@ export default function TraiteurDetailScreen() {
         </View>
       </ScrollView>
 
-      {/* Bouton Voir mon panier */}
-      {totalItems > 0 && (
+      {/* Bouton Flottant "Voir mon panier" */}
+      {cart.length > 0 && (
         <View style={styles.floatingCartBar}>
           <TouchableOpacity
             style={styles.floatingCartBtn}
             onPress={() => {
-              goToCheckout()
+              saveSecureToken("dabari_cart", JSON.stringify(cart));
+              goToCheckout();
             }}
             activeOpacity={0.9}
           >
@@ -487,11 +490,20 @@ export default function TraiteurDetailScreen() {
         </View>
       )}
     </SafeAreaView>
+  </View>
   );
 }
 
 const styles = StyleSheet.create({
+  topGreenWrapper: {
+    flex: 1,
+    backgroundColor: "#165034",
+  },
   container: {
+    flex: 1,
+    backgroundColor: "#165034",
+  },
+  mainScrollView: {
     flex: 1,
     backgroundColor: "#F3F4F6",
   },
