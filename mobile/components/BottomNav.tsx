@@ -5,6 +5,7 @@ import {
   Text,
   TouchableOpacity,
   Platform,
+  DeviceEventEmitter,
 } from "react-native";
 import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -68,6 +69,12 @@ export default function BottomNav() {
     };
 
     fetchUserData();
+
+    const sub = DeviceEventEmitter.addListener(
+      "dabari_orders_updated",
+      fetchUserData,
+    );
+    return () => sub.remove();
   }, [pathname]);
 
   // Masquer le BottomNav sur les pages de connexion/inscription
@@ -76,7 +83,6 @@ export default function BottomNav() {
     return null;
   }
 
-  // Éléments de navigation identiques à la version Web
   const items = [
     {
       href: "/accueil",

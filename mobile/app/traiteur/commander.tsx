@@ -206,7 +206,7 @@ export default function CommanderScreen() {
 
   if (success) {
     return (
-      <SafeAreaView style={styles.container}>
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#F3F4F6" }}>
         <View style={styles.successContainer}>
           <View style={styles.successIconCircle}>
             <Ionicons name="checkmark-circle" size={72} color="#1D6B45" />

@@ -112,7 +112,6 @@ export default function CommandesPage() {
   const [isTraiteur, setIsTraiteur] = useState(false);
   const [isGp, setIsGp] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const router = useRouter();
   const [messageRefus, setMessageRefus] = useState<Record<string, string>>({});
   const [confirmAction, setConfirmAction] = useState<{
@@ -143,17 +142,10 @@ export default function CommandesPage() {
   useEffect(() => {
     const load = async () => {
       const token = cookies.get("token");
-      if (token) {
-        setIsLoggedIn(true);
-      } else {
+      if (!token) {
         router.push("/login");
+        return;
       }
-    };
-    load();
-  }, []);
-
-  useEffect(() => {
-    const load = async () => {
       await loadAll();
     };
     load();
