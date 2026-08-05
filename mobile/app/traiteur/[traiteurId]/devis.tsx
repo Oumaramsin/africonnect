@@ -81,9 +81,16 @@ export default function DevisScreen() {
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
     async function fetchTraiteur() {
+      const token = await getSecureToken("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
       if (!traiteurId) return;
       try {
         const response = await fetch(
@@ -92,6 +99,7 @@ export default function DevisScreen() {
         if (response.ok) {
           const data = await response.json();
           setTraiteur(data.data?.traiteur || null);
+          setIsLoggedIn(true);
         }
       } catch (err) {
         console.error("Erreur récupération traiteur pour devis:", err);
@@ -196,7 +204,8 @@ export default function DevisScreen() {
           </View>
           <Text style={styles.successTitle}>Demande de Devis Envoyée !</Text>
           <Text style={styles.successDesc}>
-            {traiteur?.name || "Le traiteur"} a bien reçu votre demande et vous recontactera très rapidement.
+            {traiteur?.name || "Le traiteur"} a bien reçu votre demande et vous
+            recontactera très rapidement.
           </Text>
 
           {waNumber !== "" && (
@@ -215,8 +224,24 @@ export default function DevisScreen() {
             onPress={() => router.replace(`/traiteur/${traiteurId}` as any)}
             activeOpacity={0.85}
           >
-            <Text style={styles.successHomeBtnText}>Retour au profil traiteur</Text>
+            <Text style={styles.successHomeBtnText}>
+              Retour au profil traiteur
+            </Text>
           </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  if (!isLoggedIn) {
+    return (
+      <SafeAreaView style={styles.container}>
+        <View
+          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
+        >
+          <Text style={{ color: "#1D6B45", fontWeight: "700" }}>
+            Chargement...
+          </Text>
         </View>
       </SafeAreaView>
     );
@@ -251,222 +276,232 @@ export default function DevisScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-        {/* UN SEUL GROS BLOC FORMULAIRE */}
-        <View style={styles.mainFormCard}>
-          {/* Target Traiteur Card */}
-          <View style={styles.targetTraiteurCard}>
-            <View style={styles.targetTraiteurAvatar}>
-              <Ionicons name="restaurant" size={20} color="#1D6B45" />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.targetTraiteurLabel}>
-                Traiteur sélectionné :
-              </Text>
-              <Text style={styles.targetTraiteurName}>
-                {traiteur ? traiteur.name : "Chargement du traiteur..."}
-              </Text>
-            </View>
-            {Boolean(traiteur?.rating) && (
-              <View style={styles.targetTraiteurRating}>
-                <Ionicons name="star" size={12} color="#D4870A" />
-                <Text style={styles.targetTraiteurRatingText}>
-                  {Number(traiteur?.rating).toFixed(1)}
+          {/* UN SEUL GROS BLOC FORMULAIRE */}
+          <View style={styles.mainFormCard}>
+            {/* Target Traiteur Card */}
+            <View style={styles.targetTraiteurCard}>
+              <View style={styles.targetTraiteurAvatar}>
+                <Ionicons name="restaurant" size={20} color="#1D6B45" />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.targetTraiteurLabel}>
+                  Traiteur sélectionné :
+                </Text>
+                <Text style={styles.targetTraiteurName}>
+                  {traiteur ? traiteur.name : "Chargement du traiteur..."}
                 </Text>
               </View>
-            )}
-          </View>
-          {/* 1. Type d'Événement */}
-          <View style={styles.formFieldGroup}>
-            <Text style={styles.fieldLabel}>Type d'événement</Text>
-            <View style={styles.eventTypesGrid}>
-              {EVENT_TYPES.map((evt) => {
-                const isSelected = typeEvenement === evt.id;
-                return (
-                  <TouchableOpacity
-                    key={evt.id}
-                    style={[
-                      styles.eventTypePill,
-                      isSelected ? styles.eventTypePillActive : undefined,
-                    ]}
-                    onPress={() => setTypeEvenement(evt.id)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name={(isSelected ? evt.iconActive : evt.icon) as any}
-                      size={16}
-                      color={isSelected ? "#1D6B45" : "#64748B"}
-                    />
-                    <Text
+              {Boolean(traiteur?.rating) && (
+                <View style={styles.targetTraiteurRating}>
+                  <Ionicons name="star" size={12} color="#D4870A" />
+                  <Text style={styles.targetTraiteurRatingText}>
+                    {Number(traiteur?.rating).toFixed(1)}
+                  </Text>
+                </View>
+              )}
+            </View>
+            {/* 1. Type d'Événement */}
+            <View style={styles.formFieldGroup}>
+              <Text style={styles.fieldLabel}>Type d'événement</Text>
+              <View style={styles.eventTypesGrid}>
+                {EVENT_TYPES.map((evt) => {
+                  const isSelected = typeEvenement === evt.id;
+                  return (
+                    <TouchableOpacity
+                      key={evt.id}
                       style={[
-                        styles.eventTypePillText,
-                        isSelected ? styles.eventTypePillTextActive : undefined,
+                        styles.eventTypePill,
+                        isSelected ? styles.eventTypePillActive : undefined,
                       ]}
+                      onPress={() => setTypeEvenement(evt.id)}
+                      activeOpacity={0.8}
                     >
-                      {evt.label}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
+                      <Ionicons
+                        name={(isSelected ? evt.iconActive : evt.icon) as any}
+                        size={16}
+                        color={isSelected ? "#1D6B45" : "#64748B"}
+                      />
+                      <Text
+                        style={[
+                          styles.eventTypePillText,
+                          isSelected
+                            ? styles.eventTypePillTextActive
+                            : undefined,
+                        ]}
+                      >
+                        {evt.label}
+                      </Text>
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
             </View>
-          </View>
 
-          {/* 2. Date de l'événement */}
-          <View style={styles.formFieldGroup}>
-            <Text style={styles.fieldLabel}>Date de l'événement</Text>
-            {Platform.OS === "web" ? (
-              <TextInput
-                style={styles.textInput}
-                placeholder="AAAA-MM-JJ"
-                placeholderTextColor="#9CA3AF"
-                value={dateEvenement}
-                onChangeText={setDateEvenement}
-              />
-            ) : (
-              <TouchableOpacity
-                style={styles.pickerBtn}
-                onPress={() => setShowDatePicker(true)}
-                activeOpacity={0.8}
-              >
-                <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
-                <Text style={styles.pickerBtnText}>
-                  {dateEvenement
-                    ? selectedDate.toLocaleDateString("fr-FR", {
-                        day: "2-digit",
-                        month: "long",
-                        year: "numeric",
-                      })
-                    : "Choisir la date de l'événement"}
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {Boolean(Platform.OS !== "web" && DateTimePicker && showDatePicker) && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                minimumDate={new Date()}
-                onChange={handleDateChange}
-              />
-            )}
-          </View>
-
-          {/* 3. Nombre de Personnes */}
-          <View style={styles.formFieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Nombre de convives (personnes)
-            </Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Ex: 50, 100, 250..."
-              placeholderTextColor="#9CA3AF"
-              keyboardType="number-pad"
-              value={nbPersonnes}
-              onChangeText={setNbPersonnes}
-            />
-          </View>
-
-          {/* 4. Lieu / Adresse de l'événement */}
-          <View style={styles.formFieldGroup}>
-            <Text style={styles.fieldLabel}>
-              Lieu ou Adresse de l'événement
-            </Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="Ex: Salle des Fêtes, 75011 Paris"
-              placeholderTextColor="#9CA3AF"
-              value={adresse}
-              onChangeText={setAdresse}
-            />
-          </View>
-
-          {/* 5. Précisions & Demandes particulières */}
-          <View style={styles.formFieldGroup}>
-            <View style={{ flexDirection: "row", alignItems: "center" }}>
-              <Text style={styles.fieldLabel}>
-                Notes & Exigences particulières
-              </Text>
-              <Text style={styles.optionalTag}> (optionnel)</Text>
-            </View>
-            <TextInput
-              style={[styles.textInput, styles.textAreaInput]}
-              placeholder="Menu souhaité, régimes alimentaires, logistique..."
-              placeholderTextColor="#9CA3AF"
-              multiline
-              numberOfLines={4}
-              value={notes}
-              onChangeText={setNotes}
-            />
-          </View>
-
-          {/* Alert Error Box (si une erreur survient ou champ manquant) */}
-          {Boolean(error) && (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {/* Bouton d'Envoi du Devis à l'intérieur du bloc */}
-          <TouchableOpacity
-            style={[styles.submitBtn, loading ? { opacity: 0.6 } : undefined]}
-            activeOpacity={0.85}
-            onPress={handlePreSubmit}
-            disabled={loading}
-          >
-            <Ionicons
-              name="send"
-              size={16}
-              color="#FFFFFF"
-              style={{ marginRight: 6 }}
-            />
-            <Text style={styles.submitBtnText}>
-              {loading ? "Envoi en cours..." : "Envoyer ma demande de devis"}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Pop-up (Modale) de confirmation */}
-        {Boolean(showConfirmModal) && (
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Confirmer la demande de devis</Text>
-              <Text style={styles.modalDesc}>
-                {`Êtes-vous sûr(e) de vouloir envoyer cette demande de devis à ${
-                  traiteur?.name || "ce traiteur"
-                } pour ${
-                  nbPersonnes ? `${nbPersonnes} personnes` : "votre événement"
-                } ?`}
-              </Text>
-
-              <View style={styles.modalButtonsRow}>
+            {/* 2. Date de l'événement */}
+            <View style={styles.formFieldGroup}>
+              <Text style={styles.fieldLabel}>Date de l'événement</Text>
+              {Platform.OS === "web" ? (
+                <TextInput
+                  style={styles.textInput}
+                  placeholder="AAAA-MM-JJ"
+                  placeholderTextColor="#9CA3AF"
+                  value={dateEvenement}
+                  onChangeText={setDateEvenement}
+                />
+              ) : (
                 <TouchableOpacity
-                  style={styles.modalCancelBtn}
-                  onPress={() => setShowConfirmModal(false)}
-                  disabled={loading}
+                  style={styles.pickerBtn}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.8}
                 >
-                  <Text style={styles.modalCancelText}>Annuler</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.modalConfirmBtn}
-                  onPress={() => {
-                    setShowConfirmModal(false);
-                    confirmOrder();
-                  }}
-                  disabled={loading}
-                >
-                  <Text style={styles.modalConfirmText}>
-                    {loading ? "Envoi..." : "Oui, envoyer"}
+                  <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
+                  <Text style={styles.pickerBtnText}>
+                    {dateEvenement
+                      ? selectedDate.toLocaleDateString("fr-FR", {
+                          day: "2-digit",
+                          month: "long",
+                          year: "numeric",
+                        })
+                      : "Choisir la date de l'événement"}
                   </Text>
                 </TouchableOpacity>
+              )}
+
+              {Boolean(
+                Platform.OS !== "web" && DateTimePicker && showDatePicker,
+              ) && (
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  display={Platform.OS === "ios" ? "spinner" : "default"}
+                  minimumDate={new Date()}
+                  onChange={handleDateChange}
+                />
+              )}
+            </View>
+
+            {/* 3. Nombre de Personnes */}
+            <View style={styles.formFieldGroup}>
+              <Text style={styles.fieldLabel}>
+                Nombre de convives (personnes)
+              </Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Ex: 50, 100, 250..."
+                placeholderTextColor="#9CA3AF"
+                keyboardType="number-pad"
+                value={nbPersonnes}
+                onChangeText={setNbPersonnes}
+              />
+            </View>
+
+            {/* 4. Lieu / Adresse de l'événement */}
+            <View style={styles.formFieldGroup}>
+              <Text style={styles.fieldLabel}>
+                Lieu ou Adresse de l'événement
+              </Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="Ex: Salle des Fêtes, 75011 Paris"
+                placeholderTextColor="#9CA3AF"
+                value={adresse}
+                onChangeText={setAdresse}
+              />
+            </View>
+
+            {/* 5. Précisions & Demandes particulières */}
+            <View style={styles.formFieldGroup}>
+              <View style={{ flexDirection: "row", alignItems: "center" }}>
+                <Text style={styles.fieldLabel}>
+                  Notes & Exigences particulières
+                </Text>
+                <Text style={styles.optionalTag}> (optionnel)</Text>
+              </View>
+              <TextInput
+                style={[styles.textInput, styles.textAreaInput]}
+                placeholder="Menu souhaité, régimes alimentaires, logistique..."
+                placeholderTextColor="#9CA3AF"
+                multiline
+                numberOfLines={4}
+                value={notes}
+                onChangeText={setNotes}
+              />
+            </View>
+
+            {/* Alert Error Box (si une erreur survient ou champ manquant) */}
+            {Boolean(error) && (
+              <View style={styles.errorBox}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={18}
+                  color="#B91C1C"
+                />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {/* Bouton d'Envoi du Devis à l'intérieur du bloc */}
+            <TouchableOpacity
+              style={[styles.submitBtn, loading ? { opacity: 0.6 } : undefined]}
+              activeOpacity={0.85}
+              onPress={handlePreSubmit}
+              disabled={loading}
+            >
+              <Ionicons
+                name="send"
+                size={16}
+                color="#FFFFFF"
+                style={{ marginRight: 6 }}
+              />
+              <Text style={styles.submitBtnText}>
+                {loading ? "Envoi en cours..." : "Envoyer ma demande de devis"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Pop-up (Modale) de confirmation */}
+          {Boolean(showConfirmModal) && (
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalContent}>
+                <Text style={styles.modalTitle}>
+                  Confirmer la demande de devis
+                </Text>
+                <Text style={styles.modalDesc}>
+                  {`Êtes-vous sûr(e) de vouloir envoyer cette demande de devis à ${
+                    traiteur?.name || "ce traiteur"
+                  } pour ${
+                    nbPersonnes ? `${nbPersonnes} personnes` : "votre événement"
+                  } ?`}
+                </Text>
+
+                <View style={styles.modalButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setShowConfirmModal(false)}
+                    disabled={loading}
+                  >
+                    <Text style={styles.modalCancelText}>Annuler</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.modalConfirmBtn}
+                    onPress={() => {
+                      setShowConfirmModal(false);
+                      confirmOrder();
+                    }}
+                    disabled={loading}
+                  >
+                    <Text style={styles.modalConfirmText}>
+                      {loading ? "Envoi..." : "Oui, envoyer"}
+                    </Text>
+                  </TouchableOpacity>
+                </View>
               </View>
             </View>
-          </View>
-        )}
-      </ScrollView>
-    </SafeAreaView>
-  </View>
+          )}
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 

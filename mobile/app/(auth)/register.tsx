@@ -99,7 +99,7 @@ export default function RegisterScreen() {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => router.back()}
+              onPress={() => router.push('/')}
               activeOpacity={0.7}
             >
               <Ionicons name="arrow-back" size={20} color="#111827" />

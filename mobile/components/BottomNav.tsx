@@ -96,15 +96,16 @@ export default function BottomNav() {
       iconActive: "grid",
       iconInactive: "grid-outline",
     },
-    {
+
+  ];
+
+  if (isLoggedIn) {
+    items.push({
       href: "/commandes",
       label: "Commandes",
       iconActive: "cube",
       iconInactive: "cube-outline",
-    },
-  ];
-
-  if (isLoggedIn) {
+    });
     items.push({
       href: "/profil",
       label: "Profil",

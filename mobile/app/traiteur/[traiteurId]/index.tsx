@@ -38,17 +38,20 @@ type FormState = {
   notes: string;
 };
 
-// Component DishCard avec carrousel d'images
 function DishCard({
   dish,
   qty,
+  isLoggedIn,
   onAdd,
   onRemove,
+  onRequireLogin,
 }: {
   dish: any;
   qty: number;
+  isLoggedIn: boolean;
   onAdd: () => void;
   onRemove: () => void;
+  onRequireLogin: () => void;
 }) {
   const [imgIndex, setImgIndex] = useState(0);
 
@@ -145,7 +148,16 @@ function DishCard({
             {Number(dish.price).toFixed(2)} €
           </Text>
 
-          {qty === 0 ? (
+          {!isLoggedIn ? (
+            <TouchableOpacity
+              style={[styles.addBtn, styles.addBtnDisabled]}
+              onPress={onRequireLogin}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="lock-closed-outline" size={12} color="#64748B" />
+              <Text style={styles.addBtnTextDisabled}>Connexion requise</Text>
+            </TouchableOpacity>
+          ) : qty === 0 ? (
             <TouchableOpacity
               style={styles.addBtn}
               onPress={onAdd}
@@ -426,29 +438,46 @@ export default function TraiteurDetailScreen() {
 
         {/* Section Demande de Devis sur-mesure */}
         <View style={styles.devisCardContainer}>
-          <TouchableOpacity style={styles.devisCard} activeOpacity={0.85} onPress={() => router.push(`/traiteur/${traiteurId}/devis`)}>
-            <View style={styles.devisIconCircle}>
-              <Ionicons name="calendar" size={22} color="#1D6B45" />
+          <TouchableOpacity
+            style={[styles.devisCard, !isLoggedIn && styles.devisCardDisabled]}
+            activeOpacity={isLoggedIn ? 0.85 : 0.95}
+            onPress={() => {
+              if (!isLoggedIn) {
+                router.push("/(auth)/login");
+              } else {
+                router.push(`/traiteur/${traiteurId}/devis`);
+              }
+            }}
+          >
+            <View style={[styles.devisIconCircle, !isLoggedIn && styles.devisIconCircleDisabled]}>
+              <Ionicons
+                name={isLoggedIn ? "calendar" : "lock-closed"}
+                size={22}
+                color={isLoggedIn ? "#1D6B45" : "#64748B"}
+              />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.devisTitle}>
+              <Text style={[styles.devisTitle, !isLoggedIn && { color: "#64748B" }]}>
                 Demander un devis sur-mesure
               </Text>
               <Text style={styles.devisSubtitle}>
-                Mariages, baptêmes, anniversaires & grands repas de famille.
+                {isLoggedIn
+                  ? "Mariages, baptêmes, anniversaires & grands repas de famille."
+                  : "Connectez-vous pour demander un devis au traiteur."}
               </Text>
             </View>
-            <Ionicons name="chevron-forward" size={18} color="#1D6B45" />
+            <Ionicons
+              name={isLoggedIn ? "chevron-forward" : "log-in-outline"}
+              size={18}
+              color={isLoggedIn ? "#1D6B45" : "#64748B"}
+            />
           </TouchableOpacity>
         </View>
 
         {/* Header Menu Title */}
         <View style={styles.menuHeaderRow}>
           <Text style={styles.menuTitle}>
-            {" "}
-            Menu · {traiteur.dishes?.filter((d) => d.is_available).length ||
-              0}{" "}
-            plats
+            Menu · {traiteur.dishes?.filter((d) => d.is_available).length || 0} plats
           </Text>
         </View>
 
@@ -459,8 +488,10 @@ export default function TraiteurDetailScreen() {
               key={dish.id}
               dish={dish}
               qty={getQty(dish.id)}
+              isLoggedIn={isLoggedIn}
               onAdd={() => addToCart(dish)}
               onRemove={() => removeFromCart(dish.id)}
+              onRequireLogin={() => router.push("/(auth)/login")}
             />
           ))}
         </View>
@@ -621,6 +652,14 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
+  devisCardDisabled: {
+    backgroundColor: "#F8FAFC",
+    borderColor: "#E2E8F0",
+    opacity: 0.9,
+  },
+  devisIconCircleDisabled: {
+    backgroundColor: "#F1F5F9",
+  },
   devisIconCircle: {
     width: 42,
     height: 42,
@@ -739,9 +778,25 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderRadius: 14,
   },
+  addBtnDisabled: {
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
   addBtnText: {
     color: "#FFFFFF",
     fontSize: 13,
+    fontWeight: "700",
+  },
+  addBtnTextDisabled: {
+    color: "#64748B",
+    fontSize: 12,
     fontWeight: "700",
   },
   counterRow: {

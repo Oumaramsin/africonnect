@@ -79,7 +79,7 @@ export default function LoginScreen() {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => router.back()}
+              onPress={() => router.push('/')}
               activeOpacity={0.7}
             >
               <Ionicons name="arrow-back" size={20} color="#111827" />
@@ -255,6 +255,16 @@ export default function LoginScreen() {
               >
                 <Text style={styles.submitBtnText}>Se connecter</Text>
                 <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {/* Continuer sans compte */}
+              <TouchableOpacity
+                style={styles.guestBtn}
+                onPress={() => router.push("/accueil")}
+                activeOpacity={0.8}
+              >
+                <Ionicons name="person-outline" size={18} color="#1D6B45" />
+                <Text style={styles.guestBtnText}>Continuer en tant qu'invité</Text>
               </TouchableOpacity>
             </View>
 
@@ -451,6 +461,24 @@ const styles = StyleSheet.create({
   submitBtnText: {
     color: "#FFFFFF",
     fontSize: 16,
+    fontWeight: "700",
+  },
+
+  guestBtn: {
+    backgroundColor: "transparent",
+    paddingVertical: 14,
+    borderRadius: 18,
+    borderWidth: 1.5,
+    borderColor: "#1D6B45",
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 8,
+    marginTop: 12,
+  },
+  guestBtnText: {
+    color: "#1D6B45",
+    fontSize: 14,
     fontWeight: "700",
   },
 
