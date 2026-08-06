@@ -13,16 +13,6 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
 
-// Types de données visuelles pour la démo
-type DishDemo = {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  cuisine_type: string;
-  is_available: boolean;
-};
-
 type Dish = {
   id: string;
   name: string;
@@ -41,21 +31,20 @@ type TraiteurProfile = {
   delivery_zones: string[];
   is_active: boolean;
   image_url?: string;
+  whatsapp: string;
 };
 
 export default function TraiteurEspaceScreen() {
   const router = useRouter();
 
   const [view, setView] = useState<"profil" | "plats" | "setup">("profil");
-  const [success, setSuccess] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [traiteur, setTraiteur] = useState<TraiteurProfile | null>(null);
 
-  const [dishes, setDishes] = useState<Dish[]>([])
+  const [dishes, setDishes] = useState<Dish[]>([]);
 
-
-    useEffect(() => {
+  useEffect(() => {
     const load = async () => {
       await loadTraiteur();
     };
@@ -79,7 +68,7 @@ export default function TraiteurEspaceScreen() {
         },
       );
       const data = await response.json();
-      console.log(data)
+      console.log(data);
       if (!response.ok) {
         setError(
           data.error ||
@@ -224,7 +213,19 @@ export default function TraiteurEspaceScreen() {
                   <Text style={styles.cardTitle}>Informations</Text>
                   <TouchableOpacity
                     style={styles.editProfileBtn}
-                    onPress={() => router.push("/profil/traiteur/edit" as any)}
+                    onPress={() =>
+                      router.push({
+                        pathname: "/profil/traiteur/edit",
+                        params: {
+                          name: traiteur.name,
+                          bio: traiteur.bio,
+                          cuisines: JSON.stringify(traiteur.cuisine_type),
+                          zones: JSON.stringify(traiteur.delivery_zones),
+                          whatsapp: traiteur.whatsapp || "",
+                          image_url: traiteur.image_url || "",
+                        },
+                      })
+                    }
                     activeOpacity={0.8}
                   >
                     <Text style={styles.editProfileBtnText}>
