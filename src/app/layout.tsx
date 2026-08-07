@@ -1,5 +1,6 @@
 import type { Metadata } from 'next'
 import { Inter } from 'next/font/google'
+import Script from 'next/script'
 import './globals.css'
 import BottomNavWrapper from '../components/BottomNavWrapper'
 
@@ -8,6 +9,10 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'Dabari',
   description: 'La plateforme de services pour la diaspora africaine',
+  icons: {
+    icon: '/icon.png',
+    apple: '/icon.png',
+  },
 }
 
 export default function RootLayout({
@@ -21,7 +26,9 @@ export default function RootLayout({
         <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
         <meta name="theme-color" content="#1D6B45" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <script
+        <Script
+          id="iframe-buster"
+          strategy="beforeInteractive"
           dangerouslySetInnerHTML={{
             __html: `if (window.top !== window.self) { window.top.location.href = window.self.location.href; }`,
           }}

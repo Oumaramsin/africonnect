@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import Image from "next/image";
 import { Mail, Smartphone, Lock, Eye, EyeOff, ArrowRight } from "lucide-react";
 import cookies from "js-cookie";
 
@@ -75,9 +76,15 @@ export default function LoginPage() {
       <div className="w-full max-w-md">
         {/* Header Marque Dabari */}
         <div className="text-center mb-7">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[#1D6B45] via-[#165637] to-[#0F4A30] text-white shadow-lg shadow-[#1D6B45]/20 mb-3 border border-[#1D6B45]/30">
-            <span className="font-extrabold text-2xl tracking-wider text-white">D</span>
-          </div>
+          <Image
+            src="/dabari_logo.png"
+            alt="Dabari Logo"
+            width={72}
+            height={72}
+            style={{ width: "auto", height: "auto" }}
+            className="mx-auto mb-3 drop-shadow-lg max-h-20"
+            priority
+          />
           <h1 className="text-3xl font-extrabold text-gray-900 tracking-tight">
             Dabari
           </h1>

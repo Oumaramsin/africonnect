@@ -84,7 +84,6 @@ export default function BottomNav() {
     }
   } else {
     items.push(
-      { href: "/commandes", icon: <Package size={22} />, label: "Commandes" },
       { href: "/login", icon: <LogIn size={22} />, label: "Connexion" },
     );
   }
