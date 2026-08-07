@@ -277,8 +277,18 @@ export default async function DashboardPage() {
           </Link>
         )}
 
+        {/* Mini Descriptif Dabari (MAX 3 Lignes) */}
+        <div className="bg-white rounded-2xl p-3 border border-emerald-100/90 shadow-xs flex items-start gap-2.5">
+          <div className="w-6 h-6 rounded-lg bg-[#1D6B45]/10 text-[#1D6B45] flex items-center justify-center shrink-0 mt-0.5">
+            <Sparkles size={14} className="text-[#1D6B45]" />
+          </div>
+          <div className="text-[12px] text-gray-600 leading-relaxed">
+            <strong className="text-gray-900 font-bold">Dabari</strong> est une plateforme de mise en relation. Elle vous permet de commander des <strong className="text-[#1D6B45]">plats faits maison &amp; devis traiteur</strong>, et d&apos;envoyer vos <strong className="text-[#D4870A]">colis (GP) </strong>en toute sécurité entre l&apos;Europe et l&apos;Afrique.
+          </div>
+        </div>
+
         {/* Grille 2x2 de Services (Identique à la page Services) */}
-        <div className="pt-2">
+        <div className="pt-1">
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-bold text-gray-900 text-base">
               Services disponibles
@@ -345,7 +355,8 @@ export default async function DashboardPage() {
                     Transport de colis
                   </p>
                   <p className="text-[11px] text-gray-500 mt-1.5 leading-snug">
-                    Envoi de colis sécurisé entre l&apos;Europe et l&apos;Afrique.
+                    Envoi de colis sécurisé entre l&apos;Europe et
+                    l&apos;Afrique.
                   </p>
                 </div>
 
