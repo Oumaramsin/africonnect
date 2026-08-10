@@ -8,29 +8,32 @@ generator client {
 }
 
 model User {
-  id         String   @id @default(uuid()) @db.Uuid
-  email      String?  @unique
-  phone      String?  @unique
-  password   String
-  role       String?  @default("client")
-  created_at DateTime @default(now()) @db.Timestamptz(6)
+  id                   String    @id @default(uuid()) @db.Uuid
+  email                String?   @unique
+  phone                String?   @unique
+  password             String
+  role                 String?   @default("client")
+  is_email_verified    Boolean   @default(false)
+  email_verify_code    String?
+  email_verify_expires DateTime?
+  created_at           DateTime  @default(now()) @db.Timestamptz(6)
 
   // Relations
-  profile    Profile?
+  profile Profile?
 
   @@map("users")
 }
 
 model Profile {
-  id                String             @id @db.Uuid
-  full_name         String
-  phone             String?
-  avatar_url        String?
-  city              String?
-  role              String?            @default("client")
-  created_at        DateTime?          @default(now()) @db.Timestamptz(6)
-  whatsapp          String?
-  email             String?
+  id         String    @id @db.Uuid
+  full_name  String
+  phone      String?
+  avatar_url String?
+  city       String?
+  role       String?   @default("client")
+  created_at DateTime? @default(now()) @db.Timestamptz(6)
+  whatsapp   String?
+  email      String?
 
   // Relations
   user              User               @relation(fields: [id], references: [id], onDelete: Cascade)
@@ -47,130 +50,130 @@ model Profile {
 }
 
 model Traiteur {
-  id             String             @id @default(uuid()) @db.Uuid
-  user_id        String?            @db.Uuid
+  id             String    @id @default(uuid()) @db.Uuid
+  user_id        String?   @db.Uuid
   name           String
   bio            String?
   cuisine_type   String[]
-  rating         Decimal?           @default(0) @db.Decimal
-  review_count   Int?               @default(0)
+  rating         Decimal?  @default(0) @db.Decimal
+  review_count   Int?      @default(0)
   delivery_zones String[]
   image_url      String?
-  is_active      Boolean?           @default(true)
-  created_at     DateTime?          @default(now()) @db.Timestamptz(6)
+  is_active      Boolean?  @default(true)
+  created_at     DateTime? @default(now()) @db.Timestamptz(6)
   whatsapp       String?
 
   // Relations
-  profile        Profile?           @relation(fields: [user_id], references: [id], onDelete: SetNull)
-  dishes         Dish[]
-  orders         Order[]
-  commandes      CommandeTraiteur[]
+  profile   Profile?           @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  dishes    Dish[]
+  orders    Order[]
+  commandes CommandeTraiteur[]
 
   @@map("traiteurs")
 }
 
 model Dish {
-  id              String      @id @default(uuid()) @db.Uuid
-  traiteur_id     String?     @db.Uuid
+  id              String    @id @default(uuid()) @db.Uuid
+  traiteur_id     String?   @db.Uuid
   name            String
   description     String?
-  price           Decimal     @db.Decimal
+  price           Decimal   @db.Decimal
   image_urls      String[]
   cuisine_type    String?
-  is_available    Boolean?    @default(true)
-  min_order_hours Int?        @default(24)
-  created_at      DateTime?   @default(now()) @db.Timestamptz(6)
-  is_archived     Boolean?    @default(false)
+  is_available    Boolean?  @default(true)
+  min_order_hours Int?      @default(24)
+  created_at      DateTime? @default(now()) @db.Timestamptz(6)
+  is_archived     Boolean?  @default(false)
 
   // Relations
-  traiteur        Traiteur?   @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
-  order_items     OrderItem[]
+  traiteur    Traiteur?   @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
+  order_items OrderItem[]
 
   @@map("dishes")
 }
 
 model Order {
-  id               String      @id @default(uuid()) @db.Uuid
-  client_id        String?     @db.Uuid
-  traiteur_id      String?     @db.Uuid
-  status           String?     @default("pending")
-  delivery_type    String?     @default("delivery")
+  id               String    @id @default(uuid()) @db.Uuid
+  client_id        String?   @db.Uuid
+  traiteur_id      String?   @db.Uuid
+  status           String?   @default("pending")
+  delivery_type    String?   @default("delivery")
   delivery_address String?
-  delivery_date    DateTime?   @db.Timestamptz(6)
-  total_amount     Decimal?    @db.Decimal
+  delivery_date    DateTime? @db.Timestamptz(6)
+  total_amount     Decimal?  @db.Decimal
   notes            String?
-  created_at       DateTime?   @default(now()) @db.Timestamptz(6)
+  created_at       DateTime? @default(now()) @db.Timestamptz(6)
 
   // Relations
-  client           Profile?    @relation(fields: [client_id], references: [id], onDelete: SetNull)
-  traiteur         Traiteur?   @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
-  order_items      OrderItem[]
+  client      Profile?    @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  traiteur    Traiteur?   @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
+  order_items OrderItem[]
 
   @@map("orders")
 }
 
 model OrderItem {
-  id         String   @id @default(uuid()) @db.Uuid
-  order_id   String?  @db.Uuid
-  dish_id    String?  @db.Uuid
+  id         String  @id @default(uuid()) @db.Uuid
+  order_id   String? @db.Uuid
+  dish_id    String? @db.Uuid
   quantity   Int
-  unit_price Decimal  @db.Decimal
+  unit_price Decimal @db.Decimal
 
   // Relations
-  order      Order?   @relation(fields: [order_id], references: [id], onDelete: SetNull)
-  dish       Dish?    @relation(fields: [dish_id], references: [id], onDelete: SetNull)
+  order Order? @relation(fields: [order_id], references: [id], onDelete: SetNull)
+  dish  Dish?  @relation(fields: [dish_id], references: [id], onDelete: SetNull)
 
   @@map("order_items")
 }
 
 model GpListing {
-  id                String      @id @default(uuid()) @db.Uuid
-  gp_id             String?     @db.Uuid
+  id                String    @id @default(uuid()) @db.Uuid
+  gp_id             String?   @db.Uuid
   departure_city    String
   departure_country String
   arrival_city      String
   arrival_country   String
-  departure_date    DateTime    @db.Date
-  available_kg      Decimal     @db.Decimal
-  price_per_kg      Decimal     @db.Decimal
-  flight_type       String?     @default("direct")
+  departure_date    DateTime  @db.Date
+  available_kg      Decimal   @db.Decimal
+  price_per_kg      Decimal   @db.Decimal
+  flight_type       String?   @default("direct")
   description       String?
-  is_active         Boolean?    @default(true)
-  rating            Decimal?    @default(0) @db.Decimal
-  review_count      Int?        @default(0)
-  created_at        DateTime?   @default(now()) @db.Timestamptz(6)
+  is_active         Boolean?  @default(true)
+  rating            Decimal?  @default(0) @db.Decimal
+  review_count      Int?      @default(0)
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
   pickup_address    String?
   pickup_city       String?
-  latitude          Decimal?    @db.Decimal
-  longitude         Decimal?    @db.Decimal
+  latitude          Decimal?  @db.Decimal
+  longitude         Decimal?  @db.Decimal
 
   // Relations
-  gp                Profile?    @relation(fields: [gp_id], references: [id], onDelete: SetNull)
-  requests          GpRequest[]
+  gp       Profile?    @relation(fields: [gp_id], references: [id], onDelete: SetNull)
+  requests GpRequest[]
 
   @@map("gp_listings")
 }
 
 model GpRequest {
-  id                String     @id @default(uuid()) @db.Uuid
-  listing_id        String?    @db.Uuid
-  sender_id         String?    @db.Uuid
-  weight_kg         Decimal    @db.Decimal
+  id                String    @id @default(uuid()) @db.Uuid
+  listing_id        String?   @db.Uuid
+  sender_id         String?   @db.Uuid
+  weight_kg         Decimal   @db.Decimal
   content_desc      String
-  declared_value    Decimal?   @db.Decimal
-  status            String?    @default("pending")
-  total_amount      Decimal?   @db.Decimal
+  declared_value    Decimal?  @db.Decimal
+  status            String?   @default("pending")
+  total_amount      Decimal?  @db.Decimal
   notes             String?
   departure_city    String?
   departure_country String?
   arrival_city      String?
   arrival_country   String?
-  departure_date    DateTime?  @db.Date
-  created_at        DateTime?  @default(now()) @db.Timestamptz(6)
+  departure_date    DateTime? @db.Date
+  created_at        DateTime? @default(now()) @db.Timestamptz(6)
 
   // Relations
-  listing           GpListing? @relation(fields: [listing_id], references: [id], onDelete: SetNull)
-  sender            Profile?   @relation(fields: [sender_id], references: [id], onDelete: SetNull)
+  listing GpListing? @relation(fields: [listing_id], references: [id], onDelete: SetNull)
+  sender  Profile?   @relation(fields: [sender_id], references: [id], onDelete: SetNull)
 
   @@map("gp_requests")
 }
@@ -185,8 +188,8 @@ model Message {
   created_at   DateTime? @default(now()) @db.Timestamptz(6)
 
   // Relations
-  sender       Profile?  @relation("sent_messages", fields: [sender_id], references: [id], onDelete: SetNull)
-  receiver     Profile?  @relation("received_messages", fields: [receiver_id], references: [id], onDelete: SetNull)
+  sender   Profile? @relation("sent_messages", fields: [sender_id], references: [id], onDelete: SetNull)
+  receiver Profile? @relation("received_messages", fields: [receiver_id], references: [id], onDelete: SetNull)
 
   @@map("messages")
 }
@@ -205,8 +208,8 @@ model CommandeTraiteur {
   message_traiteur String?
 
   // Relations
-  client           Profile?  @relation(fields: [client_id], references: [id], onDelete: SetNull)
-  traiteur         Traiteur? @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
+  client   Profile?  @relation(fields: [client_id], references: [id], onDelete: SetNull)
+  traiteur Traiteur? @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
 
   @@map("commandes_traiteur")
 }
@@ -222,7 +225,7 @@ model Notification {
   data       Json?
 
   // Relations
-  user       Profile?  @relation(fields: [user_id], references: [id], onDelete: SetNull)
+  user Profile? @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
   @@map("notifications")
 }

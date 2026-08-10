@@ -3,6 +3,7 @@
 import { useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   Mail,
   Smartphone,
@@ -12,11 +13,16 @@ import {
   Eye,
   EyeOff,
   ArrowRight,
+  KeyRound,
+  RefreshCw,
+  Clock,
 } from "lucide-react";
+import cookies from "js-cookie";
 
 type Method = "email" | "phone";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [method, setMethod] = useState<Method>("email");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -30,9 +36,16 @@ export default function RegisterPage() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
 
+  const [verifyStep, setVerifyStep] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [resending, setResending] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
+    setInfoMessage(null);
 
     // Si le champ honeypot est rempli par un robot, rejet immédiat
     if (honeypot.trim() !== "") {
@@ -92,13 +105,186 @@ export default function RegisterPage() {
         return;
       }
 
-      setSuccess(true);
       setLoading(false);
+
+      if (method === "email" && data.requiresVerification) {
+        setVerifyStep(true);
+      } else {
+        setSuccess(true);
+      }
     } catch (err) {
       setError("Impossible de contacter le serveur.");
       setLoading(false);
     }
   };
+
+  const handleVerifyOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError(null);
+    setInfoMessage(null);
+
+    if (!otpCode || otpCode.trim().length !== 6) {
+      setError("Veuillez saisir le code à 6 chiffres.");
+      return;
+    }
+
+    setVerifying(true);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/verify-email`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            email,
+            code: otpCode.trim(),
+          }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Code de vérification incorrect.");
+        setVerifying(false);
+
+        // Si le code a expiré (> 15 min), revenir au formulaire d'inscription
+        if (data.code === "EXPIRED_CODE") {
+          setVerifyStep(false);
+        }
+        return;
+      }
+
+      setVerifying(false);
+      if (data.token) {
+        cookies.set("token", data.token, {
+          expires: 7,
+          sameSite: "lax",
+          secure: process.env.NODE_ENV === "production",
+        });
+      }
+      setSuccess(true);
+    } catch (err) {
+      setError("Erreur de connexion au serveur.");
+      setVerifying(false);
+    }
+  };
+
+  const handleResendOtp = async () => {
+    setError(null);
+    setInfoMessage(null);
+    setResending(true);
+
+    try {
+      const response = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/resend-code`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email }),
+        },
+      );
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        setError(data.message || "Impossible de renvoyer le code.");
+        setResending(false);
+        if (data.code === "EXPIRED_CODE") {
+          setVerifyStep(false);
+        }
+        return;
+      }
+
+      setInfoMessage("Nouveau code envoyé par e-mail !");
+      setResending(false);
+    } catch (err) {
+      setError("Erreur de connexion.");
+      setResending(false);
+    }
+  };
+
+  if (verifyStep) {
+    return (
+      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4 py-10">
+        <div className="w-full max-w-md bg-white rounded-3xl p-7 sm:p-8 border border-gray-100 shadow-xl text-center">
+          <div className="w-16 h-16 bg-[#E8F5E9] rounded-2xl flex items-center justify-center mx-auto mb-4 text-[#1D6B45]">
+            <KeyRound size={32} />
+          </div>
+          <h2 className="text-2xl font-extrabold text-gray-900 mb-2">
+            Vérification de l&apos;e-mail
+          </h2>
+          <p className="text-xs text-gray-600 mb-4 leading-relaxed">
+            Un code de vérification à 6 chiffres a été envoyé à{" "}
+            <strong className="text-gray-900">{email}</strong>.
+          </p>
+
+          <div className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 text-[11px] font-semibold px-3 py-1 rounded-full mb-6 border border-amber-200/60">
+            <Clock size={13} /> Le code expire dans 15 minutes.
+          </div>
+
+          {error && (
+            <div className="bg-red-50 border border-red-200 text-red-700 rounded-2xl px-4 py-3 mb-4 text-xs font-medium">
+              {error}
+            </div>
+          )}
+
+          {infoMessage && (
+            <div className="bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-2xl px-4 py-3 mb-4 text-xs font-medium">
+              {infoMessage}
+            </div>
+          )}
+
+          <form onSubmit={handleVerifyOtp} className="space-y-4">
+            <div>
+              <input
+                type="text"
+                maxLength={6}
+                value={otpCode}
+                onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ""))}
+                placeholder="123456"
+                required
+                className="w-full text-center tracking-[12px] font-mono text-2xl py-3.5 rounded-2xl border-2 border-gray-200 bg-gray-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-[#1D6B45] focus:border-[#1D6B45] transition-all"
+              />
+            </div>
+
+            <button
+              type="submit"
+              disabled={verifying}
+              className="w-full bg-gradient-to-r from-[#1D6B45] to-[#165637] text-white py-3.5 rounded-2xl font-bold text-sm shadow-md hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2 disabled:opacity-60"
+            >
+              {verifying ? "Vérification..." : "Confirmer le code"}
+            </button>
+          </form>
+
+          <div className="mt-6 pt-5 border-t border-gray-100 flex flex-col gap-3">
+            <button
+              type="button"
+              onClick={handleResendOtp}
+              disabled={resending}
+              className="text-xs font-semibold text-[#1D6B45] hover:underline flex items-center justify-center gap-1.5"
+            >
+              <RefreshCw size={13} className={resending ? "animate-spin" : ""} />
+              {resending ? "Envoi..." : "Renvoyer un nouveau code"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setVerifyStep(false)}
+              className="text-xs font-medium text-gray-400 hover:text-gray-600"
+            >
+              Changer d&apos;adresse e-mail
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   if (success)
     return (
@@ -111,15 +297,13 @@ export default function RegisterPage() {
             Bienvenue sur Dabari 🎉
           </h2>
           <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-            {method === "email"
-              ? `Ton compte a été créé avec succès ! Tu peux maintenant te connecter.`
-              : `Ton compte a été créé avec le numéro ${phone}. Tu peux maintenant te connecter.`}
+            Votre compte a été vérifié et créé avec succès !
           </p>
           <Link
-            href="/login"
+            href="/dashboard"
             className="w-full bg-gradient-to-r from-[#1D6B45] to-[#165637] text-white py-3.5 rounded-2xl font-bold text-sm hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2"
           >
-            Se connecter <ArrowRight size={17} />
+            Accéder à Dabari <ArrowRight size={17} />
           </Link>
         </div>
       </div>

@@ -6,7 +6,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
-import { ChefHat, Plane, User, Package, LogOut, Lock, ChevronDown, ChevronUp, Edit3, Phone, MapPin, Mail } from "lucide-react";
+import { ChefHat, Plane, User, Package, LogOut, Lock, ChevronDown, ChevronUp, Edit3, Phone, MapPin, Mail, Trash2, AlertTriangle, X } from "lucide-react";
 import cookies from "js-cookie";
 
 const schema = z.object({
@@ -42,6 +42,8 @@ export default function ProfilPage() {
   const [userEmail, setUserEmail] = useState("");
   const [userRole, setUserRole] = useState("client");
   const [showInfo, setShowInfo] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const {
     register,
@@ -102,8 +104,7 @@ export default function ProfilPage() {
       const decodedPayload = JSON.parse(
         Buffer.from(payloadBase64, "base64").toString("utf-8"),
       );
-
-      const response = await fetch(
+      const res = await fetch(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/${decodedPayload.userId}`,
         {
           method: "PATCH",
@@ -111,32 +112,61 @@ export default function ProfilPage() {
             "Content-Type": "application/json",
             Authorization: `Bearer ${token}`,
           },
-          body: JSON.stringify({
-            full_name: formData.full_name,
-            phone: formData.phone,
-            city: formData.city,
-          }),
+          body: JSON.stringify(formData),
         },
       );
-
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || "Erreur lors de la sauvegarde");
-      } else {
-        setSuccess(true);
-        setTimeout(() => setSuccess(false), 3000);
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.message || "Erreur lors de la mise à jour");
+        setSaving(false);
+        return;
       }
+      setSuccess(true);
+      setSaving(false);
+      setShowInfo(false);
     } catch (err) {
-      console.error("Erreur mise à jour profil:", err);
-      setError("Erreur lors de la sauvegarde");
-    } finally {
+      setError("Impossible de mettre à jour le profil");
       setSaving(false);
     }
   };
 
-  const handleSignOut = async () => {
-    cookies.remove('token')
+  const handleSignOut = () => {
+    cookies.remove("token");
     router.push("/login");
+  };
+
+  const confirmDeleteAccount = async () => {
+    const token = cookies.get("token");
+    if (!token) return;
+    setDeleting(true);
+    try {
+      const payloadBase64 = token.split(".")[1];
+      const decodedPayload = JSON.parse(
+        Buffer.from(payloadBase64, "base64").toString("utf-8"),
+      );
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/${decodedPayload.userId}`,
+        {
+          method: "DELETE",
+          headers: {
+            Authorization: `Bearer ${token}`,
+          },
+        },
+      );
+      if (res.ok) {
+        cookies.remove("token");
+        router.push("/login");
+      } else {
+        const data = await res.json();
+        setError(data.message || "Impossible de supprimer le compte.");
+        setDeleting(false);
+        setShowDeleteModal(false);
+      }
+    } catch (err) {
+      setError("Erreur lors de la suppression du compte.");
+      setDeleting(false);
+      setShowDeleteModal(false);
+    }
   };
 
   const getInitials = (name: string) => {
@@ -374,17 +404,28 @@ export default function ProfilPage() {
           </Link>
         </div>
 
-        {/* Déconnexion */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm">
+        {/* Déconnexion & Suppression */}
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm divide-y divide-gray-50">
           <button
             onClick={handleSignOut}
-            className="w-full flex items-center justify-between px-5 py-4 hover:bg-red-50 transition-colors text-red-500 rounded-2xl"
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-gray-50 transition-colors text-gray-700 rounded-t-2xl"
           >
             <div className="flex items-center gap-3">
-              <LogOut size={20} className="text-red-500" />
+              <LogOut size={20} className="text-gray-500" />
               <span className="text-sm font-medium">Se déconnecter</span>
             </div>
-            <span className="text-sm">→</span>
+            <span className="text-sm text-gray-400">→</span>
+          </button>
+
+          <button
+            onClick={() => setShowDeleteModal(true)}
+            className="w-full flex items-center justify-between px-5 py-4 hover:bg-red-50 transition-colors text-red-600 rounded-b-2xl"
+          >
+            <div className="flex items-center gap-3">
+              <Trash2 size={20} className="text-red-500" />
+              <span className="text-sm font-semibold">Supprimer mon compte</span>
+            </div>
+            <span className="text-sm text-red-400">→</span>
           </button>
         </div>
 
@@ -393,6 +434,48 @@ export default function ProfilPage() {
           Dabari v1.0 — MVP
         </p>
       </div>
+
+      {/* Pop-up de confirmation de suppression */}
+      {showDeleteModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full text-center shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
+            <button
+              onClick={() => setShowDeleteModal(false)}
+              className="absolute top-4 right-4 text-gray-400 hover:text-gray-600 p-1 rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <X size={18} />
+            </button>
+
+            <div className="w-14 h-14 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto mb-4">
+              <AlertTriangle size={28} />
+            </div>
+
+            <h3 className="text-lg font-bold text-gray-900 mb-1.5">
+              Supprimer votre compte ?
+            </h3>
+            <p className="text-xs text-gray-500 mb-6 leading-relaxed">
+              Êtes-vous sûr de vouloir supprimer définitivement votre compte Dabari ? Cette action est irréversible et supprimera l&apos;ensemble de vos données.
+            </p>
+
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteModal(false)}
+                disabled={deleting}
+                className="flex-1 py-3 px-4 rounded-2xl bg-gray-100 text-gray-700 font-semibold text-xs hover:bg-gray-200 transition-colors"
+              >
+                Annuler
+              </button>
+              <button
+                onClick={confirmDeleteAccount}
+                disabled={deleting}
+                className="flex-1 py-3 px-4 rounded-2xl bg-red-600 text-white font-bold text-xs hover:bg-red-700 transition-colors shadow-md flex items-center justify-center gap-1.5 disabled:opacity-60"
+              >
+                {deleting ? "Suppression..." : "Oui, supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
