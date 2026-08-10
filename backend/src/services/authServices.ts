@@ -43,7 +43,7 @@ class AuthService {
     });
 
     if (email && verifyCode) {
-      await sendEmail({
+      sendEmail({
         to: email,
         subject: "Votre code de vérification Dabari",
         html: `
@@ -56,7 +56,9 @@ class AuthService {
             <p style="color: #666; font-size: 12px;">Ce code expire dans 15 minutes.</p>
           </div>
         `,
-      });
+      }).catch((err) =>
+        console.error("⚠️ Erreur envoi mail de vérification:", err),
+      );
     }
 
     return newUser.profile;
@@ -195,7 +197,7 @@ class AuthService {
       },
     });
 
-    await sendEmail({
+    sendEmail({
       to: email,
       subject: "Nouveau code de vérification Dabari",
       html: `
@@ -208,7 +210,7 @@ class AuthService {
           <p style="color: #666; font-size: 12px;">Ce code expire dans 15 minutes.</p>
         </div>
       `,
-    });
+    }).catch((err) => console.error("⚠️ Erreur réenvoi mail:", err));
 
     return { message: "Un nouveau code a été envoyé à votre adresse e-mail." };
   };
