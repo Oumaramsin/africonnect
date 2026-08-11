@@ -83,7 +83,7 @@ export default function TraiteurEspaceScreen() {
         setView("profil");
         setDishes(data.traiteur.dishes || []);
       } else {
-        setView("setup");
+        router.replace("/profil/traiteur/create" as any);
       }
     } catch (err: any) {
       console.error(err);

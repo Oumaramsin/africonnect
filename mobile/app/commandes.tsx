@@ -506,367 +506,304 @@ export default function CommandeScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* SECTION TRAITEUR & DEVIS */}
+          {/* SECTION ENVOYÉES */}
           {tab === "envoyees" && (
             <>
-              {(serviceFilter === "tout" || serviceFilter === "traiteur") && (
-                <View style={styles.sectionGroup}>
-                  <View style={styles.sectionTitleRow}>
-                    <Ionicons
-                      name="restaurant-outline"
-                      size={16}
-                      color="#1D6B45"
-                    />
-                    <Text style={styles.sectionTitle}>
-                      Demandes de Devis Traiteur
+              {(serviceFilter === "tout" &&
+                commandesEnvoyees.length === 0 &&
+                ordersEnvoyees.length === 0 &&
+                gpEnvoyees.length === 0) ||
+              (serviceFilter === "traiteur" &&
+                commandesEnvoyees.length === 0 &&
+                ordersEnvoyees.length === 0) ||
+              (serviceFilter === "gp" && gpEnvoyees.length === 0) ? (
+                <View style={styles.emptyCard}>
+                  <View style={styles.emptyIconContainer}>
+                    <Ionicons name="cart-outline" size={32} color="#1D6B45" />
+                  </View>
+                  <Text style={styles.emptyTitle}>
+                    Vous n&apos;avez passé aucune commande
+                  </Text>
+                  <Text style={styles.emptySubtitle}>
+                    {serviceFilter === "traiteur"
+                      ? "Vous n'avez effectué aucune demande de devis ni commande de plat."
+                      : serviceFilter === "gp"
+                      ? "Vous n'avez effectué aucune réservation de transport GP."
+                      : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.emptyButton}
+                    onPress={() => router.push("/accueil")}
+                    activeOpacity={0.85}
+                  >
+                    <Text style={styles.emptyButtonText}>
+                      Découvrir nos services
                     </Text>
-                  </View>
-
-                  {commandesEnvoyees.map((cmd) => {
-                    const traiteurInfo = cmd.traiteur || cmd.traiteurs;
-                    return (
-                      <View key={cmd.id} style={styles.orderCard}>
-                        <View style={styles.orderCardHeader}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.providerName}>
-                              {traiteurInfo?.name || "Traiteur"}
-                            </Text>
-                            <Text style={styles.orderDate}>
-                              Demandé le {formatDate(cmd.created_at)}
-                            </Text>
-                          </View>
-                          {renderStatusBadge(cmd.statut)}
-                        </View>
-
-                        <View style={styles.orderDetailsBox}>
-                          <View style={styles.detailRow}>
-                            <Ionicons
-                              name="calendar-outline"
-                              size={15}
-                              color="#1D6B45"
-                            />
-                            <Text style={styles.detailText}>
-                              Événement : {formatDate(cmd.date_evenement)} (
-                              {cmd.type_evenement || "Général"})
-                            </Text>
-                          </View>
-
-                          <View style={styles.detailRow}>
-                            <Ionicons
-                              name="people-outline"
-                              size={15}
-                              color="#1D6B45"
-                            />
-                            <Text style={styles.detailText}>
-                              {cmd.nb_personnes} personnes
-                            </Text>
-                          </View>
-
-                          <View style={styles.detailRow}>
-                            <Ionicons
-                              name="location-outline"
-                              size={15}
-                              color="#1D6B45"
-                            />
-                            <Text style={styles.detailText}>{cmd.adresse}</Text>
-                          </View>
-
-                          {Boolean(cmd.notes) && (
-                            <View style={styles.detailRow}>
-                              <Ionicons
-                                name="document-text-outline"
-                                size={15}
-                                color="#64748B"
-                              />
-                              <Text style={styles.notesText}>{cmd.notes}</Text>
-                            </View>
-                          )}
-                        </View>
-
-                        {cmd.statut === "acceptee" && (
-                          <TouchableOpacity
-                            style={styles.whatsAppBtn}
-                            activeOpacity={0.85}
-                          >
-                            <Ionicons
-                              name="logo-whatsapp"
-                              size={16}
-                              color="#FFFFFF"
-                            />
-                            <Text style={styles.whatsAppBtnText}>
-                              Contacter le traiteur
-                            </Text>
-                          </TouchableOpacity>
-                        )}
-                      </View>
-                    );
-                  })}
+                    <Ionicons name="arrow-forward" size={15} color="#FFFFFF" />
+                  </TouchableOpacity>
                 </View>
-              )}
-
-              {/* SECTION COMMANDES DE PLATS */}
-              {(serviceFilter === "tout" || serviceFilter === "traiteur") && (
-                <View style={styles.sectionGroup}>
-                  <View style={styles.sectionTitleRow}>
-                    <Ionicons
-                      name="fast-food-outline"
-                      size={16}
-                      color="#1D6B45"
-                    />
-                    <Text style={styles.sectionTitle}>Commandes de Plats</Text>
-                  </View>
-
-                  {ordersEnvoyees.map((ord) => {
-                    const traiteurInfo = ord.traiteur || ord.traiteurs;
-                    return (
-                      <View key={ord.id} style={styles.orderCard}>
-                        <View style={styles.orderCardHeader}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.providerName}>
-                              {traiteurInfo?.name || "Traiteur"}
-                            </Text>
-                            <Text style={styles.orderDate}>
-                              {formatDate(ord.created_at)}
-                            </Text>
-                          </View>
-                          {renderStatusBadge(ord.status)}
+              ) : (
+                <>
+                  {/* SECTION TRAITEUR & DEVIS */}
+                  {(serviceFilter === "tout" || serviceFilter === "traiteur") &&
+                    commandesEnvoyees.length > 0 && (
+                      <View style={styles.sectionGroup}>
+                        <View style={styles.sectionTitleRow}>
+                          <Ionicons
+                            name="restaurant-outline"
+                            size={16}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.sectionTitle}>
+                            Demandes de Devis Traiteur
+                          </Text>
                         </View>
 
-                        <View style={styles.orderDetailsBox}>
-                          {ord.order_items?.map((item, idx) => {
-                            const dishInfo = item.dish || item.dishes;
-                            const price = dishInfo?.price || 0;
-                            return (
-                              <View key={item.id || idx} style={styles.itemRow}>
-                                <Text style={styles.itemQty}>
-                                  {item.quantity}x
-                                </Text>
-                                <Text style={styles.itemName}>
-                                  {dishInfo?.name || "Plat"}
-                                </Text>
-                                <Text style={styles.itemPrice}>
-                                  {Number(price * item.quantity).toFixed(2)} €
-                                </Text>
+                        {commandesEnvoyees.map((cmd) => {
+                          const traiteurInfo = cmd.traiteur || cmd.traiteurs;
+                          return (
+                            <View key={cmd.id} style={styles.orderCard}>
+                              <View style={styles.orderCardHeader}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.providerName}>
+                                    {traiteurInfo?.name || "Traiteur"}
+                                  </Text>
+                                  <Text style={styles.orderDate}>
+                                    Demandé le {formatDate(cmd.created_at)}
+                                  </Text>
+                                </View>
+                                {renderStatusBadge(cmd.statut)}
                               </View>
-                            );
-                          })}
 
-                          <View style={styles.divider} />
+                              <View style={styles.orderDetailsBox}>
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="calendar-outline"
+                                    size={15}
+                                    color="#1D6B45"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    Événement : {formatDate(cmd.date_evenement)} (
+                                    {cmd.type_evenement || "Général"})
+                                  </Text>
+                                </View>
 
-                          <View style={styles.totalRow}>
-                            <Text style={styles.totalLabel}>Montant Total</Text>
-                            <Text style={styles.totalValue}>
-                              {Number(ord.total_amount || 0).toFixed(2)} €
-                            </Text>
-                          </View>
-                        </View>
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="people-outline"
+                                    size={15}
+                                    color="#1D6B45"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    {cmd.nb_personnes} personnes
+                                  </Text>
+                                </View>
+
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="location-outline"
+                                    size={15}
+                                    color="#1D6B45"
+                                  />
+                                  <Text style={styles.detailText}>{cmd.adresse}</Text>
+                                </View>
+
+                                {Boolean(cmd.notes) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="document-text-outline"
+                                      size={15}
+                                      color="#64748B"
+                                    />
+                                    <Text style={styles.notesText}>{cmd.notes}</Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {cmd.statut === "acceptee" && (
+                                <TouchableOpacity
+                                  style={styles.whatsAppBtn}
+                                  activeOpacity={0.85}
+                                >
+                                  <Ionicons
+                                    name="logo-whatsapp"
+                                    size={16}
+                                    color="#FFFFFF"
+                                  />
+                                  <Text style={styles.whatsAppBtnText}>
+                                    Contacter le traiteur
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
+                            </View>
+                          );
+                        })}
                       </View>
-                    );
-                  })}
-                </View>
-              )}
+                    )}
 
-              {/* SECTION GP COLIS */}
-              {(serviceFilter === "tout" || serviceFilter === "gp") && (
-                <View style={styles.sectionGroup}>
-                  <View style={styles.sectionTitleRow}>
-                    <Ionicons
-                      name="airplane-outline"
-                      size={16}
-                      color="#D4870A"
-                    />
-                    <Text style={styles.sectionTitleGold}>
-                      Transport GP Colis
-                    </Text>
-                  </View>
-
-                  {gpEnvoyees.map((gp) => {
-                    const listing = gp.listing || gp.gp_listings;
-                    const depCity =
-                      gp.departure_city || listing?.departure_city;
-                    const arrCity = gp.arrival_city || listing?.arrival_city;
-                    return (
-                      <View key={gp.id} style={styles.gpCard}>
-                        <View style={styles.orderCardHeader}>
-                          <View style={{ flex: 1 }}>
-                            <Text style={styles.gpRoute}>
-                              {depCity && arrCity
-                                ? `${depCity} ➔ ${arrCity}`
-                                : "Trajet GP"}
-                            </Text>
-                            <Text style={styles.orderDate}>
-                              Demandé le {formatDate(gp.created_at)}
-                            </Text>
-                          </View>
-                          {renderStatusBadge(gp.status)}
+                  {/* SECTION COMMANDES DE PLATS */}
+                  {(serviceFilter === "tout" || serviceFilter === "traiteur") &&
+                    ordersEnvoyees.length > 0 && (
+                      <View style={styles.sectionGroup}>
+                        <View style={styles.sectionTitleRow}>
+                          <Ionicons
+                            name="fast-food-outline"
+                            size={16}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.sectionTitle}>
+                            Commandes de Plats
+                          </Text>
                         </View>
 
-                        <View style={styles.orderDetailsBox}>
-                          <View style={styles.detailRow}>
-                            <Ionicons
-                              name="scale-outline"
-                              size={15}
-                              color="#D4870A"
-                            />
-                            <Text style={styles.detailText}>
-                              Poids : {gp.weight_kg} kg
-                            </Text>
-                          </View>
+                        {ordersEnvoyees.map((ord) => {
+                          const traiteurInfo = ord.traiteur || ord.traiteurs;
+                          return (
+                            <View key={ord.id} style={styles.orderCard}>
+                              <View style={styles.orderCardHeader}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.providerName}>
+                                    {traiteurInfo?.name || "Traiteur"}
+                                  </Text>
+                                  <Text style={styles.orderDate}>
+                                    {formatDate(ord.created_at)}
+                                  </Text>
+                                </View>
+                                {renderStatusBadge(ord.status)}
+                              </View>
 
-                          <View style={styles.detailRow}>
-                            <Ionicons
-                              name="cube-outline"
-                              size={15}
-                              color="#D4870A"
-                            />
-                            <Text style={styles.detailText}>
-                              {gp.content_desc}
-                            </Text>
-                          </View>
-                        </View>
+                              <View style={styles.orderDetailsBox}>
+                                {ord.order_items?.map((item, idx) => {
+                                  const dishInfo = item.dish || item.dishes;
+                                  const price = dishInfo?.price || 0;
+                                  return (
+                                    <View
+                                      key={item.id || idx}
+                                      style={styles.itemRow}
+                                    >
+                                      <Text style={styles.itemQty}>
+                                        {item.quantity}x
+                                      </Text>
+                                      <Text style={styles.itemName}>
+                                        {dishInfo?.name || "Plat"}
+                                      </Text>
+                                      <Text style={styles.itemPrice}>
+                                        {Number(price * item.quantity).toFixed(2)} €
+                                      </Text>
+                                    </View>
+                                  );
+                                })}
+
+                                <View style={styles.divider} />
+
+                                <View style={styles.totalRow}>
+                                  <Text style={styles.totalLabel}>
+                                    Montant Total
+                                  </Text>
+                                  <Text style={styles.totalValue}>
+                                    {Number(ord.total_amount || 0).toFixed(2)} €
+                                  </Text>
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        })}
                       </View>
-                    );
-                  })}
-                </View>
+                    )}
+
+                  {/* SECTION GP COLIS */}
+                  {(serviceFilter === "tout" || serviceFilter === "gp") &&
+                    gpEnvoyees.length > 0 && (
+                      <View style={styles.sectionGroup}>
+                        <View style={styles.sectionTitleRow}>
+                          <Ionicons
+                            name="airplane-outline"
+                            size={16}
+                            color="#D4870A"
+                          />
+                          <Text style={styles.sectionTitleGold}>
+                            Transport GP Colis
+                          </Text>
+                        </View>
+
+                        {gpEnvoyees.map((gp) => {
+                          const listing = gp.listing || gp.gp_listings;
+                          const depCity =
+                            gp.departure_city || listing?.departure_city;
+                          const arrCity = gp.arrival_city || listing?.arrival_city;
+                          return (
+                            <View key={gp.id} style={styles.gpCard}>
+                              <View style={styles.orderCardHeader}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.gpRoute}>
+                                    {depCity && arrCity
+                                      ? `${depCity} ➔ ${arrCity}`
+                                      : "Trajet GP"}
+                                  </Text>
+                                  <Text style={styles.orderDate}>
+                                    Demandé le {formatDate(gp.created_at)}
+                                  </Text>
+                                </View>
+                                {renderStatusBadge(gp.status)}
+                              </View>
+
+                              <View style={styles.orderDetailsBox}>
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="scale-outline"
+                                    size={15}
+                                    color="#D4870A"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    Poids : {gp.weight_kg} kg
+                                  </Text>
+                                </View>
+
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="cube-outline"
+                                    size={15}
+                                    color="#D4870A"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    {gp.content_desc}
+                                  </Text>
+                                </View>
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                </>
               )}
             </>
           )}
+
+          {/* SECTION REÇUES */}
           {tab === "recues" && (
             <>
-              {isTraiteur &&
-                (serviceFilter === "tout" || serviceFilter === "traiteur") &&
-                commandesRecues.length > 0 && (
-                  <View style={styles.sectionGroup}>
-                    <View style={styles.sectionTitleRow}>
-                      <Ionicons
-                        name="restaurant-outline"
-                        size={16}
-                        color="#1D6B45"
-                      />
-                      <Text style={styles.sectionTitle}>
-                        Demandes de Devis Traiteur
-                      </Text>
-                    </View>
-
-                    {commandesRecues.map((cmd) => {
-                      const clientInfo = cmd.client || cmd.profiles;
-                      return (
-                        <View key={cmd.id} style={styles.orderCard}>
-                          <View style={styles.orderCardHeader}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.providerName}>
-                                {clientInfo?.full_name || "Client"}
-                              </Text>
-                              <Text style={styles.orderDate}>
-                                Demandé le {formatDate(cmd.created_at)}
-                              </Text>
-                            </View>
-                            {renderStatusBadge(cmd.statut)}
-                          </View>
-
-                          <View style={styles.orderDetailsBox}>
-                            <View style={styles.detailRow}>
-                              <Ionicons
-                                name="calendar-outline"
-                                size={15}
-                                color="#1D6B45"
-                              />
-                              <Text style={styles.detailText}>
-                                Événement : {formatDate(cmd.date_evenement)} (
-                                {cmd.type_evenement || "Général"})
-                              </Text>
-                            </View>
-
-                            <View style={styles.detailRow}>
-                              <Ionicons
-                                name="people-outline"
-                                size={15}
-                                color="#1D6B45"
-                              />
-                              <Text style={styles.detailText}>
-                                {cmd.nb_personnes} personnes
-                              </Text>
-                            </View>
-
-                            <View style={styles.detailRow}>
-                              <Ionicons
-                                name="location-outline"
-                                size={15}
-                                color="#1D6B45"
-                              />
-                              <Text style={styles.detailText}>
-                                {cmd.adresse}
-                              </Text>
-                            </View>
-
-                            {Boolean(cmd.notes) && (
-                              <View style={styles.detailRow}>
-                                <Ionicons
-                                  name="document-text-outline"
-                                  size={15}
-                                  color="#64748B"
-                                />
-                                <Text style={styles.notesText}>
-                                  {cmd.notes}
-                                </Text>
-                              </View>
-                            )}
-                          </View>
-
-                          {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
-                          {(cmd.statut === "en_attente" ||
-                            cmd.statut === "pending") && (
-                            <View style={styles.actionButtonsRow}>
-                              <TouchableOpacity
-                                style={styles.acceptBtn}
-                                activeOpacity={0.85}
-                                onPress={() =>
-                                  confirmAndExecuteAction(
-                                    "accepter_traiteur",
-                                    cmd,
-                                  )
-                                }
-                              >
-                                <Ionicons
-                                  name="checkmark-circle"
-                                  size={16}
-                                  color="#FFFFFF"
-                                />
-                                <Text style={styles.acceptBtnText}>
-                                  Accepter
-                                </Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                style={styles.refuseBtn}
-                                activeOpacity={0.85}
-                                onPress={() =>
-                                  confirmAndExecuteAction(
-                                    "refuser_traiteur",
-                                    cmd,
-                                  )
-                                }
-                              >
-                                <Ionicons
-                                  name="close-circle"
-                                  size={16}
-                                  color="#B91C1C"
-                                />
-                                <Text style={styles.refuseBtnText}>
-                                  Refuser
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
-                        </View>
-                      );
-                    })}
+              {commandesRecues.length === 0 &&
+              ordersRecues.length === 0 &&
+              gpRecues.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <View
+                    style={[
+                      styles.emptyIconContainer,
+                      { backgroundColor: "#FEF3C7" },
+                    ]}
+                  >
+                    <Ionicons name="archive-outline" size={32} color="#D4870A" />
                   </View>
-                )}
-
-              {/* SECTION COMMANDES DE PLATS */}
-              {isTraiteur &&
-                (serviceFilter === "tout" || serviceFilter === "traiteur") &&
+                  <Text style={styles.emptyTitle}>Aucune demande reçue</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Vous n&apos;avez reçu aucune commande de plat ni demande de devis pour le moment.
+                  </Text>
+                </View>
+              ) : (
+                <>
+                  {isTraiteur &&
+                    (serviceFilter === "tout" || serviceFilter === "traiteur") &&
                 ordersRecues.length > 0 && (
                   <View style={styles.sectionGroup}>
                     <View style={styles.sectionTitleRow}>
@@ -1080,6 +1017,8 @@ export default function CommandeScreen() {
                     })}
                   </View>
                 )}
+                </>
+              )}
             </>
           )}
         </ScrollView>
@@ -1632,6 +1571,60 @@ const styles = StyleSheet.create({
   loadingText: {
     color: "#1D6B45",
     fontSize: 14,
+    fontWeight: "700",
+  },
+
+  /* Empty State */
+  emptyCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginVertical: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  emptyIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#E8F5E9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  emptyTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 6,
+    textAlign: "center",
+  },
+  emptySubtitle: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  emptyButton: {
+    backgroundColor: "#1D6B45",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  emptyButtonText: {
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "700",
   },
 });

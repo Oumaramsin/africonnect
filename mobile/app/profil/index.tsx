@@ -394,7 +394,13 @@ export default function ProfilScreen() {
             {/* Espace Traiteur */}
             <TouchableOpacity
               style={styles.activityRow}
-              onPress={() => router.push("/profil/traiteur")}
+              onPress={() =>
+                router.push(
+                  (userRole === "traiteur"
+                    ? "/profil/traiteur"
+                    : "/profil/traiteur/create") as any,
+                )
+              }
               activeOpacity={0.7}
             >
               <View style={styles.activityLeft}>

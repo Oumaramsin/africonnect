@@ -36,7 +36,7 @@ export default function AccueilScreen() {
       setIsLoggedIn(true);
       try {
         const baseUrl =
-          process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001/api";
+          process.env.EXPO_PUBLIC_API_URL || "https://dabari-api.up.railway.app/api";
         const response = await fetch(`${baseUrl}/commande`, {
           headers: {
             "Content-type": "application/json",
@@ -83,9 +83,7 @@ export default function AccueilScreen() {
               gpRequestsPending,
           );
         }
-        const notifRes = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/notifications`,
-          {
+        const notifRes = await fetch(`${baseUrl}/notifications`, {
             headers: {
               Authorization: `Bearer ${token}`,
             },
@@ -361,13 +359,13 @@ export default function AccueilScreen() {
           </View>
 
           {/* Section: Commandes Récentes */}
-          {isLoggedIn && (
+          {isLoggedIn && (commandesTraiteur.length > 0 || ordersPlats.length > 0 || gpRequests.length > 0) ? (
             <View style={styles.recentOrdersCard}>
               <View style={styles.recentOrdersHeader}>
                 <Text style={styles.recentOrdersTitle}>Commandes récentes</Text>
                 <TouchableOpacity
                   onPress={() => {
-                    router.push("/commande");
+                    router.push("/commandes");
                   }}
                 >
                   <Text style={styles.seeAllText}>Voir tout →</Text>
@@ -437,7 +435,7 @@ export default function AccueilScreen() {
                 );
               })}
             </View>
-          )}
+          ) : null}
 
           {/* Footer Security Notice */}
           <View style={styles.footerTrustBar}>

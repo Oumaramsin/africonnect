@@ -21,6 +21,8 @@ import {
   Package,
   Scale,
   PartyPopper,
+  Link,
+  ArrowRight,
 } from "lucide-react";
 
 type CommandeTraiteur = {
@@ -837,13 +839,26 @@ export default function CommandesPage() {
                 commandesEnvoyees.length === 0 &&
                 ordersEnvoyees.length === 0) ||
               (serviceFilter === "gp" && gpEnvoyees.length === 0)) && (
-              <div className="text-center py-16">
-                <div className="flex justify-center mb-3">
-                  <Package size={48} className="text-gray-300" />
+              <div className="bg-white rounded-3xl p-10 border border-gray-100 shadow-sm text-center max-w-md mx-auto my-8">
+                <div className="w-16 h-16 bg-[#E8F5E9] rounded-full flex items-center justify-center mx-auto mb-4 text-[#1D6B45]">
+                  <Package size={32} />
                 </div>
-                <p className="text-gray-500">
-                  {"Vous n'avez pas encore passé de commande"}
+                <h3 className="text-lg font-bold text-gray-900 mb-1">
+                  Vous n&apos;avez passé aucune commande
+                </h3>
+                <p className="text-sm text-gray-500 mb-6 leading-relaxed">
+                  {serviceFilter === "traiteur"
+                    ? "Vous n'avez fait aucune demande de devis ni commande de plat."
+                    : serviceFilter === "gp"
+                    ? "Vous n'avez fait aucune réservation de transport GP."
+                    : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
                 </p>
+                <Link
+                  href="/dashboard"
+                  className="inline-flex items-center justify-center gap-2 bg-[#1D6B45] text-white px-6 py-3 rounded-2xl text-xs font-bold hover:bg-[#165637] transition-all shadow-md active:scale-95"
+                >
+                  Découvrir les services <ArrowRight size={15} />
+                </Link>
               </div>
             )}
           </>
