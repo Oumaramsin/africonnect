@@ -77,10 +77,8 @@ class AuthController {
       );
       return res.status(201).json({
         user,
-        requiresVerification: Boolean(email),
-        message: email
-          ? "Un code de vérification à 6 chiffres a été envoyé à votre adresse e-mail."
-          : "Compte créé avec succès.",
+        requiresVerification: false, // Désactivé temporairement 
+        message: "Compte créé avec succès.",
       });
     } catch (error: any) {
       res.status(400).json({ message: error.message || "registration failed", error });

@@ -297,13 +297,13 @@ export default function RegisterPage() {
             Bienvenue sur Dabari 🎉
           </h2>
           <p className="text-sm text-gray-500 mb-6 leading-relaxed">
-            Votre compte a été vérifié et créé avec succès !
+            Votre compte a été créé avec succès ! Vous pouvez maintenant vous connecter.
           </p>
           <Link
-            href="/dashboard"
+            href="/login"
             className="w-full bg-gradient-to-r from-[#1D6B45] to-[#165637] text-white py-3.5 rounded-2xl font-bold text-sm hover:shadow-lg active:scale-[0.99] transition-all flex items-center justify-center gap-2"
           >
-            Accéder à Dabari <ArrowRight size={17} />
+            Se connecter <ArrowRight size={17} />
           </Link>
         </div>
       </div>

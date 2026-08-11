@@ -24,7 +24,7 @@ class AuthService {
         email: email || null,
         phone: phone || null,
         password: hashedPassword,
-        is_email_verified: phone ? true : false,
+        is_email_verified: true, // Activé automatiquement par défaut (sans étape Resend)
         email_verify_code: verifyCode,
         email_verify_expires: verifyExpires,
         profile: {
@@ -42,24 +42,17 @@ class AuthService {
       },
     });
 
+    /* Désactivé temporairement tant que Resend n'est pas configuré avec le domaine
     if (email && verifyCode) {
       sendEmail({
         to: email,
         subject: "Votre code de vérification Dabari",
-        html: `
-          <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
-            <h2>Bienvenue sur Dabari, ${firstname} ! 🎉</h2>
-            <p>Voici votre code de vérification à 6 chiffres pour valider votre compte :</p>
-            <div style="font-size: 32px; font-weight: bold; color: #1D6B45; letter-spacing: 6px; margin: 20px 0;">
-              ${verifyCode}
-            </div>
-            <p style="color: #666; font-size: 12px;">Ce code expire dans 15 minutes.</p>
-          </div>
-        `,
+        html: `...`,
       }).catch((err) =>
         console.error("⚠️ Erreur envoi mail de vérification:", err),
       );
     }
+    */
 
     return newUser.profile;
   };
