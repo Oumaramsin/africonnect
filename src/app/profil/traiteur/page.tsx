@@ -537,26 +537,34 @@ export default function TraiteurEspacePage() {
 
   if (loading)
     return (
-      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
-        <div className="text-[#1D6B45]">Chargement...</div>
+      <div className="min-h-screen bg-[#F3F4F6] flex flex-col items-center justify-center gap-3">
+        <div className="w-10 h-10 border-4 border-[#1D6B45] border-t-transparent rounded-full animate-spin"></div>
+        <p className="text-sm font-medium text-gray-600">Chargement de votre espace traiteur...</p>
       </div>
     );
 
-  if (view === "setup")
+  if (view === "setup" || !traiteur)
     return (
       <div className="min-h-screen bg-[#F3F4F6] pb-36">
         <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
           <button
-            onClick={() => setView("profil")}
-            className="text-white/70 text-sm mb-4 inline-block hover:text-white transition-colors"
+            onClick={() => {
+              if (editProfile && traiteur) {
+                setEditProfile(false);
+                setView("profil");
+              } else {
+                router.push("/profil");
+              }
+            }}
+            className="text-white/80 text-sm mb-4 inline-flex items-center gap-1.5 hover:text-white transition-colors font-medium bg-white/10 px-3 py-1.5 rounded-xl backdrop-blur-sm"
           >
-            ← {editProfile ? "Retour" : "Profil"}
+            ← {editProfile && traiteur ? "Retour au profil traiteur" : "Retour à mon profil"}
           </button>
           <h1 className="text-2xl font-bold text-white">
-            {editProfile ? "Modifier mon profil" : "Devenir Traiteur"}
+            {editProfile && traiteur ? "Modifier mon profil" : "Devenir Traiteur"}
           </h1>
-          <p className="text-white/70 text-sm mt-1">
-            {editProfile
+          <p className="text-white/80 text-sm mt-1">
+            {editProfile && traiteur
               ? "Mets à jour tes informations"
               : "Configure ton espace traiteur"}
           </p>
