@@ -405,9 +405,9 @@ export default function TraiteurDetailScreen() {
             <View style={styles.avatarContainer}>
               <Image
                 source={{ uri: traiteur.image_url }}
-                style={{ width: "100%", height: "100%" }}
+                style={styles.avatarImage}
                 resizeMode="cover"
-              ></Image>
+              />
             </View>
 
             <View style={{ flex: 1 }}>
@@ -419,9 +419,25 @@ export default function TraiteurDetailScreen() {
 
             {/* Rating Badge */}
             <View style={styles.ratingBox}>
-              <Ionicons name="star" size={18} color="#FBBF24" />
-              <Text style={styles.ratingScore}>{traiteur.rating}</Text>
-              <Text style={styles.ratingReviews}>{traiteur.rating}</Text>
+              <Ionicons
+                name="star"
+                size={16}
+                color={
+                  Number(traiteur.rating || 0) > 0
+                    ? "#FBBF24"
+                    : "rgba(255, 255, 255, 0.4)"
+                }
+              />
+              {Number(traiteur.rating || 0) > 0 ? (
+                <>
+                  <Text style={styles.ratingScore}>
+                    {Number(traiteur.rating).toFixed(1)}
+                  </Text>
+                  <Text style={styles.ratingReviews}>Avis</Text>
+                </>
+              ) : (
+                <Text style={styles.noRatingText}>Aucun avis</Text>
+              )}
             </View>
           </View>
 
@@ -576,6 +592,12 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     justifyContent: "center",
     alignItems: "center",
+    overflow: "hidden",
+  },
+  avatarImage: {
+    width: "100%",
+    height: "100%",
+    borderRadius: 28,
   },
   avatarEmoji: {
     fontSize: 26,
@@ -610,6 +632,13 @@ const styles = StyleSheet.create({
   ratingReviews: {
     fontSize: 9,
     color: "rgba(255, 255, 255, 0.7)",
+  },
+  noRatingText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.9)",
+    marginTop: 2,
+    textAlign: "center",
   },
   zonesRow: {
     flexDirection: "row",

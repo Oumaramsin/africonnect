@@ -91,10 +91,8 @@ export default function ProfilScreen() {
         );
         const data = await response.json();
         if (!response.ok) {
-          setError(
-            data.message ||
-              "Erreur lors de la récupération du profil utilisateur",
-          );
+          await deleteSecureToken("token"); 
+          router.push("/login");
           return;
         }
 
@@ -108,6 +106,8 @@ export default function ProfilScreen() {
         }
       } catch (err) {
         console.error("Erreur décodage token profil:", err);
+      } finally {
+        setLoading(false);
       }
     };
     load();
@@ -151,7 +151,7 @@ export default function ProfilScreen() {
         setError(data.message || "Erreur lors de la sauvegarde");
         return;
       }
-      console.log(data)
+      console.log(data);
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
@@ -361,7 +361,11 @@ export default function ProfilScreen() {
                 </View>
 
                 {/* Bouton de Sauvegarde */}
-                <TouchableOpacity style={styles.saveBtn} activeOpacity={0.85} onPress={() => updateProfil()}>
+                <TouchableOpacity
+                  style={styles.saveBtn}
+                  activeOpacity={0.85}
+                  onPress={() => updateProfil()}
+                >
                   <Text style={styles.saveBtnText}>
                     {saving ? "Sauvegarde..." : "Sauvegarder les modifications"}
                   </Text>

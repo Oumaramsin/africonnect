@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,9 +7,11 @@ import {
   ScrollView,
   StatusBar,
   Image,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
 
@@ -44,12 +46,14 @@ export default function TraiteurEspaceScreen() {
 
   const [dishes, setDishes] = useState<Dish[]>([]);
 
-  useEffect(() => {
-    const load = async () => {
-      await loadTraiteur();
-    };
-    load();
-  }, []);
+  const [dishToDelete, setDishToDelete] = useState<string | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadTraiteur();
+    }, []),
+  );
 
   async function loadTraiteur() {
     const token = await getSecureToken("token");
@@ -93,13 +97,57 @@ export default function TraiteurEspaceScreen() {
     }
   }
 
-  const toggleAvailability = (id: string) => {
+  async function toggleAvailability(dishId: string, current: boolean) {
+    const token = await getSecureToken("token");
+    if (token) {
+      const response = await fetch(
+        `${process.env.EXPO_PUBLIC_API_URL}/traiteur/dishes/${dishId}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({ is_available: !current }),
+        },
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError("Erreur lors de la modification de la disponibilité");
+        return;
+      }
+      console.log(data);
+    }
     setDishes((prev) =>
-      prev.map((d) =>
-        d.id === id ? { ...d, is_available: !d.is_available } : d,
-      ),
+      prev.map((d) => (d.id === dishId ? { ...d, is_available: !current } : d)),
     );
-  };
+  }
+
+  async function confirmDeleteDish() {
+    if (!dishToDelete) return;
+    setIsDeleting(true);
+    const token = await getSecureToken("token");
+    try {
+      if (token) {
+        await fetch(
+          `${process.env.EXPO_PUBLIC_API_URL}/traiteur/dishes/${dishToDelete}`,
+          {
+            method: "DELETE",
+            headers: {
+              Authorization: `Bearer ${token}`,
+            },
+          },
+        );
+      }
+
+      setDishes((prev) => prev.filter((d) => d.id !== dishToDelete));
+    } catch (err) {
+      console.error("Erreur lors de la suppression:", err);
+    } finally {
+      setIsDeleting(false);
+      setDishToDelete(null);
+    }
+  }
 
   return (
     <View style={styles.topGreenWrapper}>
@@ -331,9 +379,7 @@ export default function TraiteurEspaceScreen() {
               {/* Bouton Ajouter un Plat */}
               <TouchableOpacity
                 style={styles.addDishMainBtn}
-                onPress={() =>
-                  router.push("/profil/traiteur/addOrEditDish" as any)
-                }
+                onPress={() => router.push("/profil/traiteur/dish" as any)}
                 activeOpacity={0.85}
               >
                 <Ionicons name="add-circle-outline" size={20} color="#FFFFFF" />
@@ -385,7 +431,9 @@ export default function TraiteurEspaceScreen() {
                               ? styles.availBadgeBtnActive
                               : styles.availBadgeBtnInactive,
                           ]}
-                          onPress={() => toggleAvailability(dish.id)}
+                          onPress={() =>
+                            toggleAvailability(dish.id, dish.is_available)
+                          }
                           activeOpacity={0.8}
                         >
                           <Text
@@ -406,7 +454,20 @@ export default function TraiteurEspaceScreen() {
                         <TouchableOpacity
                           style={styles.actionTextBtn}
                           onPress={() =>
-                            router.push("/profil/traiteur/addOrEditDish" as any)
+                            router.push({
+                              pathname: "/profil/traiteur/dish",
+                              params: {
+                                id: dish.id,
+                                name: dish.name,
+                                description: dish.description || "",
+                                price: String(dish.price),
+                                cuisine_type: dish.cuisine_type,
+                                is_available: String(dish.is_available),
+                                image_urls: JSON.stringify(
+                                  dish.image_urls || [],
+                                ),
+                              },
+                            })
                           }
                           activeOpacity={0.7}
                         >
@@ -416,6 +477,7 @@ export default function TraiteurEspaceScreen() {
                         {/* Bouton Supprimer */}
                         <TouchableOpacity
                           style={styles.actionTextBtn}
+                          onPress={() => setDishToDelete(dish.id)}
                           activeOpacity={0.7}
                         >
                           <Text style={styles.deleteActionText}>Supprimer</Text>
@@ -428,6 +490,54 @@ export default function TraiteurEspaceScreen() {
             </View>
           )}
         </ScrollView>
+
+        {/* MODAL DE CONFIRMATION DE SUPPRESSION */}
+        <Modal
+          transparent
+          animationType="fade"
+          visible={Boolean(dishToDelete)}
+          onRequestClose={() => setDishToDelete(null)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalIconCircleDelete}>
+                <Ionicons name="trash-outline" size={28} color="#B91C1C" />
+              </View>
+
+              <Text style={styles.modalTitle}>Supprimer ce plat ?</Text>
+              <Text style={styles.modalSub}>
+                Êtes-vous sûr de vouloir supprimer définitivement ce plat de
+                votre menu ? Cette action est irréversible.
+              </Text>
+
+              <View style={styles.modalButtonsRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setDishToDelete(null)}
+                  disabled={isDeleting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalCancelBtnText}>Annuler</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalDeleteConfirmBtn}
+                  onPress={confirmDeleteDish}
+                  disabled={isDeleting}
+                  activeOpacity={0.8}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator color="#FFFFFF" size="small" />
+                  ) : (
+                    <Text style={styles.modalDeleteConfirmBtnText}>
+                      Oui, supprimer
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -825,5 +935,86 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     fontSize: 12,
     fontWeight: "700",
+  },
+
+  /* Modal de Confirmation de Suppression */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  modalIconCircleDelete: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalSub: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 24,
+  },
+  modalButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCancelBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  modalDeleteConfirmBtn: {
+    flex: 1,
+    backgroundColor: "#DC2626",
+    paddingVertical: 14,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  modalDeleteConfirmBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });
