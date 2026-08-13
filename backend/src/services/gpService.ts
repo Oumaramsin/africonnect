@@ -47,6 +47,17 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
       include: { gp: true },
     });
 
+    if (gpListing) {
+       await tx.gpListing.update({
+        where: { id: order.listing_id },
+        data: {
+          available_kg: {
+            decrement: order.weight_kg,
+          },
+        },
+      });
+    }
+
     const sender = order.sender_id
       ? await tx.profile.findUnique({ where: { id: order.sender_id } })
       : null;
@@ -96,7 +107,9 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
         arrivalCity: gpListing.arrival_city || undefined,
         weightKg: order.weight_kg,
         contentDesc: order.content_desc,
-        totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+        totalAmount: order.total_amount
+          ? Number(order.total_amount)
+          : undefined,
       }).catch((err) => console.error("Erreur e-mail GP:", err));
     }
 
@@ -109,7 +122,9 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
         departureCity: gpListing?.departure_city || undefined,
         arrivalCity: gpListing?.arrival_city || undefined,
         weightKg: order.weight_kg,
-        totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+        totalAmount: order.total_amount
+          ? Number(order.total_amount)
+          : undefined,
       }).catch((err) => console.error("Erreur e-mail expéditeur:", err));
     }
 

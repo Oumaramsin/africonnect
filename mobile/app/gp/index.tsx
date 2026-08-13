@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -8,15 +8,15 @@ import {
   StatusBar,
   TextInput,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
 import { GpListing } from "../../utils/types/gp";
 
-// Mockup Data pour le visuel GP
-const MOCK_DESTINATIONS = [
+const destination = [
   { label: "Tout", value: "tout" },
   { label: "🇸🇳 Sénégal", value: "Sénégal" },
   { label: "🇨🇮 Côte d'Ivoire", value: "Côte d'Ivoire" },
@@ -35,52 +35,73 @@ export default function GpScreen() {
   const [error, setError] = useState("");
   const [gp, setGp] = useState<GpListing[]>([]);
 
-  useEffect(()=>{
-    const load = async () => {
-      const token = await getSecureToken("token");
-      if (token) {
-        setIsLoggedIn(true);
-      }
-      try{
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/gp`,{
-        headers:{
-            "Content-Type": "application/json"
+  useFocusEffect(
+    useCallback(() => {
+      const load = async () => {
+        setIsLoading(true);
+        setError("");
+        const token = await getSecureToken("token");
+        if (token) {
+          setIsLoggedIn(true);
+        } else {
+          setIsLoggedIn(false);
         }
-      })
-      const data = await response.json()
-      if(!response.ok){
-        setError('Erreur lors de la récupération des GP')
-        return;
-      }
-      console.log(data)
-      setGp(data.data.gp)
-      setIsLoading(false)
-    }catch(error){
-        setError('Erreur lors de la récupération des GP')
-        return;
-    }
-    };
-    load();
-  },[])
 
-    const formatDate = (dateStr: string) => {
+        try {
+          const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/gp`, {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          });
+          const data = await response.json();
+          if (!response.ok) {
+            setError(data.error || data.message || "Erreur lors de la récupération des GP");
+            return;
+          }
+          setGp(data.data.gp || []);
+        } catch (error) {
+          setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
+        } finally {
+          setIsLoading(false);
+        }
+      };
+      load();
+    }, [])
+  );
+
+  const formatDate = (dateStr: string) => {
+    if (!dateStr) return "";
     return new Date(dateStr).toLocaleDateString("fr-FR", {
       day: "numeric",
       month: "long",
     });
   };
 
+  const filteredGp = gp.filter((item) => {
+    if (selectedDestination === "tout") return true;
+
+    const destLower = selectedDestination.toLowerCase();
+    const arrivalCountry = (item.arrival_country || "").toLowerCase();
+    const arrivalCity = (item.arrival_city || "").toLowerCase();
+
+    return (
+      arrivalCountry.includes(destLower) ||
+      arrivalCity.includes(destLower) ||
+      destLower.includes(arrivalCountry) ||
+      destLower.includes(arrivalCity)
+    );
+  });
 
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="light-content" />
 
-        {/* Header*/}
+        {/* Header */}
         <View style={styles.headerCard}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => router.push('/accueil')}
+            onPress={() => router.push("/accueil")}
             activeOpacity={0.7}
           >
             <Ionicons
@@ -98,14 +119,14 @@ export default function GpScreen() {
           </Text>
         </View>
 
-        {/* Destinations */}
+        {/* Destinations Chips */}
         <View style={styles.searchSection}>
           <ScrollView
             horizontal
             showsHorizontalScrollIndicator={false}
             contentContainerStyle={styles.filterScroll}
           >
-            {MOCK_DESTINATIONS.map((dest) => {
+            {destination.map((dest) => {
               const active = selectedDestination === dest.value;
               return (
                 <TouchableOpacity
@@ -133,6 +154,14 @@ export default function GpScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/*  Erreur Réseau / Serveur */}
+          {Boolean(error) && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={20} color="#B91C1C" />
+              <Text style={styles.errorBannerText}>{error}</Text>
+            </View>
+          )}
+          {/* Banner Sécurité */}
           <View style={styles.securityBanner}>
             <View style={styles.securityIconCircle}>
               <Ionicons name="shield-checkmark" size={22} color="#D4870A" />
@@ -146,6 +175,7 @@ export default function GpScreen() {
             </View>
           </View>
 
+          {/* Rangée Tri & Compteur */}
           <View style={styles.sortRow}>
             <TouchableOpacity
               style={[styles.sortBtn, sortByDistance && styles.sortBtnActive]}
@@ -168,138 +198,179 @@ export default function GpScreen() {
             </TouchableOpacity>
 
             <Text style={styles.countText}>
-              {gp.length} GP disponibles
+              {filteredGp.length} GP {filteredGp.length > 1 ? "disponibles" : "disponible"}
             </Text>
           </View>
 
-          <View style={styles.listingsList}>
-            {gp.map((item) => (
-              <TouchableOpacity
-                key={item.id}
-                style={styles.gpCard}
-                activeOpacity={0.9}
-                onPress={() => {
-                  router.push(`/gp/${item.id}`)
-                }}
-              >
-                <View style={styles.routeHeader}>
-                  <View style={styles.routeGroup}>
-                    <Text style={styles.cityName}>
-                       {item.departure_city}
-                    </Text>
-                    <Ionicons name="arrow-forward" size={16} color="#1D6B45" />
-                    <Text style={styles.cityName}>
-                      {item.arrival_city}
-                    </Text>
+          {isLoading ? (
+            <View style={styles.loadingContainer}>
+              <ActivityIndicator size="large" color="#1D6B45" />
+              <Text style={styles.loadingText}>Chargement des annonces GP...</Text>
+            </View>
+          ) : filteredGp.length === 0 ? (
+            <View style={styles.emptyContainer}>
+              <Ionicons name="airplane-outline" size={48} color="#94A3B8" />
+              <Text style={styles.emptyTitle}>Aucun trajet GP trouvé</Text>
+              <Text style={styles.emptySub}>
+                {selectedDestination === "tout"
+                  ? "Aucun transporteur GP n'a publié d'annonce pour le moment."
+                  : `Aucun transporteur ne dessert "${selectedDestination}" pour le moment.`}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.listingsList}>
+              {filteredGp.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  style={styles.gpCard}
+                  activeOpacity={0.9}
+                  onPress={() => {
+                    router.push(`/gp/${item.id}` as any);
+                  }}
+                >
+                  <View style={styles.routeHeader}>
+                    <View style={styles.routeGroup}>
+                      <Text style={styles.cityName}>{item.departure_city}</Text>
+                      <Ionicons name="arrow-forward" size={16} color="#1D6B45" />
+                      <Text style={styles.cityName}>{item.arrival_city}</Text>
+                    </View>
+
+                    {Boolean(item.flight_type) && (
+                      <View
+                        style={[
+                          styles.flightBadge,
+                          item.flight_type === "direct"
+                            ? styles.flightBadgeDirect
+                            : styles.flightBadgeEscale,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.flightBadgeText,
+                            item.flight_type === "direct"
+                              ? styles.flightBadgeTextDirect
+                              : styles.flightBadgeTextEscale,
+                          ]}
+                        >
+                          {item.flight_type === "direct" ? "Direct" : "Escale"}
+                        </Text>
+                      </View>
+                    )}
                   </View>
 
-                  <View
-                    style={[
-                      styles.flightBadge,
-                      item.flight_type === "direct"
-                        ? styles.flightBadgeDirect
-                        : styles.flightBadgeEscale,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.flightBadgeText,
-                        item.flight_type === "direct"
-                          ? styles.flightBadgeTextDirect
-                          : styles.flightBadgeTextEscale,
-                      ]}
+                  <View style={styles.gpProfileRow}>
+                    <View style={styles.gpAvatarCircle}>
+                      <Text style={styles.gpAvatarInitial}>
+                        {item.profiles?.full_name?.charAt(0).toUpperCase() || "?"}
+                      </Text>
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.gpNameText}>
+                        {item.profiles?.full_name || "GP Transporteur"}
+                      </Text>
+                      {Boolean(item.pickup_city) && (
+                        <View style={styles.locationSubRow}>
+                          <Ionicons
+                            name="location-outline"
+                            size={12}
+                            color="#64748B"
+                          />
+                          <Text style={styles.locationSubText}>
+                            {item.pickup_city}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+
+                    {Boolean(item.departure_date) && (
+                      <View style={styles.dateBadge}>
+                        <Ionicons
+                          name="calendar-outline"
+                          size={12}
+                          color="#1D6B45"
+                        />
+                        <Text style={styles.dateBadgeText}>
+                          {formatDate(item.departure_date)}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+
+                  {/* Métriques */}
+                  <View style={styles.cardFooter}>
+                    <View style={styles.metricGroup}>
+                      <Text style={styles.metricLabel}>Disponible</Text>
+                      <Text style={styles.metricValue}>
+                        {Number(item.available_kg)} kg
+                      </Text>
+                    </View>
+
+                    <View style={styles.dividerVertical} />
+
+                    <View style={styles.metricGroup}>
+                      <Text style={styles.metricLabel}>Tarif au kg</Text>
+                      <Text style={styles.priceValue}>
+                        {Number(item.price_per_kg)} €/kg
+                      </Text>
+                    </View>
+
+                    <View style={styles.dividerVertical} />
+
+                    <View style={styles.metricGroup}>
+                      <Text style={styles.metricLabel}>Avis</Text>
+                      <View style={styles.ratingRow}>
+                        <Ionicons name="star" size={12} color="#FBBF24" />
+                        <Text style={styles.ratingValue}>
+                          {item.rating || 0}
+                        </Text>
+                        <Text style={styles.reviewCount}>
+                          ({item.review_count || 0})
+                        </Text>
+                      </View>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.actionArrowBtn}
+                      onPress={() => {
+                        router.push(`/gp/${item.id}` as any);
+                      }}
                     >
-                      {item.flight_type === "direct" ? "Direct" : "Escale"}
-                    </Text>
-                  </View>
-                </View>
-
-                <View style={styles.gpProfileRow}>
-                  <View style={styles.gpAvatarCircle}>
-                    <Text style={styles.gpAvatarInitial}>
-                      {item.profiles.full_name.charAt(0)}
-                    </Text>
-                  </View>
-                  <View style={{ flex: 1 }}>
-                    <Text style={styles.gpNameText}>{item.profiles.full_name}</Text>
-                    <View style={styles.locationSubRow}>
+                      <Text style={styles.actionArrowText}>Réserver</Text>
                       <Ionicons
-                        name="location-outline"
-                        size={12}
-                        color="#64748B"
+                        name="chevron-forward"
+                        size={14}
+                        color="#1D6B45"
                       />
-                      <Text style={styles.locationSubText}>
-                        {item.pickup_city}
-                      </Text>
-                    </View>
+                    </TouchableOpacity>
                   </View>
-
-                  <View style={styles.dateBadge}>
-                    <Ionicons
-                      name="calendar-outline"
-                      size={12}
-                      color="#1D6B45"
-                    />
-                    <Text style={styles.dateBadgeText}>
-                      {formatDate(item.departure_date)}
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Métriques */}
-                <View style={styles.cardFooter}>
-                  <View style={styles.metricGroup}>
-                    <Text style={styles.metricLabel}>Disponible</Text>
-                    <Text style={styles.metricValue}>
-                      {item.available_kg} kg
-                    </Text>
-                  </View>
-
-                  <View style={styles.dividerVertical} />
-
-                  <View style={styles.metricGroup}>
-                    <Text style={styles.metricLabel}>Tarif au kg</Text>
-                    <Text style={styles.priceValue}>
-                      {item.price_per_kg} €/kg
-                    </Text>
-                  </View>
-
-                  <View style={styles.dividerVertical} />
-
-                  <View style={styles.metricGroup}>
-                    <Text style={styles.metricLabel}>Avis</Text>
-                    <View style={styles.ratingRow}>
-                      <Ionicons name="star" size={12} color="#FBBF24" />
-                      <Text style={styles.ratingValue}>{item.rating}</Text>
-                      <Text style={styles.reviewCount}>
-                        ({item.review_count})
-                      </Text>
-                    </View>
-                  </View>
-
-                  <TouchableOpacity style={styles.actionArrowBtn}>
-                    <Text style={styles.actionArrowText}>Réserver</Text>
-                    <Ionicons
-                      name="chevron-forward"
-                      size={14}
-                      color="#1D6B45"
-                    />
-                  </TouchableOpacity>
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
         </ScrollView>
 
         <TouchableOpacity
-          style={styles.fabBtn}
+          style={[
+            styles.fabBtn,
+            !isLoggedIn && styles.fabBtnLogin,
+          ]}
           activeOpacity={0.85}
           onPress={() => {
-            router.push("/gp/nouveau")
+            if (isLoggedIn) {
+              router.push("/gp/nouveau");
+            } else {
+              router.push("/login");
+            }
           }}
         >
-          <Ionicons name="add" size={22} color="#FFFFFF" />
-          <Text style={styles.fabBtnText}>Je suis GP</Text>
+          <Ionicons
+            name={isLoggedIn ? "add" : "log-in-outline"}
+            size={20}
+            color="#FFFFFF"
+          />
+          <Text style={styles.fabBtnText}>
+            {isLoggedIn ? "Je suis GP" : "Se connecter pour publier"}
+          </Text>
         </TouchableOpacity>
       </SafeAreaView>
     </View>
@@ -355,26 +426,8 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
   },
-  searchInputRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F1F5F9",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    height: 44,
-    gap: 8,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  searchInput: {
-    flex: 1,
-    fontSize: 13,
-    color: "#0F172A",
-  },
   filterScroll: {
     gap: 8,
-    paddingRight: 10,
   },
   destChip: {
     paddingHorizontal: 14,
@@ -385,16 +438,17 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
   },
   destChipActive: {
-    backgroundColor: "#D4870A",
-    borderColor: "#D4870A",
+    backgroundColor: "#1D6B45",
+    borderColor: "#1D6B45",
   },
   destChipText: {
     fontSize: 12,
-    fontWeight: "700",
-    color: "#475569",
+    fontWeight: "600",
+    color: "#64748B",
   },
   destChipTextActive: {
     color: "#FFFFFF",
+    fontWeight: "700",
   },
 
   /* ScrollView Principale */
@@ -405,58 +459,75 @@ const styles = StyleSheet.create({
   scrollContent: {
     paddingHorizontal: 18,
     paddingTop: 16,
-    paddingBottom: 90,
+    paddingBottom: 80,
+    gap: 16,
   },
 
-  /* Bannière Sécurité */
-  securityBanner: {
+  /* Banner Erreur */
+  errorBanner: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFF8E1",
+    gap: 10,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 16,
+    padding: 14,
+  },
+  errorBannerText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#B91C1C",
+  },
+
+  /* Sécurité Banner */
+  securityBanner: {
+    backgroundColor: "#FEF3C7",
+    borderRadius: 16,
+    padding: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
     borderWidth: 1,
     borderColor: "#FDE68A",
-    borderRadius: 18,
-    padding: 14,
-    gap: 12,
-    marginBottom: 16,
   },
   securityIconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#FEF3C7",
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
   },
   securityTitle: {
     fontSize: 13,
     fontWeight: "800",
-    color: "#B45309",
+    color: "#92400E",
+    marginBottom: 2,
   },
   securitySub: {
     fontSize: 11,
-    color: "#78350F",
-    marginTop: 2,
+    color: "#B45309",
     lineHeight: 15,
   },
 
-  /* Rangée de Tri */
+  /* Tri & Compteur */
   sortRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 14,
   },
   sortBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
     paddingHorizontal: 12,
-    paddingVertical: 7,
+    paddingVertical: 6,
     borderRadius: 20,
+    backgroundColor: "#E8F5E9",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
   },
   sortBtnActive: {
     backgroundColor: "#1D6B45",
@@ -472,11 +543,49 @@ const styles = StyleSheet.create({
   },
   countText: {
     fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+
+  /* Loading State */
+  loadingContainer: {
+    paddingVertical: 60,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  loadingText: {
+    marginTop: 12,
+    fontSize: 13,
     fontWeight: "600",
     color: "#64748B",
   },
 
-  /* Liste des Cartes GP */
+  /* Empty State */
+  emptyContainer: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginVertical: 12,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 12,
+    marginBottom: 4,
+  },
+  emptySub: {
+    fontSize: 12,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+  },
+
+  /* Cartes GP */
   listingsList: {
     gap: 14,
   },
@@ -492,8 +601,6 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 2,
   },
-
-  /* En-tête de la Trajet Card */
   routeHeader: {
     flexDirection: "row",
     alignItems: "center",
@@ -509,7 +616,7 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   cityName: {
-    fontSize: 14,
+    fontSize: 16,
     fontWeight: "800",
     color: "#0F172A",
   },
@@ -522,7 +629,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#E8F5E9",
   },
   flightBadgeEscale: {
-    backgroundColor: "#FFF8E1",
+    backgroundColor: "#FEF3C7",
   },
   flightBadgeText: {
     fontSize: 11,
@@ -534,8 +641,6 @@ const styles = StyleSheet.create({
   flightBadgeTextEscale: {
     color: "#D4870A",
   },
-
-  /* Rangée Profil GP */
   gpProfileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -543,9 +648,9 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   gpAvatarCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     backgroundColor: "#E8F5E9",
     justifyContent: "center",
     alignItems: "center",
@@ -553,13 +658,13 @@ const styles = StyleSheet.create({
     borderColor: "#A7F3D0",
   },
   gpAvatarInitial: {
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "800",
     color: "#1D6B45",
   },
   gpNameText: {
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 14,
+    fontWeight: "800",
     color: "#0F172A",
   },
   locationSubRow: {
@@ -576,25 +681,28 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 9,
-    paddingVertical: 5,
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
     borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   dateBadgeText: {
     fontSize: 11,
     fontWeight: "700",
-    color: "#0F172A",
+    color: "#1D6B45",
   },
-
-  /* Pied de Carte & Métriques */
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    padding: 10,
-    borderRadius: 14,
     justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
   metricGroup: {
     alignItems: "flex-start",
@@ -603,18 +711,17 @@ const styles = StyleSheet.create({
     fontSize: 10,
     color: "#64748B",
     fontWeight: "600",
+    marginBottom: 2,
   },
   metricValue: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginTop: 2,
-  },
-  priceValue: {
-    fontSize: 12,
+    fontSize: 13,
     fontWeight: "800",
     color: "#1D6B45",
-    marginTop: 2,
+  },
+  priceValue: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
   },
   dividerVertical: {
     width: 1,
@@ -625,7 +732,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 3,
-    marginTop: 2,
   },
   ratingValue: {
     fontSize: 12,
@@ -640,34 +746,38 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 2,
+    paddingLeft: 4,
   },
   actionArrowText: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "800",
     color: "#1D6B45",
   },
 
-  /* Floating Action Button (FAB) */
+  /* FAB Button */
   fabBtn: {
     position: "absolute",
     bottom: 24,
     right: 20,
     backgroundColor: "#1D6B45",
     paddingHorizontal: 18,
-    paddingVertical: 13,
-    borderRadius: 24,
+    paddingVertical: 12,
+    borderRadius: 30,
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    shadowColor: "#1D6B45",
+    gap: 8,
+    shadowColor: "#000000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
     elevation: 6,
+  },
+  fabBtnLogin: {
+    backgroundColor: "#0F172A",
   },
   fabBtnText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "800",
   },
 });

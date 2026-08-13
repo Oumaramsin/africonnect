@@ -214,6 +214,10 @@ export const updateGpRequestStatus = async (
   message?: string
 ) => {
   return await db.$transaction(async (tx) => {
+    const oldRequest = await tx.gpRequest.findUnique({
+      where: { id },
+    });
+
     const request = await tx.gpRequest.update({
       where: { id },
       data: { status },
@@ -226,6 +230,24 @@ export const updateGpRequestStatus = async (
         },
       },
     });
+
+    if (
+      (status === "rejected" || status === "refused" || status === "cancelled") &&
+      oldRequest &&
+      oldRequest.status !== "rejected" &&
+      oldRequest.status !== "refused" &&
+      request.listing_id &&
+      request.weight_kg
+    ) {
+      await tx.gpListing.update({
+        where: { id: request.listing_id },
+        data: {
+          available_kg: {
+            increment: request.weight_kg,
+          },
+        },
+      });
+    }
 
     if (request.sender_id) {
       const isAccepted = status === "accepted";
