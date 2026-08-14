@@ -10,7 +10,7 @@ import {
 import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { getSecureToken } from "../utils/storage";
+import { getSecureToken, deleteSecureToken } from "../utils/storage";
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -59,6 +59,15 @@ export default function BottomNav() {
             },
           }
         );
+
+        if (res.status === 401) {
+          await deleteSecureToken("token");
+          setIsLoggedIn(false);
+          setIsAdmin(false);
+          setUnreadCount(0);
+          return;
+        }
+
         if (res.ok) {
           const data = await res.json();
           setUnreadCount(data.unread_count || 0);

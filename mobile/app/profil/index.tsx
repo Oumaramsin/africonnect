@@ -432,7 +432,7 @@ export default function ProfilScreen() {
             {/* Espace GP */}
             <TouchableOpacity
               style={styles.activityRow}
-              onPress={() => router.push("/services")}
+              onPress={() => router.push("/profil/gp" as any)}
               activeOpacity={0.7}
             >
               <View style={styles.activityLeft}>
@@ -448,6 +448,35 @@ export default function ProfilScreen() {
               </View>
               <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
             </TouchableOpacity>
+
+            {/* Espace Administration (Si rôle Admin) */}
+            {userRole === "admin" && (
+              <>
+                <View style={styles.rowDivider} />
+                <TouchableOpacity
+                  style={styles.activityRow}
+                  onPress={() => router.push("/admin" as any)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.activityLeft}>
+                    <View style={styles.activityIconCircleDark}>
+                      <Ionicons
+                        name="shield-checkmark-outline"
+                        size={18}
+                        color="#FBBF24"
+                      />
+                    </View>
+                    <View>
+                      <Text style={styles.activityText}>Espace Administration</Text>
+                      <Text style={styles.activitySubtext}>
+                        Gestion globale des modules & modération
+                      </Text>
+                    </View>
+                  </View>
+                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                </TouchableOpacity>
+              </>
+            )}
           </View>
 
           {/* CARTE 3: DÉCONNEXION */}
@@ -809,6 +838,14 @@ const styles = StyleSheet.create({
     height: 36,
     borderRadius: 12,
     backgroundColor: "rgba(37, 99, 235, 0.1)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  activityIconCircleDark: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    backgroundColor: "#0F172A",
     justifyContent: "center",
     alignItems: "center",
   },
