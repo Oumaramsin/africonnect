@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -16,6 +16,7 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
+import { apiFetch } from "../../../utils/api";
 
 const CUISINES = [
   "Sénégalais",
@@ -126,48 +127,39 @@ export default function TraiteurDishFormScreen() {
         });
         formData.append("folder", "dishes");
 
-        const uploadRes = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/upload/multiple`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          },
-        );
+        const uploadRes = await apiFetch("/upload/multiple", {
+          method: "POST",
+          body: formData,
+        });
         const uploadData = await uploadRes.json();
         if (!uploadRes.ok) {
           throw new Error(
-            uploadData.error || uploadData.message || "Erreur lors de l'upload des images",
+            uploadData.error ||
+              uploadData.message ||
+              "Erreur lors de l'upload des images",
           );
         }
         uploadedUrls = uploadData.urls || [];
       }
 
       if (!isEditing) {
-        const response = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/traiteur/dishes`,
-          {
-            method: "POST",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              name: name,
-              description: description,
-              price: parseFloat(price),
-              cuisine_type: cuisineType,
-              is_available: isAvailable,
-              image_urls: uploadedUrls,
-            }),
-          },
-        );
+        const response = await apiFetch("/traiteur/dishes", {
+          method: "POST",
+          body: JSON.stringify({
+            name: name,
+            description: description,
+            price: parseFloat(price),
+            cuisine_type: cuisineType,
+            is_available: isAvailable,
+            image_urls: uploadedUrls,
+          }),
+        });
 
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || data.message || "Erreur lors de l'ajout du plat");
+          throw new Error(
+            data.error || data.message || "Erreur lors de l'ajout du plat",
+          );
         }
 
         setSuccess("Plat ajouté avec succès !");
@@ -176,27 +168,24 @@ export default function TraiteurDishFormScreen() {
           router.back();
         }, 1500);
       } else {
-        const response = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/traiteur/dishes/${params.id}`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
-            },
-            body: JSON.stringify({
-              name: name,
-              description: description,
-              price: parseFloat(price),
-              cuisine_type: cuisineType,
-              is_available: isAvailable,
-              image_urls: uploadedUrls.length > 0 ? uploadedUrls : undefined,
-            }),
-          },
-        );
+        const response = await apiFetch(`/traiteur/dishes/${params.id}`, {
+          method: "PATCH",
+          body: JSON.stringify({
+            name: name,
+            description: description,
+            price: parseFloat(price),
+            cuisine_type: cuisineType,
+            is_available: isAvailable,
+            image_urls: uploadedUrls.length > 0 ? uploadedUrls : undefined,
+          }),
+        });
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || data.message || "Erreur lors de la modification du plat");
+          throw new Error(
+            data.error ||
+              data.message ||
+              "Erreur lors de la modification du plat",
+          );
         }
 
         setSuccess("Plat modifié avec succès !");
@@ -220,7 +209,7 @@ export default function TraiteurDishFormScreen() {
         <View style={styles.headerCard}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => router.push('/profil/traiteur')}
+            onPress={() => router.push("/profil/traiteur")}
             activeOpacity={0.7}
           >
             <Ionicons

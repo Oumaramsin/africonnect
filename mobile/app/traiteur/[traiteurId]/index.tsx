@@ -13,22 +13,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken, saveSecureToken } from "../../../utils/storage";
 import { CartItem, Dish, Traiteur } from "../../../utils/types/traiteur";
-
-// Plat modèle pour la démonstration du visuel
-type DishItem = {
-  id: string;
-  name: string;
-  description: string;
-  price: number;
-  cuisine_type: string;
-  image_url?: string;
-};
-
-type Props = {
-  traiteurId: string;
-  traiteurName: string;
-  whatsapp?: string | null;
-};
+import { apiFetch } from "../../../utils/api";
 
 type FormState = {
   date_evenement: string;
@@ -58,7 +43,10 @@ function DishCard({
   let images: string[] = [];
   if (Array.isArray(dish.image_urls) && dish.image_urls.length > 0) {
     images = dish.image_urls;
-  } else if (typeof dish.image_urls === "string" && dish.image_urls.trim().startsWith("[")) {
+  } else if (
+    typeof dish.image_urls === "string" &&
+    dish.image_urls.trim().startsWith("[")
+  ) {
     try {
       const parsed = JSON.parse(dish.image_urls);
       if (Array.isArray(parsed) && parsed.length > 0) images = parsed;
@@ -114,7 +102,9 @@ function DishCard({
                       key={idx}
                       style={[
                         styles.dotItem,
-                        idx === imgIndex ? styles.dotActive : styles.dotInactive,
+                        idx === imgIndex
+                          ? styles.dotActive
+                          : styles.dotInactive,
                       ]}
                     />
                   ))}
@@ -206,7 +196,7 @@ export default function TraiteurDetailScreen() {
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
   const totalPrice = cart.reduce(
     (sum, i) => sum + Number(i.dish.price) * i.quantity,
-    0
+    0,
   );
 
   const [open, setOpen] = useState(false);
@@ -262,16 +252,8 @@ export default function TraiteurDetailScreen() {
     async function fetchTraiteurs() {
       setLoading(true);
       try {
-        const response = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/traiteur/${traiteurId}`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-          },
-        );
+        const response = await apiFetch(`/traiteur/${traiteurId}`);
         const data = await response.json();
-        console.log(data);
         setTraiteur(data.data.traiteur);
         setLoading(false);
       } catch (error) {
@@ -289,14 +271,9 @@ export default function TraiteurDetailScreen() {
       setIsLoggedIn(false);
       return;
     }
-    const response = await fetch(
-      `${process.env.EXPO_PUBLIC_API_URL}/traiteur`,
-      {
+    try {
+      const response = await apiFetch("/traiteur", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           traiteur_id: traiteurId,
           date_evenement: form.date_evenement,
@@ -305,16 +282,19 @@ export default function TraiteurDetailScreen() {
           type_evenement: form.type_evenement,
           notes: form.notes,
         }),
-      },
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      setError(data.message || "Erreur lors de la commande du traiteur");
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || "Erreur lors de la commande du traiteur");
+        setLoading(false);
+        return;
+      }
+      setSuccess(true);
+    } catch (err: any) {
+      setError("Impossible de contacter le serveur.");
+    } finally {
       setLoading(false);
-      return;
     }
-    setSuccess(true);
-    setLoading(false);
   };
 
   const addToCart = (dish: Dish) => {
@@ -349,8 +329,8 @@ export default function TraiteurDetailScreen() {
     });
   };
 
-    const goToCheckout = async () => {
-     await saveSecureToken("dabari_cart", JSON.stringify(cart));
+  const goToCheckout = async () => {
+    await saveSecureToken("dabari_cart", JSON.stringify(cart));
     router.push("/traiteur/commander");
   };
   if (loading) {
@@ -389,155 +369,169 @@ export default function TraiteurDetailScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-        {/* Top Header Card (Gradient Vert Vert & Or) */}
-        <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.push("/traiteur")}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-            <Text style={styles.backBtnText}>Retour</Text>
-          </TouchableOpacity>
+          {/* Top Header Card (Gradient Vert Vert & Or) */}
+          <View style={styles.headerCard}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.push("/traiteur")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+              <Text style={styles.backBtnText}>Retour</Text>
+            </TouchableOpacity>
 
-          <View style={styles.profileRow}>
-            {/* Traiteur Avatar */}
-            <View style={styles.avatarContainer}>
-              <Image
-                source={{ uri: traiteur.image_url }}
-                style={styles.avatarImage}
-                resizeMode="cover"
-              />
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.traiteurTitle}>{traiteur.name}</Text>
-              <Text style={styles.traiteurBio} numberOfLines={2}>
-                {traiteur.bio}
-              </Text>
-            </View>
-
-            {/* Rating Badge */}
-            <View style={styles.ratingBox}>
-              <Ionicons
-                name="star"
-                size={16}
-                color={
-                  Number(traiteur.rating || 0) > 0
-                    ? "#FBBF24"
-                    : "rgba(255, 255, 255, 0.4)"
-                }
-              />
-              {Number(traiteur.rating || 0) > 0 ? (
-                <>
-                  <Text style={styles.ratingScore}>
-                    {Number(traiteur.rating).toFixed(1)}
-                  </Text>
-                  <Text style={styles.ratingReviews}>Avis</Text>
-                </>
-              ) : (
-                <Text style={styles.noRatingText}>Aucun avis</Text>
-              )}
-            </View>
-          </View>
-
-          {/* Zones de livraison */}
-          <View style={styles.zonesRow}>
-            {traiteur.delivery_zones.map((z) => (
-              <View key={z} style={styles.zonePill}>
-                <Ionicons name="location" size={12} color="#FFFFFF" />
-                <Text style={styles.zoneText}>{z}</Text>
+            <View style={styles.profileRow}>
+              {/* Traiteur Avatar */}
+              <View style={styles.avatarContainer}>
+                <Image
+                  source={{ uri: traiteur.image_url || undefined }}
+                  style={styles.avatarImage}
+                  resizeMode="cover"
+                />
               </View>
-            ))}
-          </View>
-        </View>
 
-        {/* Section Demande de Devis sur-mesure */}
-        <View style={styles.devisCardContainer}>
-          <TouchableOpacity
-            style={[styles.devisCard, !isLoggedIn && styles.devisCardDisabled]}
-            activeOpacity={isLoggedIn ? 0.85 : 0.95}
-            onPress={() => {
-              if (!isLoggedIn) {
-                router.push("/(auth)/login");
-              } else {
-                router.push(`/traiteur/${traiteurId}/devis`);
-              }
-            }}
-          >
-            <View style={[styles.devisIconCircle, !isLoggedIn && styles.devisIconCircleDisabled]}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.traiteurTitle}>{traiteur.name}</Text>
+                <Text style={styles.traiteurBio} numberOfLines={2}>
+                  {traiteur.bio}
+                </Text>
+              </View>
+
+              {/* Rating Badge */}
+              <View style={styles.ratingBox}>
+                <Ionicons
+                  name="star"
+                  size={16}
+                  color={
+                    Number(traiteur.rating || 0) > 0
+                      ? "#FBBF24"
+                      : "rgba(255, 255, 255, 0.4)"
+                  }
+                />
+                {Number(traiteur.rating || 0) > 0 ? (
+                  <>
+                    <Text style={styles.ratingScore}>
+                      {Number(traiteur.rating).toFixed(1)}
+                    </Text>
+                    <Text style={styles.ratingReviews}>Avis</Text>
+                  </>
+                ) : (
+                  <Text style={styles.noRatingText}>Aucun avis</Text>
+                )}
+              </View>
+            </View>
+
+            {/* Zones de livraison */}
+            <View style={styles.zonesRow}>
+              {traiteur.delivery_zones.map((z) => (
+                <View key={z} style={styles.zonePill}>
+                  <Ionicons name="location" size={12} color="#FFFFFF" />
+                  <Text style={styles.zoneText}>{z}</Text>
+                </View>
+              ))}
+            </View>
+          </View>
+
+          {/* Section Demande de Devis sur-mesure */}
+          <View style={styles.devisCardContainer}>
+            <TouchableOpacity
+              style={[
+                styles.devisCard,
+                !isLoggedIn && styles.devisCardDisabled,
+              ]}
+              activeOpacity={isLoggedIn ? 0.85 : 0.95}
+              onPress={() => {
+                if (!isLoggedIn) {
+                  router.push("/(auth)/login");
+                } else {
+                  router.push(`/traiteur/${traiteurId}/devis`);
+                }
+              }}
+            >
+              <View
+                style={[
+                  styles.devisIconCircle,
+                  !isLoggedIn && styles.devisIconCircleDisabled,
+                ]}
+              >
+                <Ionicons
+                  name={isLoggedIn ? "calendar" : "lock-closed"}
+                  size={22}
+                  color={isLoggedIn ? "#1D6B45" : "#64748B"}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text
+                  style={[
+                    styles.devisTitle,
+                    !isLoggedIn && { color: "#64748B" },
+                  ]}
+                >
+                  Demander un devis sur-mesure
+                </Text>
+                <Text style={styles.devisSubtitle}>
+                  {isLoggedIn
+                    ? "Mariages, baptêmes, anniversaires & grands repas de famille."
+                    : "Connectez-vous pour demander un devis au traiteur."}
+                </Text>
+              </View>
               <Ionicons
-                name={isLoggedIn ? "calendar" : "lock-closed"}
-                size={22}
+                name={isLoggedIn ? "chevron-forward" : "log-in-outline"}
+                size={18}
                 color={isLoggedIn ? "#1D6B45" : "#64748B"}
               />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.devisTitle, !isLoggedIn && { color: "#64748B" }]}>
-                Demander un devis sur-mesure
-              </Text>
-              <Text style={styles.devisSubtitle}>
-                {isLoggedIn
-                  ? "Mariages, baptêmes, anniversaires & grands repas de famille."
-                  : "Connectez-vous pour demander un devis au traiteur."}
-              </Text>
-            </View>
-            <Ionicons
-              name={isLoggedIn ? "chevron-forward" : "log-in-outline"}
-              size={18}
-              color={isLoggedIn ? "#1D6B45" : "#64748B"}
-            />
-          </TouchableOpacity>
-        </View>
+            </TouchableOpacity>
+          </View>
 
-        {/* Header Menu Title */}
-        <View style={styles.menuHeaderRow}>
-          <Text style={styles.menuTitle}>
-            Menu · {traiteur.dishes?.filter((d) => d.is_available).length || 0} plats
-          </Text>
-        </View>
-
-        {/* Liste des Plats */}
-        <View style={styles.dishesList}>
-          {traiteur.dishes?.map((dish: any) => (
-            <DishCard
-              key={dish.id}
-              dish={dish}
-              qty={getQty(dish.id)}
-              isLoggedIn={isLoggedIn}
-              onAdd={() => addToCart(dish)}
-              onRemove={() => removeFromCart(dish.id)}
-              onRequireLogin={() => router.push("/(auth)/login")}
-            />
-          ))}
-        </View>
-      </ScrollView>
-
-      {/* Bouton Flottant "Voir mon panier" */}
-      {cart.length > 0 && (
-        <View style={styles.floatingCartBar}>
-          <TouchableOpacity
-            style={styles.floatingCartBtn}
-            onPress={() => {
-              saveSecureToken("dabari_cart", JSON.stringify(cart));
-              goToCheckout();
-            }}
-            activeOpacity={0.9}
-          >
-            <View style={styles.cartBadgeCount}>
-              <Text style={styles.cartBadgeText}>{totalItems}</Text>
-            </View>
-
-            <Text style={styles.floatingCartTitle}>Voir mon panier</Text>
-
-            <Text style={styles.floatingCartPrice}>
-              {totalPrice.toFixed(2)} €
+          {/* Header Menu Title */}
+          <View style={styles.menuHeaderRow}>
+            <Text style={styles.menuTitle}>
+              Menu ·{" "}
+              {traiteur.dishes?.filter((d) => d.is_available).length || 0} plats
             </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-    </SafeAreaView>
-  </View>
+          </View>
+
+          {/* Liste des Plats */}
+          <View style={styles.dishesList}>
+            {traiteur.dishes?.map((dish: any) => (
+              <DishCard
+                key={dish.id}
+                dish={dish}
+                qty={getQty(dish.id)}
+                isLoggedIn={isLoggedIn}
+                onAdd={() => addToCart(dish)}
+                onRemove={() => removeFromCart(dish.id)}
+                onRequireLogin={() => router.push("/(auth)/login")}
+              />
+            ))}
+          </View>
+        </ScrollView>
+
+        {/* Bouton Flottant "Voir mon panier" */}
+        {cart.length > 0 && (
+          <View style={styles.floatingCartBar}>
+            <TouchableOpacity
+              style={styles.floatingCartBtn}
+              onPress={() => {
+                saveSecureToken("dabari_cart", JSON.stringify(cart));
+                goToCheckout();
+              }}
+              activeOpacity={0.9}
+            >
+              <View style={styles.cartBadgeCount}>
+                <Text style={styles.cartBadgeText}>{totalItems}</Text>
+              </View>
+
+              <Text style={styles.floatingCartTitle}>Voir mon panier</Text>
+
+              <Text style={styles.floatingCartPrice}>
+                {totalPrice.toFixed(2)} €
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 

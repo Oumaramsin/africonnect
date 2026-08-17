@@ -13,6 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { saveSecureToken } from "../../utils/storage";
+import { apiFetch } from "../../utils/api";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -38,13 +39,9 @@ export default function LoginScreen() {
       return;
     }
     try {
-      const baseUrl =
-        process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001/api";
-      const response = await fetch(`${baseUrl}/auth/login`, {
+      const response = await apiFetch("/auth/login", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        skipAuth: true,
         body: JSON.stringify({
           email: email || phone,
           password: password,
@@ -58,7 +55,6 @@ export default function LoginScreen() {
       await saveSecureToken("token", data.token);
       router.replace("/accueil");
     } catch (err: any) {
-      console.error("Erreur fetch détaillée:", err);
       setError(
         `Impossible de contacter le serveur (${err.message || "Erreur réseau"}).`,
       );
@@ -79,7 +75,7 @@ export default function LoginScreen() {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => router.push('/')}
+              onPress={() => router.push("/")}
               activeOpacity={0.7}
             >
               <Ionicons name="arrow-back" size={20} color="#111827" />
@@ -203,11 +199,21 @@ export default function LoginScreen() {
                     />
                     <TextInput
                       style={styles.input}
-                      placeholder="+33 6 12 34 56 78"
+                      placeholder="+33612345678"
                       placeholderTextColor="#9CA3AF"
                       value={phone}
-                      onChangeText={setPhone}
+                      onChangeText={(val) => {
+                        let cleaned = val.replace(/[^0-9+]/g, "");
+                        if (cleaned.startsWith("+")) {
+                          cleaned = "+" + cleaned.slice(1).replace(/\+/g, "");
+                        } else {
+                          cleaned = cleaned.replace(/\+/g, "");
+                        }
+                        const maxLen = cleaned.startsWith("+") ? 16 : 15;
+                        setPhone(cleaned.slice(0, maxLen));
+                      }}
                       keyboardType="phone-pad"
+                      maxLength={16}
                     />
                   </View>
                 </View>
@@ -264,7 +270,9 @@ export default function LoginScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons name="person-outline" size={18} color="#1D6B45" />
-                <Text style={styles.guestBtnText}>Continuer en tant qu'invité</Text>
+                <Text style={styles.guestBtnText}>
+                  Continuer en tant qu'invité
+                </Text>
               </TouchableOpacity>
             </View>
 

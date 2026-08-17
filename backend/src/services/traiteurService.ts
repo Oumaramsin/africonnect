@@ -230,6 +230,13 @@ export const createTraiteurProfile = async (
   data: CreateTraiteurProfileInput
 ) => {
   return await db.$transaction(async (tx) => {
+    const existing = await tx.traiteur.findFirst({
+      where: { user_id: userId },
+    });
+    if (existing) {
+      throw new Error("Vous possédez déjà un profil traiteur actif.");
+    }
+
     const traiteur = await tx.traiteur.create({
       data: {
         user_id: userId,

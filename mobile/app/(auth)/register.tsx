@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { apiFetch } from "../../utils/api";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -49,18 +50,14 @@ export default function RegisterScreen() {
       return;
     }
     try {
-      const baseUrl =
-        process.env.EXPO_PUBLIC_API_URL || "http://localhost:3001/api";
       const authEmail =
         method === "email"
           ? email
           : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@dabari.app`;
 
-      const response = await fetch(`${baseUrl}/auth/register`, {
+      const response = await apiFetch("/auth/register", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
+        skipAuth: true,
         body: JSON.stringify({
           firstname: firstName.trim(),
           lastname: lastName.trim(),
@@ -75,10 +72,8 @@ export default function RegisterScreen() {
         setError(data.message || "Erreur lors de l'inscription");
         return;
       }
-      console.log("Inscription réussie:", data);
       router.replace("/login");
     } catch (err: any) {
-      console.error("Erreur fetch détaillée:", err);
       setError(
         `Impossible de contacter le serveur (${err.message || "Erreur réseau"}).`,
       );
@@ -99,7 +94,7 @@ export default function RegisterScreen() {
           <View style={styles.header}>
             <TouchableOpacity
               style={styles.backBtn}
-              onPress={() => router.push('/')}
+              onPress={() => router.push("/")}
               activeOpacity={0.7}
             >
               <Ionicons name="arrow-back" size={20} color="#111827" />
@@ -268,8 +263,18 @@ export default function RegisterScreen() {
                       placeholder="+33612345678"
                       placeholderTextColor="#9CA3AF"
                       value={phone}
-                      onChangeText={setPhone}
+                      onChangeText={(val) => {
+                        let cleaned = val.replace(/[^0-9+]/g, "");
+                        if (cleaned.startsWith("+")) {
+                          cleaned = "+" + cleaned.slice(1).replace(/\+/g, "");
+                        } else {
+                          cleaned = cleaned.replace(/\+/g, "");
+                        }
+                        const maxLen = cleaned.startsWith("+") ? 16 : 15;
+                        setPhone(cleaned.slice(0, maxLen));
+                      }}
                       keyboardType="phone-pad"
+                      maxLength={16}
                     />
                   </View>
                   <Text style={styles.helperText}>

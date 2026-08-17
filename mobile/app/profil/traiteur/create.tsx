@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,10 +12,11 @@ import {
   Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
+import { apiFetch } from "../../../utils/api";
 
 const CUISINES_PROPOSITIONS = [
   "Ivoirienne",
@@ -42,6 +43,7 @@ const ZONES_PROPOSITIONS = [
 export default function CreateTraiteurScreen() {
   const router = useRouter();
 
+  const [checking, setChecking] = useState(true);
   const [name, setName] = useState("");
   const [bio, setBio] = useState("");
   const [whatsapp, setWhatsapp] = useState("");
@@ -55,6 +57,33 @@ export default function CreateTraiteurScreen() {
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useFocusEffect(
+    useCallback(() => {
+      async function checkExistingTraiteur() {
+        const token = await getSecureToken("token");
+        if (!token) {
+          router.replace("/login");
+          return;
+        }
+        try {
+          const res = await apiFetch("/traiteur/me");
+          if (res.ok) {
+            const data = await res.json();
+            if (data.isTraiteur && data.traiteur) {
+              router.replace("/profil/traiteur" as any);
+              return;
+            }
+          }
+        } catch (e) {
+          console.warn("Vérification statut traiteur échouée :", e);
+        } finally {
+          setChecking(false);
+        }
+      }
+      checkExistingTraiteur();
+    }, []),
+  );
 
   const toggleCuisine = (cuisine: string) => {
     setSelectedCuisines((prev) =>
@@ -74,7 +103,10 @@ export default function CreateTraiteurScreen() {
     const permissionResult =
       await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!permissionResult.granted) {
-      Alert.alert("Permission refusée", "Permission d'accéder à la galerie refusée !");
+      Alert.alert(
+        "Permission refusée",
+        "Permission d'accéder à la galerie refusée !",
+      );
       return;
     }
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -88,26 +120,23 @@ export default function CreateTraiteurScreen() {
     }
   };
 
-  const uploadImage = async (token: string, baseUrl: string) => {
+  const uploadImage = async (token: string): Promise<string | undefined> => {
     if (!imageUri) return undefined;
     setUploading(true);
     try {
-      const formData = new FormData();
-      const filename = imageUri.split("/").pop() || "photo.jpg";
+      const filename = imageUri.split("/").pop() || "image.jpg";
       const match = /\.(\w+)$/.exec(filename);
       const type = match ? `image/${match[1]}` : `image/jpeg`;
 
+      const formData = new FormData();
       formData.append("file", {
         uri: imageUri,
         name: filename,
         type: type,
       } as any);
 
-      const response = await fetch(`${baseUrl}/upload/single`, {
+      const response = await apiFetch("/upload/single", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
         body: formData,
       });
 
@@ -144,20 +173,13 @@ export default function CreateTraiteurScreen() {
     }
 
     try {
-      const baseUrl =
-        process.env.EXPO_PUBLIC_API_URL || "https://dabari-api.up.railway.app/api";
-
       let uploadedUrl: string | undefined = undefined;
       if (imageUri) {
-        uploadedUrl = await uploadImage(token, baseUrl);
+        uploadedUrl = await uploadImage(token);
       }
 
-      const response = await fetch(`${baseUrl}/traiteur/setup`, {
+      const response = await apiFetch("/traiteur/setup", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           name: name.trim(),
           bio: bio.trim(),
@@ -179,7 +201,12 @@ export default function CreateTraiteurScreen() {
       Alert.alert(
         "Félicitations ! 🎉",
         "Votre Espace Traiteur a été créé avec succès !",
-        [{ text: "Accéder à mon espace", onPress: () => router.replace("/profil/traiteur") }],
+        [
+          {
+            text: "Accéder à mon espace",
+            onPress: () => router.replace("/profil/traiteur"),
+          },
+        ],
       );
     } catch (err: any) {
       console.error(err);
@@ -188,6 +215,15 @@ export default function CreateTraiteurScreen() {
       setLoading(false);
     }
   };
+
+  if (checking) {
+    return (
+      <View style={[styles.topGreenWrapper, styles.centerLoader]}>
+        <StatusBar barStyle="light-content" />
+        <ActivityIndicator size="large" color="#FFFFFF" />
+      </View>
+    );
+  }
 
   return (
     <View style={styles.topGreenWrapper}>
@@ -229,9 +265,12 @@ export default function CreateTraiteurScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.formCard}>
-            <Text style={styles.cardHeaderTitle}>Créer mon Espace Traiteur</Text>
+            <Text style={styles.cardHeaderTitle}>
+              Créer mon Espace Traiteur
+            </Text>
             <Text style={styles.cardHeaderSub}>
-              Remplissez les informations principales de votre activité pour commencer.
+              Remplissez les informations principales de votre activité pour
+              commencer.
             </Text>
 
             {error && (
@@ -243,7 +282,9 @@ export default function CreateTraiteurScreen() {
 
             {/* Photo de profil Traiteur */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>PHOTO DE PROFIL / LOGO ACTIVITÉ</Text>
+              <Text style={styles.fieldLabel}>
+                PHOTO DE PROFIL / LOGO ACTIVITÉ
+              </Text>
               <View style={styles.avatarUploadRow}>
                 <TouchableOpacity
                   style={styles.avatarUploadCircle}
@@ -257,7 +298,11 @@ export default function CreateTraiteurScreen() {
                     />
                   ) : (
                     <View style={styles.avatarPlaceholderCircle}>
-                      <Ionicons name="camera-outline" size={26} color="#1D6B45" />
+                      <Ionicons
+                        name="camera-outline"
+                        size={26}
+                        color="#1D6B45"
+                      />
                     </View>
                   )}
                   <View style={styles.cameraBadgeCircle}>
@@ -267,7 +312,9 @@ export default function CreateTraiteurScreen() {
 
                 <View style={styles.avatarUploadInfo}>
                   <Text style={styles.avatarUploadTitle}>
-                    {imageUri ? "Photo sélectionnée" : "Ajouter une photo de profil"}
+                    {imageUri
+                      ? "Photo sélectionnée"
+                      : "Ajouter une photo de profil"}
                   </Text>
                   <Text style={styles.avatarUploadSub}>
                     Formats JPG, PNG. Une photo attire plus de clients !
@@ -322,15 +369,14 @@ export default function CreateTraiteurScreen() {
                   return (
                     <TouchableOpacity
                       key={cuisine}
-                      style={[
-                        styles.chipPill,
-                        active && styles.chipPillActive,
-                      ]}
+                      style={[styles.chipPill, active && styles.chipPillActive]}
                       onPress={() => toggleCuisine(cuisine)}
                       activeOpacity={0.8}
                     >
                       <Ionicons
-                        name={active ? "checkmark-circle" : "add-circle-outline"}
+                        name={
+                          active ? "checkmark-circle" : "add-circle-outline"
+                        }
                         size={14}
                         color={active ? "#FFFFFF" : "#64748B"}
                       />
@@ -425,6 +471,10 @@ const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
     backgroundColor: "#165034",
+  },
+  centerLoader: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   container: {
     flex: 1,

@@ -16,6 +16,7 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
+import { apiFetch } from "../../../utils/api";
 
 const CUISINES = [
   "sénégalais",
@@ -38,7 +39,6 @@ const ZONES = [
   "Marseille",
 ];
 
-
 export default function EditTraiteurProfileScreen() {
   const router = useRouter();
   const params = useLocalSearchParams();
@@ -52,7 +52,9 @@ export default function EditTraiteurProfileScreen() {
     params.zones ? JSON.parse(params.zones as string) : [],
   );
   const [whatsapp, setWhatsapp] = useState((params.whatsapp as string) || "");
-  const [imageUri, setImageUri] = useState<string | null>((params.image_url as string) || null);
+  const [imageUri, setImageUri] = useState<string | null>(
+    (params.image_url as string) || null,
+  );
 
   const [saving, setSaving] = useState(false);
   const [confirmation, setConfirmAction] = useState(false);
@@ -112,18 +114,11 @@ export default function EditTraiteurProfileScreen() {
         name: filename,
         type: type,
       } as any);
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/upload/single`,
-        {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-          body: formData,
-        },
-      );
+      const response = await apiFetch("/upload/single", {
+        method: "POST",
+        body: formData,
+      });
       const data = await response.json();
-      console.log("URL de la photo enregistrée sur le serveur :", data.url);
       return data.url;
     } catch (error) {
       console.error("Erreur upload:", error);
@@ -146,25 +141,17 @@ export default function EditTraiteurProfileScreen() {
         }
         finalImageUrl = uploadedUrl;
       }
-      const token = await getSecureToken("token");
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/traiteur/profile`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            name,
-            bio,
-            cuisine_type: selectedCuisines,
-            delivery_zones: selectedZones,
-            whatsapp,
-            image_url: finalImageUrl,
-          }),
-        },
-      );
+      const response = await apiFetch("/traiteur/profile", {
+        method: "PATCH",
+        body: JSON.stringify({
+          name,
+          bio,
+          cuisine_type: selectedCuisines,
+          delivery_zones: selectedZones,
+          whatsapp,
+          image_url: finalImageUrl,
+        }),
+      });
       const data = await response.json();
       if (!response.ok) {
         setError(data.message || "Erreur lors de la sauvegarde du profil");

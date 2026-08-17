@@ -14,6 +14,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Platform } from "react-native";
 import { CartItem } from "../../utils/types/traiteur";
 import { deleteSecureToken, getSecureToken } from "../../utils/storage";
+import { apiFetch } from "../../utils/api";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -28,7 +29,9 @@ export default function CommanderScreen() {
   const router = useRouter();
 
   // États locaux
-  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">("delivery");
+  const [deliveryType, setDeliveryType] = useState<"delivery" | "pickup">(
+    "delivery",
+  );
   const [deliveryAddress, setDeliveryAddress] = useState("");
   const [deliveryDate, setDeliveryDate] = useState("");
   const [deliveryTime, setDeliveryTime] = useState("");
@@ -96,7 +99,8 @@ export default function CommanderScreen() {
   const isFormValid =
     deliveryDate.trim() !== "" &&
     deliveryTime.trim() !== "" &&
-    (deliveryType === "pickup" || (deliveryType === "delivery" && deliveryAddress.trim() !== ""));
+    (deliveryType === "pickup" ||
+      (deliveryType === "delivery" && deliveryAddress.trim() !== ""));
 
   useEffect(() => {
     const load = async () => {
@@ -150,28 +154,21 @@ export default function CommanderScreen() {
         ? `${deliveryDate}T${deliveryTime}:00`
         : `${deliveryDate}T12:00:00`;
 
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/traiteur/order`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            traiteur_id: cart[0].traiteur_id,
-            delivery_address: deliveryAddress || "Retrait sur place",
-            delivery_date: formattedDate,
-            delivery_type: deliveryType,
-            notes: notes,
-            items: cart.map((item) => ({
-              dish_id: item.dish.id,
-              quantity: item.quantity,
-              unit_price: Number(item.dish.price),
-            })),
-          }),
-        },
-      );
+      const response = await apiFetch("/traiteur/order", {
+        method: "POST",
+        body: JSON.stringify({
+          traiteur_id: cart[0].traiteur_id,
+          delivery_address: deliveryAddress || "Retrait sur place",
+          delivery_date: formattedDate,
+          delivery_type: deliveryType,
+          notes: notes,
+          items: cart.map((item) => ({
+            dish_id: item.dish.id,
+            quantity: item.quantity,
+            unit_price: Number(item.dish.price),
+          })),
+        }),
+      });
       const dataR = await response.json();
       if (!response.ok) {
         setError(dataR.message || "Erreur dans la commande du panier");
@@ -213,7 +210,8 @@ export default function CommanderScreen() {
           </View>
           <Text style={styles.successTitle}>Commande confirmée !</Text>
           <Text style={styles.successDesc}>
-            Le traiteur a bien reçu votre commande et va la préparer très rapidement.
+            Le traiteur a bien reçu votre commande et va la préparer très
+            rapidement.
           </Text>
 
           <TouchableOpacity
@@ -244,7 +242,9 @@ export default function CommanderScreen() {
 
           <Text style={styles.headerTitle}>Ma commande</Text>
           <Text style={styles.headerSubtitle}>
-            {cart[0]?.traiteur_name ? `Chez ${cart[0].traiteur_name}` : "Commande Traiteur"}
+            {cart[0]?.traiteur_name
+              ? `Chez ${cart[0].traiteur_name}`
+              : "Commande Traiteur"}
           </Text>
         </View>
 
@@ -253,279 +253,291 @@ export default function CommanderScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-        {/* 1. Récapitulatif du Panier */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.cardTitle}>
-            Récapitulatif · {totalItems} article{totalItems > 1 ? "s" : ""}
-          </Text>
-
-          <View style={styles.cartItemsList}>
-            {cart.map((item) => (
-              <View key={item.dish.id} style={styles.cartItemRow}>
-                <View style={styles.cartItemLeft}>
-                  <View style={styles.qtyBadge}>
-                    <Text style={styles.qtyBadgeText}>{item.quantity}</Text>
-                  </View>
-                  <Text style={styles.cartItemName}>{item.dish.name}</Text>
-                </View>
-                <Text style={styles.cartItemPrice}>
-                  {(item.dish.price * item.quantity).toFixed(2)} €
-                </Text>
-              </View>
-            ))}
-          </View>
-
-          <View style={styles.totalRow}>
-            <Text style={styles.totalLabel}>Total</Text>
-            <Text style={styles.totalPrice}>{totalPrice.toFixed(2)} €</Text>
-          </View>
-        </View>
-
-        {/* 2. Mode de Réception */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.cardTitle}>Mode de réception</Text>
-
-          <View style={styles.deliveryTypeGrid}>
-            <TouchableOpacity
-              style={[
-                styles.deliveryOptionCard,
-                deliveryType === "delivery" && styles.deliveryOptionActive,
-              ]}
-              onPress={() => handleSelectDeliveryType("delivery")}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="car-outline"
-                size={26}
-                color={deliveryType === "delivery" ? "#1D6B45" : "#9CA3AF"}
-              />
-              <Text
-                style={[
-                  styles.deliveryOptionText,
-                  deliveryType === "delivery" &&
-                    styles.deliveryOptionTextActive,
-                ]}
-              >
-                Livraison
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.deliveryOptionCard,
-                deliveryType === "pickup" && styles.deliveryOptionActive,
-              ]}
-              onPress={() => handleSelectDeliveryType("pickup")}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="home-outline"
-                size={26}
-                color={deliveryType === "pickup" ? "#1D6B45" : "#9CA3AF"}
-              />
-              <Text
-                style={[
-                  styles.deliveryOptionText,
-                  deliveryType === "pickup" && styles.deliveryOptionTextActive,
-                ]}
-              >
-                Retrait sur place
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-
-        {/* 3. Adresse de Livraison (Si Livraison) */}
-        {deliveryType === "delivery" && (
+          {/* 1. Récapitulatif du Panier */}
           <View style={styles.sectionCard}>
-            <Text style={styles.cardTitle}>Adresse de livraison</Text>
-            <TextInput
-              style={styles.textInput}
-              placeholder="12 rue de la Paix, 75001 Paris"
-              placeholderTextColor="#9CA3AF"
-              value={deliveryAddress}
-              onChangeText={setDeliveryAddress}
-            />
-          </View>
-        )}
-
-        {/* 4. Date et Heure souhaitées (Calendrier & Horloge) */}
-        <View style={styles.sectionCard}>
-          <Text style={styles.cardTitle}>Date et heure souhaitées</Text>
-
-          <View style={styles.dateTimeGrid}>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Date</Text>
-              {Platform.OS === "web" ? (
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="AAAA-MM-JJ"
-                  placeholderTextColor="#9CA3AF"
-                  value={deliveryDate}
-                  onChangeText={(val) => {
-                    setDeliveryDate(val);
-                    if (val && val.length === 10) {
-                      const [y, m, d] = val.split("-").map(Number);
-                      if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
-                        const updated = new Date(selectedDate);
-                        updated.setFullYear(y, m - 1, d);
-                        setSelectedDate(updated);
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <TouchableOpacity
-                  style={styles.pickerBtn}
-                  onPress={() => setShowDatePicker(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
-                  <Text style={styles.pickerBtnText}>
-                    {selectedDate.toLocaleDateString("fr-FR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      year: "numeric",
-                    })}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-
-            <View style={{ flex: 1 }}>
-              <Text style={styles.inputLabel}>Heure</Text>
-              {Platform.OS === "web" ? (
-                <TextInput
-                  style={styles.textInput}
-                  placeholder="12:30"
-                  placeholderTextColor="#9CA3AF"
-                  value={deliveryTime}
-                  onChangeText={(val) => {
-                    setDeliveryTime(val);
-                    if (val && val.includes(":")) {
-                      const [h, m] = val.split(":").map(Number);
-                      if (!isNaN(h) && !isNaN(m)) {
-                        const updated = new Date(selectedDate);
-                        updated.setHours(h, m);
-                        setSelectedDate(updated);
-                      }
-                    }
-                  }}
-                />
-              ) : (
-                <TouchableOpacity
-                  style={styles.pickerBtn}
-                  onPress={() => setShowTimePicker(true)}
-                  activeOpacity={0.8}
-                >
-                  <Ionicons name="time-outline" size={18} color="#1D6B45" />
-                  <Text style={styles.pickerBtnText}>
-                    {selectedDate.toLocaleTimeString("fr-FR", {
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}
-                  </Text>
-                </TouchableOpacity>
-              )}
-            </View>
-          </View>
-
-          {Platform.OS !== "web" && DateTimePicker && showDatePicker && (
-            <DateTimePicker
-              value={selectedDate}
-              mode="date"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              minimumDate={new Date()}
-              onChange={handleDateChange}
-            />
-          )}
-
-          {Platform.OS !== "web" && DateTimePicker && showTimePicker && (
-            <DateTimePicker
-              value={selectedDate}
-              mode="time"
-              display={Platform.OS === "ios" ? "spinner" : "default"}
-              onChange={handleTimeChange}
-            />
-          )}
-        </View>
-
-        {/* 5. Notes pour le traiteur */}
-        <View style={styles.sectionCard}>
-          <View style={{ flexDirection: "row", alignItems: "center" }}>
-            <Text style={styles.cardTitle}>Notes pour le traiteur</Text>
-            <Text style={styles.optionalTag}> (optionnel)</Text>
-          </View>
-          <TextInput
-            style={[styles.textInput, styles.textAreaInput]}
-            placeholder="Allergies, préférences, instructions particulières..."
-            placeholderTextColor="#9CA3AF"
-            multiline
-            numberOfLines={3}
-            value={notes}
-            onChangeText={setNotes}
-          />
-        </View>
-
-        {/* Alert Error Box (si une erreur survient ou champ manquant) */}
-        {error && (
-          <View style={styles.errorBox}>
-            <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* Bouton de Confirmation de la Commande */}
-        <TouchableOpacity
-          style={[styles.submitBtn, (!isFormValid || loading) && styles.submitBtnDisabled]}
-          activeOpacity={0.85}
-          onPress={handlePreSubmit}
-          disabled={loading}
-        >
-          <Text style={styles.submitBtnText}>
-            {loading ? "Envoi de la commande..." : "Confirmer la commande"}
-          </Text>
-          <Text style={styles.submitBtnPrice}>{totalPrice.toFixed(2)} €</Text>
-        </TouchableOpacity>
-      </ScrollView>
-
-      {/* Pop-up (Modale) de confirmation */}
-      {showConfirmModal && (
-        <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Confirmer la commande</Text>
-            <Text style={styles.modalDesc}>
-              Êtes-vous sûr(e) de vouloir confirmer cette commande d'un montant total de{" "}
-              <Text style={styles.modalPriceHighlight}>{totalPrice.toFixed(2)} €</Text> ?
+            <Text style={styles.cardTitle}>
+              Récapitulatif · {totalItems} article{totalItems > 1 ? "s" : ""}
             </Text>
 
-            <View style={styles.modalButtonsRow}>
+            <View style={styles.cartItemsList}>
+              {cart.map((item) => (
+                <View key={item.dish.id} style={styles.cartItemRow}>
+                  <View style={styles.cartItemLeft}>
+                    <View style={styles.qtyBadge}>
+                      <Text style={styles.qtyBadgeText}>{item.quantity}</Text>
+                    </View>
+                    <Text style={styles.cartItemName}>{item.dish.name}</Text>
+                  </View>
+                  <Text style={styles.cartItemPrice}>
+                    {(item.dish.price * item.quantity).toFixed(2)} €
+                  </Text>
+                </View>
+              ))}
+            </View>
+
+            <View style={styles.totalRow}>
+              <Text style={styles.totalLabel}>Total</Text>
+              <Text style={styles.totalPrice}>{totalPrice.toFixed(2)} €</Text>
+            </View>
+          </View>
+
+          {/* 2. Mode de Réception */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.cardTitle}>Mode de réception</Text>
+
+            <View style={styles.deliveryTypeGrid}>
               <TouchableOpacity
-                style={styles.modalCancelBtn}
-                onPress={() => setShowConfirmModal(false)}
-                disabled={loading}
+                style={[
+                  styles.deliveryOptionCard,
+                  deliveryType === "delivery" && styles.deliveryOptionActive,
+                ]}
+                onPress={() => handleSelectDeliveryType("delivery")}
+                activeOpacity={0.85}
               >
-                <Text style={styles.modalCancelText}>Annuler</Text>
+                <Ionicons
+                  name="car-outline"
+                  size={26}
+                  color={deliveryType === "delivery" ? "#1D6B45" : "#9CA3AF"}
+                />
+                <Text
+                  style={[
+                    styles.deliveryOptionText,
+                    deliveryType === "delivery" &&
+                      styles.deliveryOptionTextActive,
+                  ]}
+                >
+                  Livraison
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.modalConfirmBtn}
-                onPress={() => {
-                  setShowConfirmModal(false);
-                  onSubmit();
-                }}
-                disabled={loading}
+                style={[
+                  styles.deliveryOptionCard,
+                  deliveryType === "pickup" && styles.deliveryOptionActive,
+                ]}
+                onPress={() => handleSelectDeliveryType("pickup")}
+                activeOpacity={0.85}
               >
-                <Text style={styles.modalConfirmText}>
-                  {loading ? "En cours..." : "Oui, confirmer"}
+                <Ionicons
+                  name="home-outline"
+                  size={26}
+                  color={deliveryType === "pickup" ? "#1D6B45" : "#9CA3AF"}
+                />
+                <Text
+                  style={[
+                    styles.deliveryOptionText,
+                    deliveryType === "pickup" &&
+                      styles.deliveryOptionTextActive,
+                  ]}
+                >
+                  Retrait sur place
                 </Text>
               </TouchableOpacity>
             </View>
           </View>
-        </View>
-      )}
-    </SafeAreaView>
-  </View>
+
+          {/* 3. Adresse de Livraison (Si Livraison) */}
+          {deliveryType === "delivery" && (
+            <View style={styles.sectionCard}>
+              <Text style={styles.cardTitle}>Adresse de livraison</Text>
+              <TextInput
+                style={styles.textInput}
+                placeholder="12 rue de la Paix, 75001 Paris"
+                placeholderTextColor="#9CA3AF"
+                value={deliveryAddress}
+                onChangeText={setDeliveryAddress}
+              />
+            </View>
+          )}
+
+          {/* 4. Date et Heure souhaitées (Calendrier & Horloge) */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.cardTitle}>Date et heure souhaitées</Text>
+
+            <View style={styles.dateTimeGrid}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Date</Text>
+                {Platform.OS === "web" ? (
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="AAAA-MM-JJ"
+                    placeholderTextColor="#9CA3AF"
+                    value={deliveryDate}
+                    onChangeText={(val) => {
+                      setDeliveryDate(val);
+                      if (val && val.length === 10) {
+                        const [y, m, d] = val.split("-").map(Number);
+                        if (!isNaN(y) && !isNaN(m) && !isNaN(d)) {
+                          const updated = new Date(selectedDate);
+                          updated.setFullYear(y, m - 1, d);
+                          setSelectedDate(updated);
+                        }
+                      }
+                    }}
+                  />
+                ) : (
+                  <TouchableOpacity
+                    style={styles.pickerBtn}
+                    onPress={() => setShowDatePicker(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={18}
+                      color="#1D6B45"
+                    />
+                    <Text style={styles.pickerBtnText}>
+                      {selectedDate.toLocaleDateString("fr-FR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputLabel}>Heure</Text>
+                {Platform.OS === "web" ? (
+                  <TextInput
+                    style={styles.textInput}
+                    placeholder="12:30"
+                    placeholderTextColor="#9CA3AF"
+                    value={deliveryTime}
+                    onChangeText={(val) => {
+                      setDeliveryTime(val);
+                      if (val && val.includes(":")) {
+                        const [h, m] = val.split(":").map(Number);
+                        if (!isNaN(h) && !isNaN(m)) {
+                          const updated = new Date(selectedDate);
+                          updated.setHours(h, m);
+                          setSelectedDate(updated);
+                        }
+                      }
+                    }}
+                  />
+                ) : (
+                  <TouchableOpacity
+                    style={styles.pickerBtn}
+                    onPress={() => setShowTimePicker(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="time-outline" size={18} color="#1D6B45" />
+                    <Text style={styles.pickerBtnText}>
+                      {selectedDate.toLocaleTimeString("fr-FR", {
+                        hour: "2-digit",
+                        minute: "2-digit",
+                      })}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+
+            {Platform.OS !== "web" && DateTimePicker && showDatePicker && (
+              <DateTimePicker
+                value={selectedDate}
+                mode="date"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                minimumDate={new Date()}
+                onChange={handleDateChange}
+              />
+            )}
+
+            {Platform.OS !== "web" && DateTimePicker && showTimePicker && (
+              <DateTimePicker
+                value={selectedDate}
+                mode="time"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={handleTimeChange}
+              />
+            )}
+          </View>
+
+          {/* 5. Notes pour le traiteur */}
+          <View style={styles.sectionCard}>
+            <View style={{ flexDirection: "row", alignItems: "center" }}>
+              <Text style={styles.cardTitle}>Notes pour le traiteur</Text>
+              <Text style={styles.optionalTag}> (optionnel)</Text>
+            </View>
+            <TextInput
+              style={[styles.textInput, styles.textAreaInput]}
+              placeholder="Allergies, préférences, instructions particulières..."
+              placeholderTextColor="#9CA3AF"
+              multiline
+              numberOfLines={3}
+              value={notes}
+              onChangeText={setNotes}
+            />
+          </View>
+
+          {/* Alert Error Box (si une erreur survient ou champ manquant) */}
+          {error && (
+            <View style={styles.errorBox}>
+              <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+              <Text style={styles.errorText}>{error}</Text>
+            </View>
+          )}
+
+          {/* Bouton de Confirmation de la Commande */}
+          <TouchableOpacity
+            style={[
+              styles.submitBtn,
+              (!isFormValid || loading) && styles.submitBtnDisabled,
+            ]}
+            activeOpacity={0.85}
+            onPress={handlePreSubmit}
+            disabled={loading}
+          >
+            <Text style={styles.submitBtnText}>
+              {loading ? "Envoi de la commande..." : "Confirmer la commande"}
+            </Text>
+            <Text style={styles.submitBtnPrice}>{totalPrice.toFixed(2)} €</Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* Pop-up (Modale) de confirmation */}
+        {showConfirmModal && (
+          <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+              <Text style={styles.modalTitle}>Confirmer la commande</Text>
+              <Text style={styles.modalDesc}>
+                Êtes-vous sûr(e) de vouloir confirmer cette commande d'un
+                montant total de{" "}
+                <Text style={styles.modalPriceHighlight}>
+                  {totalPrice.toFixed(2)} €
+                </Text>{" "}
+                ?
+              </Text>
+
+              <View style={styles.modalButtonsRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setShowConfirmModal(false)}
+                  disabled={loading}
+                >
+                  <Text style={styles.modalCancelText}>Annuler</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.modalConfirmBtn}
+                  onPress={() => {
+                    setShowConfirmModal(false);
+                    onSubmit();
+                  }}
+                  disabled={loading}
+                >
+                  <Text style={styles.modalConfirmText}>
+                    {loading ? "En cours..." : "Oui, confirmer"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        )}
+      </SafeAreaView>
+    </View>
   );
 }
 

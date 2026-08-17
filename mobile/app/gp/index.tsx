@@ -15,6 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
 import { GpListing } from "../../utils/types/gp";
+import { apiFetch } from "../../utils/api";
 
 const destination = [
   { label: "Tout", value: "tout" },
@@ -48,25 +49,27 @@ export default function GpScreen() {
         }
 
         try {
-          const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/gp`, {
-            headers: {
-              "Content-Type": "application/json",
-            },
-          });
+          const response = await apiFetch("/gp");
           const data = await response.json();
           if (!response.ok) {
-            setError(data.error || data.message || "Erreur lors de la récupération des GP");
+            setError(
+              data.error ||
+                data.message ||
+                "Erreur lors de la récupération des GP",
+            );
             return;
           }
           setGp(data.data.gp || []);
         } catch (error) {
-          setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
+          setError(
+            "Impossible de contacter le serveur. Vérifiez votre connexion.",
+          );
         } finally {
           setIsLoading(false);
         }
       };
       load();
-    }, [])
+    }, []),
   );
 
   const formatDate = (dateStr: string) => {
@@ -198,14 +201,17 @@ export default function GpScreen() {
             </TouchableOpacity>
 
             <Text style={styles.countText}>
-              {filteredGp.length} GP {filteredGp.length > 1 ? "disponibles" : "disponible"}
+              {filteredGp.length} GP{" "}
+              {filteredGp.length > 1 ? "disponibles" : "disponible"}
             </Text>
           </View>
 
           {isLoading ? (
             <View style={styles.loadingContainer}>
               <ActivityIndicator size="large" color="#1D6B45" />
-              <Text style={styles.loadingText}>Chargement des annonces GP...</Text>
+              <Text style={styles.loadingText}>
+                Chargement des annonces GP...
+              </Text>
             </View>
           ) : filteredGp.length === 0 ? (
             <View style={styles.emptyContainer}>
@@ -231,7 +237,11 @@ export default function GpScreen() {
                   <View style={styles.routeHeader}>
                     <View style={styles.routeGroup}>
                       <Text style={styles.cityName}>{item.departure_city}</Text>
-                      <Ionicons name="arrow-forward" size={16} color="#1D6B45" />
+                      <Ionicons
+                        name="arrow-forward"
+                        size={16}
+                        color="#1D6B45"
+                      />
                       <Text style={styles.cityName}>{item.arrival_city}</Text>
                     </View>
 
@@ -261,7 +271,8 @@ export default function GpScreen() {
                   <View style={styles.gpProfileRow}>
                     <View style={styles.gpAvatarCircle}>
                       <Text style={styles.gpAvatarInitial}>
-                        {item.profiles?.full_name?.charAt(0).toUpperCase() || "?"}
+                        {item.profiles?.full_name?.charAt(0).toUpperCase() ||
+                          "?"}
                       </Text>
                     </View>
                     <View style={{ flex: 1 }}>
@@ -350,10 +361,7 @@ export default function GpScreen() {
         </ScrollView>
 
         <TouchableOpacity
-          style={[
-            styles.fabBtn,
-            !isLoggedIn && styles.fabBtnLogin,
-          ]}
+          style={[styles.fabBtn, !isLoggedIn && styles.fabBtnLogin]}
           activeOpacity={0.85}
           onPress={() => {
             if (isLoggedIn) {

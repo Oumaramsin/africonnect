@@ -16,6 +16,7 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { Traiteur } from "../../../utils/types/traiteur";
 import { getSecureToken } from "../../../utils/storage";
+import { apiFetch } from "../../../utils/api";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -93,9 +94,7 @@ export default function DevisScreen() {
 
       if (!traiteurId) return;
       try {
-        const response = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/traiteur/${traiteurId}`,
-        );
+        const response = await apiFetch(`/traiteur/${traiteurId}`);
         if (response.ok) {
           const data = await response.json();
           setTraiteur(data.data?.traiteur || null);
@@ -127,13 +126,20 @@ export default function DevisScreen() {
     }
   };
 
+  const parsedNbPersonnes = parseInt(nbPersonnes, 10);
+  const isFormValid =
+    Boolean(dateEvenement) &&
+    !isNaN(parsedNbPersonnes) &&
+    parsedNbPersonnes > 0 &&
+    adresse.trim().length > 0;
+
   const handlePreSubmit = async () => {
-    if (!dateEvenement || !nbPersonnes || !adresse) {
-      setError("Merci de remplir les champs obligatoires");
+    if (!dateEvenement || !nbPersonnes || !adresse.trim()) {
+      setError("Merci de remplir tous les champs obligatoires (*)");
       return;
     }
 
-    if (parseInt(nbPersonnes) < 1) {
+    if (isNaN(parsedNbPersonnes) || parsedNbPersonnes < 1) {
       setError("Le nombre de personnes doit être d'au moins 1");
       return;
     }
@@ -144,13 +150,13 @@ export default function DevisScreen() {
       return;
     }
 
-    setError(null);
+    setError("");
     setShowConfirmModal(true);
   };
 
   const confirmOrder = async () => {
     setLoading(true);
-    setError(null);
+    setError("");
     const token = await getSecureToken("token");
     if (!token) {
       setError("Veuillez vous connecter pour envoyer une demande de devis.");
@@ -158,27 +164,20 @@ export default function DevisScreen() {
       return;
     }
     try {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/traiteur`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            traiteur_id: traiteurId,
-            date_evenement: dateEvenement,
-            nb_personnes: parseInt(nbPersonnes),
-            adresse: adresse,
-            type_evenement: typeEvenement,
-            notes: notes,
-          }),
-        },
-      );
+      const response = await apiFetch("/traiteur", {
+        method: "POST",
+        body: JSON.stringify({
+          traiteur_id: traiteurId,
+          date_evenement: dateEvenement,
+          nb_personnes: parsedNbPersonnes,
+          adresse: adresse.trim(),
+          type_evenement: typeEvenement,
+          notes: notes.trim() || undefined,
+        }),
+      });
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la demande de devis");
+        setError(data.error || data.message || "Erreur lors de la demande de devis");
         setLoading(false);
         return;
       }
@@ -252,36 +251,42 @@ export default function DevisScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="light-content" />
 
-        {/* Header Card (Gradient Vert) */}
+        {/* Top Header Card */}
         <View style={styles.headerCard}>
           <TouchableOpacity
             style={styles.backBtn}
-            onPress={() => router.push(`/traiteur/${traiteurId}` as any)}
+            onPress={() => router.back()}
             activeOpacity={0.7}
           >
             <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-            <Text style={styles.backBtnText}>Retour au traiteur</Text>
+            <Text style={styles.backBtnText}>Retour</Text>
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>Demander un Devis</Text>
-          <Text style={styles.headerSubtitle}>
-            {traiteur
-              ? `Demande destinée à ${traiteur.name}`
-              : "Devis sur-mesure personnalisé et réponse rapide sous 24h."}
-          </Text>
+          <View style={styles.heroRow}>
+            <View style={styles.heroIconBadge}>
+              <Ionicons name="restaurant" size={26} color="#1D6B45" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.heroTitle}>Demande de Devis Événement</Text>
+              <Text style={styles.heroSub}>
+                Remplissez les détails de votre réception pour recevoir une
+                proposition personnalisée.
+              </Text>
+            </View>
+          </View>
         </View>
 
+        {/* Scrollable Form Content */}
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* UN SEUL GROS BLOC FORMULAIRE */}
           <View style={styles.mainFormCard}>
-            {/* Target Traiteur Card */}
+            {/* Traiteur info box */}
             <View style={styles.targetTraiteurCard}>
               <View style={styles.targetTraiteurAvatar}>
-                <Ionicons name="restaurant" size={20} color="#1D6B45" />
+                <Ionicons name="storefront" size={20} color="#1D6B45" />
               </View>
               <View style={{ flex: 1 }}>
                 <Text style={styles.targetTraiteurLabel}>
@@ -291,18 +296,11 @@ export default function DevisScreen() {
                   {traiteur ? traiteur.name : "Chargement du traiteur..."}
                 </Text>
               </View>
-              {Boolean(traiteur?.rating) && (
-                <View style={styles.targetTraiteurRating}>
-                  <Ionicons name="star" size={12} color="#D4870A" />
-                  <Text style={styles.targetTraiteurRatingText}>
-                    {Number(traiteur?.rating).toFixed(1)}
-                  </Text>
-                </View>
-              )}
             </View>
+            
             {/* 1. Type d'Événement */}
             <View style={styles.formFieldGroup}>
-              <Text style={styles.fieldLabel}>Type d'événement</Text>
+              <Text style={styles.fieldLabel}>Type d'événement *</Text>
               <View style={styles.eventTypesGrid}>
                 {EVENT_TYPES.map((evt) => {
                   const isSelected = typeEvenement === evt.id;
@@ -339,7 +337,7 @@ export default function DevisScreen() {
 
             {/* 2. Date de l'événement */}
             <View style={styles.formFieldGroup}>
-              <Text style={styles.fieldLabel}>Date de l'événement</Text>
+              <Text style={styles.fieldLabel}>Date de l'événement *</Text>
               {Platform.OS === "web" ? (
                 <TextInput
                   style={styles.textInput}
@@ -362,7 +360,7 @@ export default function DevisScreen() {
                           month: "long",
                           year: "numeric",
                         })
-                      : "Choisir la date de l'événement"}
+                      : "Choisir la date de l'événement *"}
                   </Text>
                 </TouchableOpacity>
               )}
@@ -383,7 +381,7 @@ export default function DevisScreen() {
             {/* 3. Nombre de Personnes */}
             <View style={styles.formFieldGroup}>
               <Text style={styles.fieldLabel}>
-                Nombre de convives (personnes)
+                Nombre de convives (personnes) *
               </Text>
               <TextInput
                 style={styles.textInput}
@@ -398,7 +396,7 @@ export default function DevisScreen() {
             {/* 4. Lieu / Adresse de l'événement */}
             <View style={styles.formFieldGroup}>
               <Text style={styles.fieldLabel}>
-                Lieu ou Adresse de l'événement
+                Lieu ou Adresse de l'événement *
               </Text>
               <TextInput
                 style={styles.textInput}
@@ -428,7 +426,7 @@ export default function DevisScreen() {
               />
             </View>
 
-            {/* Alert Error Box (si une erreur survient ou champ manquant) */}
+            {/* Alert Error Box */}
             {Boolean(error) && (
               <View style={styles.errorBox}>
                 <Ionicons
@@ -440,12 +438,15 @@ export default function DevisScreen() {
               </View>
             )}
 
-            {/* Bouton d'Envoi du Devis à l'intérieur du bloc */}
+            {/* Bouton d'Envoi */}
             <TouchableOpacity
-              style={[styles.submitBtn, loading ? { opacity: 0.6 } : undefined]}
+              style={[
+                styles.submitBtn,
+                (!isFormValid || loading) && styles.submitBtnDisabled,
+              ]}
               activeOpacity={0.85}
               onPress={handlePreSubmit}
-              disabled={loading}
+              disabled={!isFormValid || loading}
             >
               <Ionicons
                 name="send"
@@ -521,31 +522,44 @@ const styles = StyleSheet.create({
   headerCard: {
     backgroundColor: "#165034",
     paddingTop: 12,
-    paddingBottom: 24,
+    paddingBottom: 20,
     paddingHorizontal: 20,
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 12,
-    gap: 4,
+    marginBottom: 14,
+    gap: 6,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255, 255, 255, 0.85)",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
-  headerTitle: {
-    fontSize: 24,
+  heroRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+  },
+  heroIconBadge: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  heroTitle: {
+    fontSize: 20,
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -0.3,
     marginBottom: 2,
   },
-  headerSubtitle: {
-    fontSize: 13,
+  heroSub: {
+    fontSize: 12,
     color: "rgba(255, 255, 255, 0.8)",
-    lineHeight: 18,
+    lineHeight: 16,
   },
 
   scrollContent: {
@@ -707,6 +721,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.15,
     shadowRadius: 10,
     elevation: 4,
+  },
+  submitBtnDisabled: {
+    backgroundColor: "#94A3B8",
+    opacity: 0.65,
+    shadowOpacity: 0,
+    elevation: 0,
   },
   submitBtnText: {
     color: "#FFFFFF",

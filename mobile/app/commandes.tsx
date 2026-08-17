@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -8,11 +8,13 @@ import {
   StatusBar,
   ActivityIndicator,
   Modal,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
+import { apiFetch } from "../utils/api";
 
 type CommandeTraiteur = {
   id: string;
@@ -129,17 +131,11 @@ export default function CommandeScreen() {
   const [ordersRecues, setOrdersRecues] = useState<OrderPlat[]>([]);
   const [gpRecues, setGpRecues] = useState<GpRequest[]>([]);
 
-  useEffect(() => {
-    const load = async () => {
-      const token = await getSecureToken("token");
-      if (!token) {
-        router.push("/login");
-        return;
-      }
-      await loadAll();
-    };
-    load();
-  }, []);
+  useFocusEffect(
+    useCallback(() => {
+      loadAll();
+    }, []),
+  );
 
   const sortOrdersByPendingFirst = <
     T extends { statut?: string; status?: string; created_at?: string },
@@ -171,20 +167,11 @@ export default function CommandeScreen() {
       return;
     }
     try {
-      fetch(`${process.env.EXPO_PUBLIC_API_URL}/notifications/read-all`, {
+      apiFetch("/notifications/read-all", {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
       }).catch((err) => console.error("Erreur mark-all-as-read:", err));
 
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/commande`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
+      const response = await apiFetch("/commande");
       const res = await response.json();
       if (!response.ok) {
         console.error(res.message || "Erreur de chargement des commandes");
@@ -198,13 +185,17 @@ export default function CommandeScreen() {
       setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
       setGpEnvoyees(sortOrdersByPendingFirst(profile.gp_requests || []));
       // ── 2. Statut & Commandes reçues (Traiteur) ──
-      const traiteurData = profile.traiteurs?.[0];
-      if (profile.role === "traiteur" || traiteurData) {
+      const allTraiteurs = profile.traiteurs || [];
+      if (profile.role === "traiteur" || allTraiteurs.length > 0) {
         setIsTraiteur(true);
-        setCommandesRecues(
-          sortOrdersByPendingFirst(traiteurData?.commandes || []),
+        const allCommandes = allTraiteurs.flatMap(
+          (t: any) => t.commandes || [],
         );
-        setOrdersRecues(sortOrdersByPendingFirst(traiteurData?.orders || []));
+        const allOrders = allTraiteurs.flatMap(
+          (t: any) => t.orders || [],
+        );
+        setCommandesRecues(sortOrdersByPendingFirst(allCommandes));
+        setOrdersRecues(sortOrdersByPendingFirst(allOrders));
       }
       // ── 3. Statut & Demandes reçues (GP Voyageur) ──
       const gpListings = profile.gp_listings || [];
@@ -280,31 +271,30 @@ export default function CommandeScreen() {
 
     let url = "";
     let body: any = {};
-    let baseUrl = `${process.env.EXPO_PUBLIC_API_URL}/commande/`;
 
     switch (actionType) {
       case "accepter_traiteur":
-        url = `traiteur/${item.id}/status`;
+        url = `/commande/traiteur/${item.id}/status`;
         body = { statut: "acceptee" };
         break;
       case "refuser_traiteur":
-        url = `traiteur/${item.id}/status`;
+        url = `/commande/traiteur/${item.id}/status`;
         body = { statut: "refusee" };
         break;
       case "accepter_order":
-        url = `order/${item.id}/status`;
+        url = `/commande/order/${item.id}/status`;
         body = { status: "accepted" };
         break;
       case "refuser_order":
-        url = `order/${item.id}/status`;
+        url = `/commande/order/${item.id}/status`;
         body = { status: "rejected" };
         break;
       case "accepter_gp":
-        url = `gp/${item.id}/status`;
+        url = `/commande/gp/${item.id}/status`;
         body = { status: "accepted" };
         break;
       case "refuser_gp":
-        url = `gp/${item.id}/status`;
+        url = `/commande/gp/${item.id}/status`;
         body = { status: "rejected" };
         break;
     }
@@ -337,12 +327,8 @@ export default function CommandeScreen() {
     }
 
     try {
-      const res = await fetch(baseUrl + url, {
+      const res = await apiFetch(url, {
         method: "PATCH",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify(body),
       });
 
@@ -528,8 +514,8 @@ export default function CommandeScreen() {
                     {serviceFilter === "traiteur"
                       ? "Vous n'avez effectué aucune demande de devis ni commande de plat."
                       : serviceFilter === "gp"
-                      ? "Vous n'avez effectué aucune réservation de transport GP."
-                      : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
+                        ? "Vous n'avez effectué aucune réservation de transport GP."
+                        : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
                   </Text>
                   <TouchableOpacity
                     style={styles.emptyButton}
@@ -583,8 +569,8 @@ export default function CommandeScreen() {
                                     color="#1D6B45"
                                   />
                                   <Text style={styles.detailText}>
-                                    Événement : {formatDate(cmd.date_evenement)} (
-                                    {cmd.type_evenement || "Général"})
+                                    Événement : {formatDate(cmd.date_evenement)}{" "}
+                                    ({cmd.type_evenement || "Général"})
                                   </Text>
                                 </View>
 
@@ -605,7 +591,9 @@ export default function CommandeScreen() {
                                     size={15}
                                     color="#1D6B45"
                                   />
-                                  <Text style={styles.detailText}>{cmd.adresse}</Text>
+                                  <Text style={styles.detailText}>
+                                    {cmd.adresse}
+                                  </Text>
                                 </View>
 
                                 {Boolean(cmd.notes) && (
@@ -615,7 +603,9 @@ export default function CommandeScreen() {
                                       size={15}
                                       color="#64748B"
                                     />
-                                    <Text style={styles.notesText}>{cmd.notes}</Text>
+                                    <Text style={styles.notesText}>
+                                      {cmd.notes}
+                                    </Text>
                                   </View>
                                 )}
                               </View>
@@ -688,7 +678,10 @@ export default function CommandeScreen() {
                                         {dishInfo?.name || "Plat"}
                                       </Text>
                                       <Text style={styles.itemPrice}>
-                                        {Number(price * item.quantity).toFixed(2)} €
+                                        {Number(price * item.quantity).toFixed(
+                                          2,
+                                        )}{" "}
+                                        €
                                       </Text>
                                     </View>
                                   );
@@ -730,7 +723,8 @@ export default function CommandeScreen() {
                           const listing = gp.listing || gp.gp_listings;
                           const depCity =
                             gp.departure_city || listing?.departure_city;
-                          const arrCity = gp.arrival_city || listing?.arrival_city;
+                          const arrCity =
+                            gp.arrival_city || listing?.arrival_city;
                           return (
                             <View key={gp.id} style={styles.gpCard}>
                               <View style={styles.orderCardHeader}>
@@ -793,230 +787,405 @@ export default function CommandeScreen() {
                       { backgroundColor: "#FEF3C7" },
                     ]}
                   >
-                    <Ionicons name="archive-outline" size={32} color="#D4870A" />
+                    <Ionicons
+                      name="archive-outline"
+                      size={32}
+                      color="#D4870A"
+                    />
                   </View>
                   <Text style={styles.emptyTitle}>Aucune demande reçue</Text>
                   <Text style={styles.emptySubtitle}>
-                    Vous n&apos;avez reçu aucune commande de plat ni demande de devis pour le moment.
+                    Vous n&apos;avez reçu aucune commande de plat ni demande de
+                    devis pour le moment.
                   </Text>
                 </View>
               ) : (
                 <>
+                  {/* SECTION 1 : DEMANDES DE DEVIS TRAITEUR REÇUES */}
                   {isTraiteur &&
-                    (serviceFilter === "tout" || serviceFilter === "traiteur") &&
-                ordersRecues.length > 0 && (
-                  <View style={styles.sectionGroup}>
-                    <View style={styles.sectionTitleRow}>
-                      <Ionicons
-                        name="fast-food-outline"
-                        size={16}
-                        color="#1D6B45"
-                      />
-                      <Text style={styles.sectionTitle}>
-                        Commandes de Plats
-                      </Text>
-                    </View>
+                    (serviceFilter === "tout" ||
+                      serviceFilter === "traiteur") &&
+                    commandesRecues.length > 0 && (
+                      <View style={styles.sectionGroup}>
+                        <View style={styles.sectionTitleRow}>
+                          <Ionicons
+                            name="document-text-outline"
+                            size={16}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.sectionTitle}>
+                            Demandes de Devis Reçues ({commandesRecues.length})
+                          </Text>
+                        </View>
 
-                    {ordersRecues.map((ord) => {
-                      const clientInfo = ord.client || ord.profiles;
-                      return (
-                        <View key={ord.id} style={styles.orderCard}>
-                          <View style={styles.orderCardHeader}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.providerName}>
-                                {clientInfo?.full_name || "Client"}
-                              </Text>
-                              <Text style={styles.orderDate}>
-                                {formatDate(ord.created_at)}
-                              </Text>
-                            </View>
-                            {renderStatusBadge(ord.status)}
-                          </View>
+                        {commandesRecues.map((cmd) => {
+                          const clientInfo = cmd.client || cmd.profiles;
+                          const clientPhone = clientInfo?.phone || "";
+                          const waNumber = clientPhone
+                            .replace(/\+/g, "")
+                            .replace(/\s/g, "");
+                          const waUrl = `https://wa.me/${waNumber}?text=Bonjour%2C%20je%20fais%20suite%20%C3%A0%20votre%20demande%20de%20devis%20sur%20Dabari.`;
 
-                          <View style={styles.orderDetailsBox}>
-                            {ord.order_items?.map((item, idx) => {
-                              const dishInfo = item.dish || item.dishes;
-                              const price = dishInfo?.price || 0;
-                              return (
-                                <View
-                                  key={item.id || idx}
-                                  style={styles.itemRow}
-                                >
-                                  <Text style={styles.itemQty}>
-                                    {item.quantity}x
+                          return (
+                            <View key={cmd.id} style={styles.orderCard}>
+                              <View style={styles.orderCardHeader}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.providerName}>
+                                    {clientInfo?.full_name || "Client"}
                                   </Text>
-                                  <Text style={styles.itemName}>
-                                    {dishInfo?.name || "Plat"}
-                                  </Text>
-                                  <Text style={styles.itemPrice}>
-                                    {Number(price * item.quantity).toFixed(2)} €
+                                  <Text style={styles.orderDate}>
+                                    Reçu le {formatDate(cmd.created_at)}
                                   </Text>
                                 </View>
-                              );
-                            })}
+                                {renderStatusBadge(cmd.statut)}
+                              </View>
 
-                            <View style={styles.divider} />
+                              <View style={styles.orderDetailsBox}>
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="calendar-outline"
+                                    size={15}
+                                    color="#1D6B45"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    Événement : {formatDate(cmd.date_evenement)}{" "}
+                                    ({cmd.type_evenement || "Général"})
+                                  </Text>
+                                </View>
 
-                            <View style={styles.totalRow}>
-                              <Text style={styles.totalLabel}>
-                                Montant Total
-                              </Text>
-                              <Text style={styles.totalValue}>
-                                {Number(ord.total_amount || 0).toFixed(2)} €
-                              </Text>
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="people-outline"
+                                    size={15}
+                                    color="#1D6B45"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    {cmd.nb_personnes} personnes
+                                  </Text>
+                                </View>
+
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="location-outline"
+                                    size={15}
+                                    color="#1D6B45"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    {cmd.adresse}
+                                  </Text>
+                                </View>
+
+                                {Boolean(cmd.notes) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="document-text-outline"
+                                      size={15}
+                                      color="#64748B"
+                                    />
+                                    <Text style={styles.notesText}>
+                                      {cmd.notes}
+                                    </Text>
+                                  </View>
+                                )}
+                              </View>
+
+                              {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
+                              {(cmd.statut === "en_attente" ||
+                                cmd.statut === "pending") && (
+                                <View style={styles.actionButtonsRow}>
+                                  <TouchableOpacity
+                                    style={styles.acceptBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() =>
+                                      confirmAndExecuteAction(
+                                        "accepter_traiteur",
+                                        cmd,
+                                      )
+                                    }
+                                  >
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={16}
+                                      color="#FFFFFF"
+                                    />
+                                    <Text style={styles.acceptBtnText}>
+                                      Accepter
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    style={styles.refuseBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() =>
+                                      confirmAndExecuteAction(
+                                        "refuser_traiteur",
+                                        cmd,
+                                      )
+                                    }
+                                  >
+                                    <Ionicons
+                                      name="close-circle"
+                                      size={16}
+                                      color="#B91C1C"
+                                    />
+                                    <Text style={styles.refuseBtnText}>
+                                      Refuser
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              )}
+
+                              {(cmd.statut === "acceptee" ||
+                                cmd.statut === "accepted") &&
+                                waNumber !== "" && (
+                                  <TouchableOpacity
+                                    style={styles.whatsAppBtn}
+                                    onPress={() => Linking.openURL(waUrl)}
+                                    activeOpacity={0.85}
+                                  >
+                                    <Ionicons
+                                      name="logo-whatsapp"
+                                      size={16}
+                                      color="#FFFFFF"
+                                    />
+                                    <Text style={styles.whatsAppBtnText}>
+                                      Contacter le client sur WhatsApp
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
                             </View>
-                          </View>
+                          );
+                        })}
+                      </View>
+                    )}
 
-                          {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
-                          {(ord.status === "en_attente" ||
-                            ord.status === "pending") && (
-                            <View style={styles.actionButtonsRow}>
-                              <TouchableOpacity
-                                style={styles.acceptBtn}
-                                activeOpacity={0.85}
-                                onPress={() =>
-                                  confirmAndExecuteAction("accepter_order", ord)
-                                }
-                              >
-                                <Ionicons
-                                  name="checkmark-circle"
-                                  size={16}
-                                  color="#FFFFFF"
-                                />
-                                <Text style={styles.acceptBtnText}>
-                                  Accepter
-                                </Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                style={styles.refuseBtn}
-                                activeOpacity={0.85}
-                                onPress={() =>
-                                  confirmAndExecuteAction("refuser_order", ord)
-                                }
-                              >
-                                <Ionicons
-                                  name="close-circle"
-                                  size={16}
-                                  color="#B91C1C"
-                                />
-                                <Text style={styles.refuseBtnText}>
-                                  Refuser
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
+                  {/* SECTION 2 : COMMANDES DE PLATS REÇUES */}
+                  {isTraiteur &&
+                    (serviceFilter === "tout" ||
+                      serviceFilter === "traiteur") &&
+                    ordersRecues.length > 0 && (
+                      <View style={styles.sectionGroup}>
+                        <View style={styles.sectionTitleRow}>
+                          <Ionicons
+                            name="fast-food-outline"
+                            size={16}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.sectionTitle}>
+                            Commandes de Plats
+                          </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                )}
 
-              {/* SECTION GP COLIS */}
-              {isGp &&
-                (serviceFilter === "tout" || serviceFilter === "gp") &&
-                gpRecues.length > 0 && (
-                  <View style={styles.sectionGroup}>
-                    <View style={styles.sectionTitleRow}>
-                      <Ionicons
-                        name="airplane-outline"
-                        size={16}
-                        color="#D4870A"
-                      />
-                      <Text style={styles.sectionTitleGold}>
-                        Transport GP Colis
-                      </Text>
-                    </View>
+                        {ordersRecues.map((ord) => {
+                          const clientInfo = ord.client || ord.profiles;
+                          return (
+                            <View key={ord.id} style={styles.orderCard}>
+                              <View style={styles.orderCardHeader}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.providerName}>
+                                    {clientInfo?.full_name || "Client"}
+                                  </Text>
+                                  <Text style={styles.orderDate}>
+                                    {formatDate(ord.created_at)}
+                                  </Text>
+                                </View>
+                                {renderStatusBadge(ord.status)}
+                              </View>
 
-                    {gpRecues.map((gp) => {
-                      const listing = gp.listing || gp.gp_listings;
-                      const depCity =
-                        gp.departure_city || listing?.departure_city;
-                      const arrCity = gp.arrival_city || listing?.arrival_city;
-                      return (
-                        <View key={gp.id} style={styles.gpCard}>
-                          <View style={styles.orderCardHeader}>
-                            <View style={{ flex: 1 }}>
-                              <Text style={styles.gpRoute}>
-                                {depCity && arrCity
-                                  ? `${depCity} ➔ ${arrCity}`
-                                  : "Trajet GP"}
-                              </Text>
-                              <Text style={styles.orderDate}>
-                                Demandé le {formatDate(gp.created_at)}
-                              </Text>
+                              <View style={styles.orderDetailsBox}>
+                                {ord.order_items?.map((item, idx) => {
+                                  const dishInfo = item.dish || item.dishes;
+                                  const price = dishInfo?.price || 0;
+                                  return (
+                                    <View
+                                      key={item.id || idx}
+                                      style={styles.itemRow}
+                                    >
+                                      <Text style={styles.itemQty}>
+                                        {item.quantity}x
+                                      </Text>
+                                      <Text style={styles.itemName}>
+                                        {dishInfo?.name || "Plat"}
+                                      </Text>
+                                      <Text style={styles.itemPrice}>
+                                        {Number(price * item.quantity).toFixed(
+                                          2,
+                                        )}{" "}
+                                        €
+                                      </Text>
+                                    </View>
+                                  );
+                                })}
+
+                                <View style={styles.divider} />
+
+                                <View style={styles.totalRow}>
+                                  <Text style={styles.totalLabel}>
+                                    Montant Total
+                                  </Text>
+                                  <Text style={styles.totalValue}>
+                                    {Number(ord.total_amount || 0).toFixed(2)} €
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
+                              {(ord.status === "en_attente" ||
+                                ord.status === "pending") && (
+                                <View style={styles.actionButtonsRow}>
+                                  <TouchableOpacity
+                                    style={styles.acceptBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() =>
+                                      confirmAndExecuteAction(
+                                        "accepter_order",
+                                        ord,
+                                      )
+                                    }
+                                  >
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={16}
+                                      color="#FFFFFF"
+                                    />
+                                    <Text style={styles.acceptBtnText}>
+                                      Accepter
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    style={styles.refuseBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() =>
+                                      confirmAndExecuteAction(
+                                        "refuser_order",
+                                        ord,
+                                      )
+                                    }
+                                  >
+                                    <Ionicons
+                                      name="close-circle"
+                                      size={16}
+                                      color="#B91C1C"
+                                    />
+                                    <Text style={styles.refuseBtnText}>
+                                      Refuser
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              )}
                             </View>
-                            {renderStatusBadge(gp.status)}
-                          </View>
+                          );
+                        })}
+                      </View>
+                    )}
 
-                          <View style={styles.orderDetailsBox}>
-                            <View style={styles.detailRow}>
-                              <Ionicons
-                                name="scale-outline"
-                                size={15}
-                                color="#D4870A"
-                              />
-                              <Text style={styles.detailText}>
-                                Poids : {gp.weight_kg} kg
-                              </Text>
-                            </View>
-
-                            <View style={styles.detailRow}>
-                              <Ionicons
-                                name="cube-outline"
-                                size={15}
-                                color="#D4870A"
-                              />
-                              <Text style={styles.detailText}>
-                                {gp.content_desc}
-                              </Text>
-                            </View>
-                          </View>
-
-                          {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
-                          {(gp.status === "en_attente" ||
-                            gp.status === "pending") && (
-                            <View style={styles.actionButtonsRow}>
-                              <TouchableOpacity
-                                style={styles.acceptBtn}
-                                activeOpacity={0.85}
-                                onPress={() =>
-                                  confirmAndExecuteAction("accepter_gp", gp)
-                                }
-                              >
-                                <Ionicons
-                                  name="checkmark-circle"
-                                  size={16}
-                                  color="#FFFFFF"
-                                />
-                                <Text style={styles.acceptBtnText}>
-                                  Accepter
-                                </Text>
-                              </TouchableOpacity>
-
-                              <TouchableOpacity
-                                style={styles.refuseBtn}
-                                activeOpacity={0.85}
-                                onPress={() =>
-                                  confirmAndExecuteAction("refuser_gp", gp)
-                                }
-                              >
-                                <Ionicons
-                                  name="close-circle"
-                                  size={16}
-                                  color="#B91C1C"
-                                />
-                                <Text style={styles.refuseBtnText}>
-                                  Refuser
-                                </Text>
-                              </TouchableOpacity>
-                            </View>
-                          )}
+                  {/* SECTION GP COLIS */}
+                  {isGp &&
+                    (serviceFilter === "tout" || serviceFilter === "gp") &&
+                    gpRecues.length > 0 && (
+                      <View style={styles.sectionGroup}>
+                        <View style={styles.sectionTitleRow}>
+                          <Ionicons
+                            name="airplane-outline"
+                            size={16}
+                            color="#D4870A"
+                          />
+                          <Text style={styles.sectionTitleGold}>
+                            Transport GP Colis
+                          </Text>
                         </View>
-                      );
-                    })}
-                  </View>
-                )}
+
+                        {gpRecues.map((gp) => {
+                          const listing = gp.listing || gp.gp_listings;
+                          const depCity =
+                            gp.departure_city || listing?.departure_city;
+                          const arrCity =
+                            gp.arrival_city || listing?.arrival_city;
+                          return (
+                            <View key={gp.id} style={styles.gpCard}>
+                              <View style={styles.orderCardHeader}>
+                                <View style={{ flex: 1 }}>
+                                  <Text style={styles.gpRoute}>
+                                    {depCity && arrCity
+                                      ? `${depCity} ➔ ${arrCity}`
+                                      : "Trajet GP"}
+                                  </Text>
+                                  <Text style={styles.orderDate}>
+                                    Demandé le {formatDate(gp.created_at)}
+                                  </Text>
+                                </View>
+                                {renderStatusBadge(gp.status)}
+                              </View>
+
+                              <View style={styles.orderDetailsBox}>
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="scale-outline"
+                                    size={15}
+                                    color="#D4870A"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    Poids : {gp.weight_kg} kg
+                                  </Text>
+                                </View>
+
+                                <View style={styles.detailRow}>
+                                  <Ionicons
+                                    name="cube-outline"
+                                    size={15}
+                                    color="#D4870A"
+                                  />
+                                  <Text style={styles.detailText}>
+                                    {gp.content_desc}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
+                              {(gp.status === "en_attente" ||
+                                gp.status === "pending") && (
+                                <View style={styles.actionButtonsRow}>
+                                  <TouchableOpacity
+                                    style={styles.acceptBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() =>
+                                      confirmAndExecuteAction("accepter_gp", gp)
+                                    }
+                                  >
+                                    <Ionicons
+                                      name="checkmark-circle"
+                                      size={16}
+                                      color="#FFFFFF"
+                                    />
+                                    <Text style={styles.acceptBtnText}>
+                                      Accepter
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    style={styles.refuseBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() =>
+                                      confirmAndExecuteAction("refuser_gp", gp)
+                                    }
+                                  >
+                                    <Ionicons
+                                      name="close-circle"
+                                      size={16}
+                                      color="#B91C1C"
+                                    />
+                                    <Text style={styles.refuseBtnText}>
+                                      Refuser
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
                 </>
               )}
             </>

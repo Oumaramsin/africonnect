@@ -9,13 +9,13 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
 import { GpListing } from "../../utils/types/gp";
+import { apiFetch } from "../../utils/api";
 
 const CITIES_DEPARTURE = [
   "Paris",
@@ -92,7 +92,8 @@ export default function GpProfilScreen() {
   const [description, setDescription] = useState("");
 
   const [isCustomDepartureCity, setIsCustomDepartureCity] = useState(false);
-  const [isCustomDepartureCountry, setIsCustomDepartureCountry] = useState(false);
+  const [isCustomDepartureCountry, setIsCustomDepartureCountry] =
+    useState(false);
   const [isCustomArrivalCity, setIsCustomArrivalCity] = useState(false);
   const [isCustomArrivalCountry, setIsCustomArrivalCountry] = useState(false);
 
@@ -111,7 +112,7 @@ export default function GpProfilScreen() {
   const openPicker = (
     title: string,
     options: string[],
-    onSelect: (val: string) => void
+    onSelect: (val: string) => void,
   ) => {
     setPickerConfig({
       visible: true,
@@ -131,15 +132,12 @@ export default function GpProfilScreen() {
     }
 
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/gp/me`, {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-      });
+      const response = await apiFetch("/gp/me");
       const data = await response.json();
       if (!response.ok) {
-        setError(data.error || "Erreur lors de la récupération de vos annonces");
+        setError(
+          data.error || "Erreur lors de la récupération de vos annonces",
+        );
         return;
       }
       setGpListings(data.data.gp || []);
@@ -153,24 +151,17 @@ export default function GpProfilScreen() {
   useFocusEffect(
     useCallback(() => {
       loadMyGpListings();
-    }, [])
+    }, []),
   );
 
   const handleDeleteGp = async () => {
     if (!deleteGpId) return;
     setIsDeleting(true);
-    const token = await getSecureToken("token");
 
     try {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/gp/${deleteGpId}`,
-        {
-          method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        }
-      );
+      const response = await apiFetch(`/gp/${deleteGpId}`, {
+        method: "DELETE",
+      });
 
       if (!response.ok) {
         const resData = await response.json();
@@ -195,7 +186,7 @@ export default function GpProfilScreen() {
     setDepartureDate(
       item.departure_date
         ? new Date(item.departure_date).toISOString().split("T")[0]
-        : ""
+        : "",
     );
     setFlightType((item.flight_type as "direct" | "escale") || "direct");
     setAvailableKg(item.available_kg ? item.available_kg.toString() : "");
@@ -206,11 +197,11 @@ export default function GpProfilScreen() {
 
     setIsCustomDepartureCity(!CITIES_DEPARTURE.includes(item.departure_city));
     setIsCustomDepartureCountry(
-      !COUNTRIES_DEPARTURE.includes(item.departure_country || "France")
+      !COUNTRIES_DEPARTURE.includes(item.departure_country || "France"),
     );
     setIsCustomArrivalCity(!CITIES_ARRIVAL.includes(item.arrival_city));
     setIsCustomArrivalCountry(
-      !COUNTRIES_ARRIVAL.includes(item.arrival_country || "")
+      !COUNTRIES_ARRIVAL.includes(item.arrival_country || ""),
     );
 
     setView("edit");
@@ -220,7 +211,6 @@ export default function GpProfilScreen() {
     if (!editGpId) return;
     setIsSaving(true);
     setError(null);
-    const token = await getSecureToken("token");
 
     const kgNum = parseFloat(availableKg.replace(",", "."));
     const priceNum = parseFloat(pricePerKg.replace(",", "."));
@@ -238,29 +228,22 @@ export default function GpProfilScreen() {
     }
 
     try {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/gp/${editGpId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            departure_city: departureCity,
-            departure_country: departureCountry,
-            arrival_city: arrivalCity,
-            arrival_country: arrivalCountry,
-            departure_date: departureDate,
-            available_kg: kgNum,
-            price_per_kg: priceNum,
-            flight_type: flightType,
-            pickup_address: pickupAddress,
-            pickup_city: pickupCity,
-            description: description,
-          }),
-        }
-      );
+      const response = await apiFetch(`/gp/${editGpId}`, {
+        method: "PATCH",
+        body: JSON.stringify({
+          departure_city: departureCity,
+          departure_country: departureCountry,
+          arrival_city: arrivalCity,
+          arrival_country: arrivalCountry,
+          departure_date: departureDate,
+          available_kg: kgNum,
+          price_per_kg: priceNum,
+          flight_type: flightType,
+          pickup_address: pickupAddress,
+          pickup_city: pickupCity,
+          description: description,
+        }),
+      });
 
       const resData = await response.json();
       if (!response.ok) {
@@ -269,7 +252,7 @@ export default function GpProfilScreen() {
 
       const updatedItem = resData.data.gp;
       setGpListings((prev) =>
-        prev.map((item) => (item.id === editGpId ? updatedItem : item))
+        prev.map((item) => (item.id === editGpId ? updatedItem : item)),
       );
       setView("annonces");
     } catch (err: any) {
@@ -320,7 +303,10 @@ export default function GpProfilScreen() {
 
           <View style={styles.tabsRow}>
             <TouchableOpacity
-              style={[styles.tabChip, view === "annonces" && styles.tabChipActive]}
+              style={[
+                styles.tabChip,
+                view === "annonces" && styles.tabChipActive,
+              ]}
               onPress={() => setView("annonces")}
               activeOpacity={0.8}
             >
@@ -368,7 +354,8 @@ export default function GpProfilScreen() {
                 <Text style={styles.sectionTitle}>Trajets en cours</Text>
                 <View style={styles.countBadge}>
                   <Text style={styles.countBadgeText}>
-                    {gpListings.length} {gpListings.length > 1 ? "annonces" : "annonce"}
+                    {gpListings.length}{" "}
+                    {gpListings.length > 1 ? "annonces" : "annonce"}
                   </Text>
                 </View>
               </View>
@@ -385,14 +372,19 @@ export default function GpProfilScreen() {
                   <Ionicons name="airplane-outline" size={48} color="#94A3B8" />
                   <Text style={styles.emptyTitle}>Aucune annonce publiée</Text>
                   <Text style={styles.emptySub}>
-                    Proposez vos kilos disponibles aux expéditeurs en publiant votre premier trajet.
+                    Proposez vos kilos disponibles aux expéditeurs en publiant
+                    votre premier trajet.
                   </Text>
                   <TouchableOpacity
                     style={styles.createFirstBtn}
                     onPress={() => router.push("/gp/nouveau")}
                     activeOpacity={0.85}
                   >
-                    <Ionicons name="add-circle-outline" size={18} color="#FFFFFF" />
+                    <Ionicons
+                      name="add-circle-outline"
+                      size={18}
+                      color="#FFFFFF"
+                    />
                     <Text style={styles.createFirstBtnText}>
                       Publier ma première annonce
                     </Text>
@@ -415,26 +407,43 @@ export default function GpProfilScreen() {
                             </Text>
                           </View>
 
-                          <Ionicons name="arrow-forward" size={18} color="#94A3B8" />
+                          <Ionicons
+                            name="arrow-forward"
+                            size={18}
+                            color="#94A3B8"
+                          />
 
                           <View style={styles.cityCol}>
-                            <Text style={[styles.cityName, { color: "#1D6B45" }]}>
+                            <Text
+                              style={[styles.cityName, { color: "#1D6B45" }]}
+                            >
                               {item.arrival_city}
                             </Text>
-                            <Text style={[styles.countryName, { color: "rgba(29, 107, 69, 0.7)" }]}>
+                            <Text
+                              style={[
+                                styles.countryName,
+                                { color: "rgba(29, 107, 69, 0.7)" },
+                              ]}
+                            >
                               {item.arrival_country || ""}
                             </Text>
                           </View>
                         </View>
 
                         <View style={styles.statusBadgeActive}>
-                          <Text style={styles.statusBadgeActiveText}>Actif</Text>
+                          <Text style={styles.statusBadgeActiveText}>
+                            Actif
+                          </Text>
                         </View>
                       </View>
 
                       <View style={styles.metricsBox}>
                         <View style={styles.metricItem}>
-                          <Ionicons name="calendar-outline" size={14} color="#64748B" />
+                          <Ionicons
+                            name="calendar-outline"
+                            size={14}
+                            color="#64748B"
+                          />
                           <Text style={styles.metricItemText}>
                             {formatDate(item.departure_date)}
                           </Text>
@@ -443,7 +452,11 @@ export default function GpProfilScreen() {
                         <View style={styles.dividerVertical} />
 
                         <View style={styles.metricItem}>
-                          <Ionicons name="cube-outline" size={14} color="#64748B" />
+                          <Ionicons
+                            name="cube-outline"
+                            size={14}
+                            color="#64748B"
+                          />
                           <Text style={styles.metricItemText}>
                             {Number(item.available_kg)} kg
                           </Text>
@@ -465,7 +478,11 @@ export default function GpProfilScreen() {
                           onPress={() => startEdit(item)}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="create-outline" size={15} color="#2563EB" />
+                          <Ionicons
+                            name="create-outline"
+                            size={15}
+                            color="#2563EB"
+                          />
                           <Text style={styles.editActionBtnText}>Modifier</Text>
                         </TouchableOpacity>
 
@@ -474,8 +491,14 @@ export default function GpProfilScreen() {
                           onPress={() => setDeleteGpId(item.id)}
                           activeOpacity={0.7}
                         >
-                          <Ionicons name="trash-outline" size={15} color="#DC2626" />
-                          <Text style={styles.deleteActionBtnText}>Supprimer</Text>
+                          <Ionicons
+                            name="trash-outline"
+                            size={15}
+                            color="#DC2626"
+                          />
+                          <Text style={styles.deleteActionBtnText}>
+                            Supprimer
+                          </Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -500,7 +523,8 @@ export default function GpProfilScreen() {
 
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
-                  <Ionicons name="airplane-outline" size={16} color="#1D6B45" /> Itinéraire
+                  <Ionicons name="airplane-outline" size={16} color="#1D6B45" />{" "}
+                  Itinéraire
                 </Text>
 
                 <View style={styles.inputGridRow}>
@@ -510,15 +534,19 @@ export default function GpProfilScreen() {
                       style={styles.selectBtn}
                       activeOpacity={0.8}
                       onPress={() =>
-                        openPicker("Ville de départ", CITIES_DEPARTURE, (val) => {
-                          if (val.includes("Autre")) {
-                            setIsCustomDepartureCity(true);
-                            setDepartureCity("");
-                          } else {
-                            setIsCustomDepartureCity(false);
-                            setDepartureCity(val);
-                          }
-                        })
+                        openPicker(
+                          "Ville de départ",
+                          CITIES_DEPARTURE,
+                          (val) => {
+                            if (val.includes("Autre")) {
+                              setIsCustomDepartureCity(true);
+                              setDepartureCity("");
+                            } else {
+                              setIsCustomDepartureCity(false);
+                              setDepartureCity(val);
+                            }
+                          },
+                        )
                       }
                     >
                       <Text style={styles.selectBtnText}>
@@ -546,15 +574,19 @@ export default function GpProfilScreen() {
                       style={styles.selectBtn}
                       activeOpacity={0.8}
                       onPress={() =>
-                        openPicker("Pays de départ", COUNTRIES_DEPARTURE, (val) => {
-                          if (val.includes("Autre")) {
-                            setIsCustomDepartureCountry(true);
-                            setDepartureCountry("");
-                          } else {
-                            setIsCustomDepartureCountry(false);
-                            setDepartureCountry(val);
-                          }
-                        })
+                        openPicker(
+                          "Pays de départ",
+                          COUNTRIES_DEPARTURE,
+                          (val) => {
+                            if (val.includes("Autre")) {
+                              setIsCustomDepartureCountry(true);
+                              setDepartureCountry("");
+                            } else {
+                              setIsCustomDepartureCountry(false);
+                              setDepartureCountry(val);
+                            }
+                          },
+                        )
                       }
                     >
                       <Text style={styles.selectBtnText}>
@@ -578,7 +610,11 @@ export default function GpProfilScreen() {
                 </View>
 
                 <View style={styles.arrowRow}>
-                  <Ionicons name="arrow-down-circle" size={24} color="#1D6B45" />
+                  <Ionicons
+                    name="arrow-down-circle"
+                    size={24}
+                    color="#1D6B45"
+                  />
                 </View>
 
                 <View style={styles.inputGridRow}>
@@ -624,15 +660,19 @@ export default function GpProfilScreen() {
                       style={styles.selectBtn}
                       activeOpacity={0.8}
                       onPress={() =>
-                        openPicker("Pays d'arrivée", COUNTRIES_ARRIVAL, (val) => {
-                          if (val.includes("Autre")) {
-                            setIsCustomArrivalCountry(true);
-                            setArrivalCountry("");
-                          } else {
-                            setIsCustomArrivalCountry(false);
-                            setArrivalCountry(val);
-                          }
-                        })
+                        openPicker(
+                          "Pays d'arrivée",
+                          COUNTRIES_ARRIVAL,
+                          (val) => {
+                            if (val.includes("Autre")) {
+                              setIsCustomArrivalCountry(true);
+                              setArrivalCountry("");
+                            } else {
+                              setIsCustomArrivalCountry(false);
+                              setArrivalCountry(val);
+                            }
+                          },
+                        )
                       }
                     >
                       <Text style={styles.selectBtnText}>
@@ -658,7 +698,8 @@ export default function GpProfilScreen() {
 
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
-                  <Ionicons name="calendar-outline" size={16} color="#1D6B45" /> Détails du vol
+                  <Ionicons name="calendar-outline" size={16} color="#1D6B45" />{" "}
+                  Détails du vol
                 </Text>
 
                 <View style={styles.fieldGroup}>
@@ -723,7 +764,8 @@ export default function GpProfilScreen() {
 
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
-                  <Ionicons name="cube-outline" size={16} color="#1D6B45" /> Capacité & Tarif
+                  <Ionicons name="cube-outline" size={16} color="#1D6B45" />{" "}
+                  Capacité & Tarif
                 </Text>
 
                 <View style={styles.inputGridRow}>
@@ -733,7 +775,9 @@ export default function GpProfilScreen() {
                       style={styles.input}
                       keyboardType="decimal-pad"
                       value={availableKg}
-                      onChangeText={(val) => setAvailableKg(val.replace(/[^0-9.,]/g, ""))}
+                      onChangeText={(val) =>
+                        setAvailableKg(val.replace(/[^0-9.,]/g, ""))
+                      }
                       placeholder="Ex: 10"
                       placeholderTextColor="#94A3B8"
                     />
@@ -745,7 +789,9 @@ export default function GpProfilScreen() {
                       style={styles.input}
                       keyboardType="decimal-pad"
                       value={pricePerKg}
-                      onChangeText={(val) => setPricePerKg(val.replace(/[^0-9.,]/g, ""))}
+                      onChangeText={(val) =>
+                        setPricePerKg(val.replace(/[^0-9.,]/g, ""))
+                      }
                       placeholder="Ex: 8"
                       placeholderTextColor="#94A3B8"
                     />
@@ -755,10 +801,13 @@ export default function GpProfilScreen() {
 
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
-                  <Ionicons name="location-outline" size={16} color="#1D6B45" /> Point de remise
+                  <Ionicons name="location-outline" size={16} color="#1D6B45" />{" "}
+                  Point de remise
                 </Text>
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>QUARTIER / ARRONDISSEMENT</Text>
+                  <Text style={styles.fieldLabel}>
+                    QUARTIER / ARRONDISSEMENT
+                  </Text>
                   <TextInput
                     style={styles.input}
                     value={pickupCity}
@@ -781,7 +830,8 @@ export default function GpProfilScreen() {
 
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
-                  <Ionicons name="create-outline" size={16} color="#1D6B45" /> Présentation
+                  <Ionicons name="create-outline" size={16} color="#1D6B45" />{" "}
+                  Présentation
                 </Text>
                 <TextInput
                   style={[styles.input, styles.multilineInput]}
@@ -804,8 +854,14 @@ export default function GpProfilScreen() {
                   <ActivityIndicator size="small" color="#FFFFFF" />
                 ) : (
                   <>
-                    <Ionicons name="checkmark-circle" size={18} color="#FFFFFF" />
-                    <Text style={styles.saveBtnText}>Enregistrer les modifications</Text>
+                    <Ionicons
+                      name="checkmark-circle"
+                      size={18}
+                      color="#FFFFFF"
+                    />
+                    <Text style={styles.saveBtnText}>
+                      Enregistrer les modifications
+                    </Text>
                   </>
                 )}
               </TouchableOpacity>
@@ -830,7 +886,9 @@ export default function GpProfilScreen() {
           >
             <View style={styles.pickerModalCard}>
               <View style={styles.pickerModalHeader}>
-                <Text style={styles.pickerModalTitle}>{pickerConfig.title}</Text>
+                <Text style={styles.pickerModalTitle}>
+                  {pickerConfig.title}
+                </Text>
                 <TouchableOpacity
                   onPress={() =>
                     setPickerConfig((prev) => ({ ...prev, visible: false }))
@@ -863,7 +921,8 @@ export default function GpProfilScreen() {
                       <Text
                         style={[
                           styles.pickerOptionText,
-                          opt.includes("Autre") && styles.pickerOptionTextCustom,
+                          opt.includes("Autre") &&
+                            styles.pickerOptionTextCustom,
                         ]}
                       >
                         {opt}
@@ -873,7 +932,11 @@ export default function GpProfilScreen() {
                     {opt.includes("Autre") ? (
                       <Ionicons name="pencil" size={16} color="#1D6B45" />
                     ) : (
-                      <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color="#94A3B8"
+                      />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -896,7 +959,8 @@ export default function GpProfilScreen() {
 
               <Text style={styles.modalTitle}>Supprimer ce trajet ?</Text>
               <Text style={styles.modalSub}>
-                Cette action est irréversible. Le trajet sera définitivement effacé de la plateforme.
+                Cette action est irréversible. Le trajet sera définitivement
+                effacé de la plateforme.
               </Text>
 
               <View style={styles.modalButtonsRow}>
@@ -918,7 +982,9 @@ export default function GpProfilScreen() {
                   {isDeleting ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.modalDeleteBtnText}>Oui, supprimer</Text>
+                    <Text style={styles.modalDeleteBtnText}>
+                      Oui, supprimer
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>

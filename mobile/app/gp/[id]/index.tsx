@@ -15,6 +15,7 @@ import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
 import { GpListing } from "../../../utils/types/gp";
+import { apiFetch } from "../../../utils/api";
 
 export default function GpBookingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -44,14 +45,7 @@ export default function GpBookingScreen() {
         }
 
         try {
-          const response = await fetch(
-            `${process.env.EXPO_PUBLIC_API_URL}/gp/${id}`,
-            {
-              headers: {
-                "Content-Type": "application/json",
-              },
-            },
-          );
+          const response = await apiFetch(`/gp/${id}`);
           const data = await response.json();
           if (!response.ok) {
             setError(data.message || "Erreur lors du chargement du GP");
@@ -89,10 +83,10 @@ export default function GpBookingScreen() {
     Boolean(listing && weightNum > listing.available_kg);
 
   const isDeclaredValInvalid =
-    declared_value.trim() !== "" &&
-    (!isValidNumberFormat(declared_value.trim()) ||
-      isNaN(declaredValNum) ||
-      declaredValNum < 0);
+    !declared_value.trim() ||
+    !isValidNumberFormat(declared_value.trim()) ||
+    isNaN(declaredValNum) ||
+    declaredValNum <= 0;
 
   const isSubmitDisabled =
     submitting ||
@@ -118,7 +112,7 @@ export default function GpBookingScreen() {
 
     if (isDeclaredValInvalid) {
       setError(
-        "La valeur déclarée doit être un nombre positif valide (ex: 100)",
+        "La valeur déclarée est obligatoire et doit être un montant supérieur à 0 (ex: 50 €)",
       );
       return;
     }
@@ -142,24 +136,17 @@ export default function GpBookingScreen() {
         : 0;
 
     try {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/gp/${id}/order`,
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({
-            weight_kg: weightNum,
-            content_desc: content_desc,
-            declared_value: safeDeclaredValue,
-            total_amount: total,
-            notes: notes || null,
-            status: "pending",
-          }),
-        },
-      );
+      const response = await apiFetch(`/gp/${id}/order`, {
+        method: "POST",
+        body: JSON.stringify({
+          weight_kg: weightNum,
+          content_desc: content_desc,
+          declared_value: safeDeclaredValue,
+          total_amount: total,
+          notes: notes || null,
+          status: "pending",
+        }),
+      });
       const data = await response.json();
       if (!response.ok) {
         setError(data.error || data.message || "Erreur lors de l'envoi de la commande");
@@ -472,7 +459,7 @@ export default function GpBookingScreen() {
 
                 {/* Champ 3: Valeur déclarée */}
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>VALEUR DÉCLARÉE (€)</Text>
+                  <Text style={styles.fieldLabel}>VALEUR DÉCLARÉE (€) *</Text>
                   <TextInput
                     style={styles.input}
                     placeholder="Ex: 100"

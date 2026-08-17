@@ -14,6 +14,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
+import { apiFetch } from "../../../utils/api";
 
 type Dish = {
   id: string;
@@ -56,23 +57,16 @@ export default function TraiteurEspaceScreen() {
   );
 
   async function loadTraiteur() {
+    setLoading(true);
+    setError(null);
     const token = await getSecureToken("token");
     if (!token) {
       router.push("/login");
       return;
     }
     try {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/traiteur/me`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-        },
-      );
+      const response = await apiFetch("/traiteur/me");
       const data = await response.json();
-      console.log(data);
       if (!response.ok) {
         setError(
           data.error ||
@@ -91,62 +85,122 @@ export default function TraiteurEspaceScreen() {
       }
     } catch (err: any) {
       console.error(err);
-      setError("Erreur de chargement du profil traiteur");
+      setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
     } finally {
       setLoading(false);
     }
   }
 
   async function toggleAvailability(dishId: string, current: boolean) {
-    const token = await getSecureToken("token");
-    if (token) {
-      const response = await fetch(
-        `${process.env.EXPO_PUBLIC_API_URL}/traiteur/dishes/${dishId}`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          body: JSON.stringify({ is_available: !current }),
-        },
-      );
+    setError(null);
+    try {
+      const response = await apiFetch(`/traiteur/dishes/${dishId}`, {
+        method: "PATCH",
+        body: JSON.stringify({ is_available: !current }),
+      });
       const data = await response.json();
       if (!response.ok) {
-        setError("Erreur lors de la modification de la disponibilité");
+        setError(
+          data.error ||
+            data.message ||
+            "Erreur lors de la modification de la disponibilité",
+        );
         return;
       }
-      console.log(data);
+      setDishes((prev) =>
+        prev.map((d) => (d.id === dishId ? { ...d, is_available: !current } : d)),
+      );
+    } catch (e) {
+      console.error("Erreur toggle disponibilité:", e);
+      setError("Impossible de modifier la disponibilité du plat.");
     }
-    setDishes((prev) =>
-      prev.map((d) => (d.id === dishId ? { ...d, is_available: !current } : d)),
-    );
   }
 
   async function confirmDeleteDish() {
     if (!dishToDelete) return;
     setIsDeleting(true);
-    const token = await getSecureToken("token");
+    setError(null);
     try {
-      if (token) {
-        await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/traiteur/dishes/${dishToDelete}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
+      const response = await apiFetch(`/traiteur/dishes/${dishToDelete}`, {
+        method: "DELETE",
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        setError(
+          data.error ||
+            data.message ||
+            "Erreur lors de la suppression du plat",
         );
+        return;
       }
-
       setDishes((prev) => prev.filter((d) => d.id !== dishToDelete));
     } catch (err) {
       console.error("Erreur lors de la suppression:", err);
+      setError("Impossible de supprimer le plat. Vérifiez votre connexion.");
     } finally {
       setIsDeleting(false);
       setDishToDelete(null);
     }
+  }
+
+  if (loading) {
+    return (
+      <View style={[styles.topGreenWrapper, styles.centerLoader]}>
+        <StatusBar barStyle="light-content" />
+        <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={styles.initialLoadingText}>
+          Chargement de votre espace traiteur...
+        </Text>
+      </View>
+    );
+  }
+
+  if (!traiteur && error) {
+    return (
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.container} edges={["top"]}>
+          <StatusBar barStyle="light-content" />
+          <View style={styles.headerCard}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.push("/profil")}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={18}
+                color="rgba(255, 255, 255, 0.8)"
+              />
+              <Text style={styles.backBtnText}>Profil</Text>
+            </TouchableOpacity>
+          </View>
+
+          <View style={styles.errorFullWrapper}>
+            <View style={styles.errorFullCard}>
+              <View style={styles.errorIconCircle}>
+                <Ionicons name="alert-circle-outline" size={42} color="#DC2626" />
+              </View>
+              <Text style={styles.errorFullTitle}>
+                Oups, une erreur est survenue
+              </Text>
+              <Text style={styles.errorFullSub}>{error}</Text>
+              <TouchableOpacity
+                style={styles.retryBtn}
+                onPress={() => loadTraiteur()}
+                activeOpacity={0.85}
+              >
+                <Ionicons name="refresh" size={16} color="#FFFFFF" />
+                <Text style={styles.retryBtnText}>Réessayer</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (!traiteur) {
+    return null;
   }
 
   return (
@@ -252,6 +306,16 @@ export default function TraiteurEspaceScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {error && (
+            <View style={styles.inlineErrorBox}>
+              <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+              <Text style={styles.inlineErrorText}>{error}</Text>
+              <TouchableOpacity onPress={() => setError(null)} hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}>
+                <Ionicons name="close" size={18} color="#B91C1C" />
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* ── VUE 1 : MON PROFIL ── */}
           {view === "profil" && (
             <View style={styles.cardsContainer}>
@@ -548,9 +612,105 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#165034",
   },
+  centerLoader: {
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 12,
+  },
+  initialLoadingText: {
+    color: "rgba(255, 255, 255, 0.85)",
+    fontSize: 14,
+    fontWeight: "700",
+  },
   container: {
     flex: 1,
     backgroundColor: "#165034",
+  },
+
+  /* Écran d'Erreur Pleine Page */
+  errorFullWrapper: {
+    flex: 1,
+    backgroundColor: "#F3F4F6",
+    padding: 20,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  errorFullCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    alignItems: "center",
+    width: "100%",
+    maxWidth: 400,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    elevation: 3,
+  },
+  errorIconCircle: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  errorFullTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  errorFullSub: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  retryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#1D6B45",
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    borderRadius: 14,
+    shadowColor: "#1D6B45",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  retryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+
+  /* Bannière d'Erreur Inline */
+  inlineErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  inlineErrorText: {
+    flex: 1,
+    fontSize: 13,
+    color: "#B91C1C",
+    fontWeight: "600",
   },
 
   /* Header Card Vert Émeraude */

@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
+import { apiFetch } from "../../utils/api";
 
 const CITIES_DEPARTURE = [
   "Paris",
@@ -74,7 +75,8 @@ export default function NouveauGpScreen() {
   const [isCustomDepartureCity, setIsCustomDepartureCity] = useState(false);
 
   const [departureCountry, setDepartureCountry] = useState("France");
-  const [isCustomDepartureCountry, setIsCustomDepartureCountry] = useState(false);
+  const [isCustomDepartureCountry, setIsCustomDepartureCountry] =
+    useState(false);
 
   const [arrivalCity, setArrivalCity] = useState("Dakar");
   const [isCustomArrivalCity, setIsCustomArrivalCity] = useState(false);
@@ -107,7 +109,7 @@ export default function NouveauGpScreen() {
         setIsLoggedIn(true);
       };
       load();
-    }, [])
+    }, []),
   );
 
   const onSubmit = async () => {
@@ -121,12 +123,8 @@ export default function NouveauGpScreen() {
     }
 
     try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_API_URL}/gp`, {
+      const response = await apiFetch("/gp", {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
         body: JSON.stringify({
           departure_city: departureCity,
           departure_country: departureCountry,
@@ -144,7 +142,9 @@ export default function NouveauGpScreen() {
 
       const dataR = await response.json();
       if (!response.ok) {
-        setError(dataR.error || dataR.message || "Erreur lors de la publication.");
+        setError(
+          dataR.error || dataR.message || "Erreur lors de la publication.",
+        );
         setShowConfirmModal(false);
         setLoading(false);
         return;
@@ -175,7 +175,7 @@ export default function NouveauGpScreen() {
   const openPicker = (
     title: string,
     options: string[],
-    onSelect: (val: string) => void
+    onSelect: (val: string) => void,
   ) => {
     setPickerConfig({
       visible: true,
@@ -290,7 +290,8 @@ export default function NouveauGpScreen() {
           {/* Itinéraire */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
-              <Ionicons name="airplane-outline" size={16} color="#1D6B45" /> Itinéraire
+              <Ionicons name="airplane-outline" size={16} color="#1D6B45" />{" "}
+              Itinéraire
             </Text>
 
             {/* Départ : Ville & Pays */}
@@ -477,11 +478,14 @@ export default function NouveauGpScreen() {
           {/* DÉTAILS DU VOL */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
-              <Ionicons name="calendar-outline" size={16} color="#1D6B45" /> Détails du vol
+              <Ionicons name="calendar-outline" size={16} color="#1D6B45" />{" "}
+              Détails du vol
             </Text>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>DATE DE DÉPART * (DÈS DEMAIN)</Text>
+              <Text style={styles.fieldLabel}>
+                DATE DE DÉPART * (DÈS DEMAIN)
+              </Text>
               <View style={styles.dateInputWrapper}>
                 <Ionicons name="calendar" size={18} color="#1D6B45" />
                 <TextInput
@@ -546,12 +550,15 @@ export default function NouveauGpScreen() {
           {/* CAPACITÉ & TARIF */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
-              <Ionicons name="cube-outline" size={16} color="#1D6B45" /> Capacité & Tarif
+              <Ionicons name="cube-outline" size={16} color="#1D6B45" />{" "}
+              Capacité & Tarif
             </Text>
 
             <View style={styles.inputGridRow}>
               <View style={styles.flexField}>
-                <Text style={styles.fieldLabel}>KILOS DISPONIBLES * (&gt; 0)</Text>
+                <Text style={styles.fieldLabel}>
+                  KILOS DISPONIBLES * (&gt; 0)
+                </Text>
                 <TextInput
                   style={[styles.input, isKgInvalid && styles.inputError]}
                   keyboardType="decimal-pad"
@@ -563,7 +570,9 @@ export default function NouveauGpScreen() {
               </View>
 
               <View style={styles.flexField}>
-                <Text style={styles.fieldLabel}>PRIX PAR KG (€) * (&gt; 0)</Text>
+                <Text style={styles.fieldLabel}>
+                  PRIX PAR KG (€) * (&gt; 0)
+                </Text>
                 <TextInput
                   style={[styles.input, isPriceInvalid && styles.inputError]}
                   keyboardType="decimal-pad"
@@ -579,7 +588,8 @@ export default function NouveauGpScreen() {
           {/* POINT DE REMISE */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
-              <Ionicons name="location-outline" size={16} color="#1D6B45" /> Point de remise
+              <Ionicons name="location-outline" size={16} color="#1D6B45" />{" "}
+              Point de remise
             </Text>
             <Text style={styles.cardSectionSub}>
               Où les expéditeurs peuvent déposer leur colis avant le départ
@@ -597,9 +607,7 @@ export default function NouveauGpScreen() {
             </View>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                ADRESSE PRÉCISE (OPTIONNEL)
-              </Text>
+              <Text style={styles.fieldLabel}>ADRESSE PRÉCISE (OPTIONNEL)</Text>
               <TextInput
                 style={styles.input}
                 value={pickupAddress}
@@ -613,7 +621,8 @@ export default function NouveauGpScreen() {
           {/* PRÉSENTATION & CONDITIONS */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
-              <Ionicons name="create-outline" size={16} color="#1D6B45" /> Présentation
+              <Ionicons name="create-outline" size={16} color="#1D6B45" />{" "}
+              Présentation
             </Text>
             <Text style={styles.cardSectionSub}>
               Décris-toi et tes conditions pour rassurer les expéditeurs
@@ -668,7 +677,9 @@ export default function NouveauGpScreen() {
           >
             <View style={styles.pickerModalCard}>
               <View style={styles.pickerModalHeader}>
-                <Text style={styles.pickerModalTitle}>{pickerConfig.title}</Text>
+                <Text style={styles.pickerModalTitle}>
+                  {pickerConfig.title}
+                </Text>
                 <TouchableOpacity
                   onPress={() =>
                     setPickerConfig((prev) => ({ ...prev, visible: false }))
@@ -701,7 +712,8 @@ export default function NouveauGpScreen() {
                       <Text
                         style={[
                           styles.pickerOptionText,
-                          opt.includes("Autre") && styles.pickerOptionTextCustom,
+                          opt.includes("Autre") &&
+                            styles.pickerOptionTextCustom,
                         ]}
                       >
                         {opt}
@@ -711,7 +723,11 @@ export default function NouveauGpScreen() {
                     {opt.includes("Autre") ? (
                       <Ionicons name="pencil" size={16} color="#1D6B45" />
                     ) : (
-                      <Ionicons name="chevron-forward" size={14} color="#94A3B8" />
+                      <Ionicons
+                        name="chevron-forward"
+                        size={14}
+                        color="#94A3B8"
+                      />
                     )}
                   </TouchableOpacity>
                 ))}
@@ -784,13 +800,16 @@ export default function NouveauGpScreen() {
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
-              <View style={[styles.modalIconCircle, { backgroundColor: "#E8F5E9" }]}>
+              <View
+                style={[styles.modalIconCircle, { backgroundColor: "#E8F5E9" }]}
+              >
                 <Ionicons name="checkmark-circle" size={48} color="#1D6B45" />
               </View>
 
               <Text style={styles.modalTitle}>Annonce publiée ! 🎉</Text>
               <Text style={styles.modalSub}>
-                Ton annonce est désormais en ligne. Les expéditeurs peuvent réserver des kilos sur ton trajet.
+                Ton annonce est désormais en ligne. Les expéditeurs peuvent
+                réserver des kilos sur ton trajet.
               </Text>
 
               <TouchableOpacity
@@ -801,7 +820,9 @@ export default function NouveauGpScreen() {
                 }}
                 activeOpacity={0.8}
               >
-                <Text style={styles.modalConfirmBtnText}>Voir les annonces →</Text>
+                <Text style={styles.modalConfirmBtnText}>
+                  Voir les annonces →
+                </Text>
               </TouchableOpacity>
             </View>
           </View>

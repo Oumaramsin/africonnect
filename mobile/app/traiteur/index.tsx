@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Traiteur } from "../../utils/types/traiteur";
+import { apiFetch } from "../../utils/api";
 
 // Filtres de cuisine
 const CUISINES = [
@@ -41,25 +42,21 @@ export default function TraiteurScreen() {
     async function fetchTraiteurs() {
       setLoading(true);
       try {
-        const response = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/traiteur`,
-          {
-            headers: {
-              "Content-Type": "application/json",
-            },
-          },
-        );
+        const response = await apiFetch("/traiteur");
         if (!response.ok) {
           setLoading(false);
           return;
         }
         const data = await response.json();
-        console.log(data);
         if (!ignore) {
           setTraiteurs(data.data.activeTraiteur);
         }
+      } catch (err) {
+        console.error("Erreur fetch traiteurs:", err);
       } finally {
-        if (!ignore) setLoading(false);
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     }
 

@@ -11,6 +11,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
+import { apiFetch } from "../utils/api";
 import type { CommandeTraiteur, OrderPlat } from "../utils/types/traiteur";
 import { GpRequest } from "../utils/types/gp";
 
@@ -19,10 +20,12 @@ export default function AccueilScreen() {
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [fullname, setFullname] = useState("");
-  const [commandesTraiteur, setCommandesTraiteur] = useState<any[]>([]);
-  const [ordersPlats, setOrdersPlats] = useState<any[]>([]);
+  const [ordersPlats, setOrdersPlats] = useState<OrderPlat[]>([]);
+  const [commandesTraiteur, setCommandesTraiteur] = useState<
+    CommandeTraiteur[]
+  >([]);
   const [gpRequests, setGpRequests] = useState<any[]>([]);
-  const [pendingCount, setPendingCount] = useState<any[]>([]);
+  const [pendingCount, setPendingCount] = useState<number>(0);
   const [unreadNotifications, setUnreadNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
 
@@ -35,15 +38,7 @@ export default function AccueilScreen() {
       }
       setIsLoggedIn(true);
       try {
-        const baseUrl =
-          process.env.EXPO_PUBLIC_API_URL || "https://dabari-api.up.railway.app/api";
-        const response = await fetch(`${baseUrl}/commande`, {
-          headers: {
-            "Content-type": "application/json",
-            Authorization: `Bearer ${token}`,
-          },
-          cache: "no-store",
-        });
+        const response = await apiFetch("/commande");
         const data = await response.json();
         if (!response.ok) {
           setError(
@@ -51,7 +46,6 @@ export default function AccueilScreen() {
           );
           return;
         }
-        console.log(data);
         const userProfile = data.data?.orders;
         if (userProfile) {
           setFullname(userProfile.full_name);
@@ -83,16 +77,12 @@ export default function AccueilScreen() {
               gpRequestsPending,
           );
         }
-        const notifRes = await fetch(`${baseUrl}/notifications`, {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            cache: "no-store",
-          },
-        );
+        const notifRes = await apiFetch("/notifications");
         if (notifRes.ok) {
           const notifData = await notifRes.json();
-          setUnreadNotifications(notifData.notifications?.filter((n: any) => !n.is_read) || []);
+          setUnreadNotifications(
+            notifData.notifications?.filter((n: any) => !n.is_read) || [],
+          );
           setUnreadCount(notifData.unread_count || 0);
         }
       } catch (error) {
@@ -149,305 +139,330 @@ export default function AccueilScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-        {/* Top Hero Header Card (Gradient Vert & Or) */}
-        <View style={styles.heroCard}>
-          {/* Background Gold Blur Decoration */}
-          <View style={styles.decorCircleGold} />
+          {/* Top Hero Header Card (Gradient Vert & Or) */}
+          <View style={styles.heroCard}>
+            {/* Background Gold Blur Decoration */}
+            <View style={styles.decorCircleGold} />
 
-          <View style={styles.heroHeaderRow}>
-            <View style={{ flex: 1 }}>
-              <View style={styles.welcomePill}>
-                <Ionicons name="sparkles" size={12} color="#FBBF24" />
-                <Text style={styles.welcomePillText}>Bienvenue sur Dabari</Text>
-              </View>
-
-              <Text style={styles.greetingText}>Bonjour, {fullname} 👋</Text>
-              <Text style={styles.greetingSubtext}>
-                Que souhaitez-vous commander ou envoyer aujourd'hui ?
-              </Text>
-            </View>
-
-            <Link href="/profil" asChild>
-              <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.8}>
-                <Text style={styles.avatarText}>
-                  {fullname ? fullname.charAt(0).toUpperCase() : "?"}
-                </Text>
-                <View style={styles.avatarStatusDot} />
-              </TouchableOpacity>
-            </Link>
-          </View>
-        </View>
-
-        <View style={styles.mainBody}>
-          {/* Alert Error Box (si une erreur de chargement survient) */}
-          {error && (
-            <View style={styles.errorBox}>
-              <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
-              <Text style={styles.errorText}>{error}</Text>
-            </View>
-          )}
-
-          {/* Notification Alert Banner */}
-          {unreadNotifications.length > 0 && (
-            <TouchableOpacity style={styles.notifBanner} activeOpacity={0.9}>
-              <View style={styles.notifLeft}>
-                <View style={styles.notifIconContainer}>
-                  <Ionicons name="notifications" size={20} color="#1D6B45" />
-                  <View style={styles.notifBadgeCount}>
-                    <Text style={styles.notifBadgeText}>{unreadCount}</Text>
-                  </View>
-                </View>
-
-                <View style={{ flex: 1 }}>
-                  {unreadCount > 1 ? (
-                    <Text style={styles.notifTitle}>
-                      {unreadCount} nouvelles notifications !
-                    </Text>
-                  ) : (
-                    <Text style={styles.notifTitle}>
-                      {unreadCount} nouvelle notification !
-                    </Text>
-                  )}
-                  <Text style={styles.notifDesc}>
-                    Votre commande traiteur est en cours de préparation.
+            <View style={styles.heroHeaderRow}>
+              <View style={{ flex: 1 }}>
+                <View style={styles.welcomePill}>
+                  <Ionicons name="sparkles" size={12} color="#FBBF24" />
+                  <Text style={styles.welcomePillText}>
+                    Bienvenue sur Dabari
                   </Text>
                 </View>
-              </View>
 
-              <View style={styles.notifActionBtn}>
-                <Text style={styles.notifActionText}>Voir</Text>
-              </View>
-            </TouchableOpacity>
-          )}
-          {/* Section: Services Disponibles */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Services disponibles</Text>
-            <TouchableOpacity onPress={() => router.push("/services")}>
-              <Text style={styles.seeAllText}>Voir tout →</Text>
-            </TouchableOpacity>
-          </View>
-
-          {/* Grille 2x2 de Services */}
-          <View style={styles.servicesGrid}>
-            {/* 1. Traiteur (Actif) */}
-            <TouchableOpacity
-              style={styles.serviceCardActiveTraiteur}
-              activeOpacity={0.85}
-              onPress={() => {
-                router.push("/traiteur");
-              }}
-            >
-              <View>
-                <View style={styles.serviceTopRow}>
-                  <View style={styles.serviceIconBgTraiteur}>
-                    <Ionicons name="restaurant" size={24} color="#1D6B45" />
-                  </View>
-                  <View style={styles.statusPillActiveGreen}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={10}
-                      color="#1D6B45"
-                    />
-                    <Text style={styles.statusTextGreen}>Actif</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.serviceTitle}>Traiteur</Text>
-                <Text style={styles.serviceCategoryGreen}>Plats & Devis</Text>
-                <Text style={styles.serviceDescription}>
-                  Plats faits maison & devis événements.
+                <Text style={styles.greetingText}>Bonjour, {fullname}</Text>
+                <Text style={styles.greetingSubtext}>
+                  Que souhaitez-vous commander ou envoyer aujourd'hui ?
                 </Text>
               </View>
 
-              <View style={styles.serviceFooterRow}>
-                <Text style={styles.serviceFooterActionGreen}>Commander</Text>
-                <View style={styles.actionCircleGreen}>
-                  <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            {/* 2. GP Colis (Actif) */}
-            <TouchableOpacity
-              style={styles.serviceCardActiveGp}
-              activeOpacity={0.85}
-              onPress={() => {
-                router.push("/gp");
-              }}
-            >
-              <View>
-                <View style={styles.serviceTopRow}>
-                  <View style={styles.serviceIconBgGp}>
-                    <Ionicons name="airplane" size={24} color="#D4870A" />
-                  </View>
-                  <View style={styles.statusPillActiveGold}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={10}
-                      color="#D4870A"
-                    />
-                    <Text style={styles.statusTextGold}>Actif</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.serviceTitle}>GP Colis</Text>
-                <Text style={styles.serviceCategoryGold}>
-                  Transport de colis
-                </Text>
-                <Text style={styles.serviceDescription}>
-                  Envois sécurisés Europe - Afrique.
-                </Text>
-              </View>
-
-              <View style={styles.serviceFooterRow}>
-                <Text style={styles.serviceFooterActionGold}>Envoyer</Text>
-                <View style={styles.actionCircleGold}>
-                  <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
-                </View>
-              </View>
-            </TouchableOpacity>
-
-            {/* 3. Épicerie (Bientôt) */}
-            <View style={styles.serviceCardDisabled}>
-              <View>
-                <View style={styles.serviceTopRow}>
-                  <View style={styles.serviceIconBgDisabled}>
-                    <Ionicons name="cart-outline" size={22} color="#9CA3AF" />
-                  </View>
-                  <View style={styles.statusPillSoon}>
-                    <Ionicons name="time-outline" size={9} color="#D4870A" />
-                    <Text style={styles.statusTextSoon}>Bientôt</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.serviceTitleDisabled}>Épicerie</Text>
-                <Text style={styles.serviceCategoryDisabled}>
-                  Produits du pays
-                </Text>
-                <Text style={styles.serviceDescriptionDisabled}>
-                  Ingrédients & condiments exotiques.
-                </Text>
-              </View>
-
-              <Text style={styles.soonFooterText}>Prochainement</Text>
-            </View>
-
-            {/* 4. Coiffure (Bientôt) */}
-            <View style={styles.serviceCardDisabled}>
-              <View>
-                <View style={styles.serviceTopRow}>
-                  <View style={styles.serviceIconBgDisabled}>
-                    <Ionicons name="cut-outline" size={22} color="#9CA3AF" />
-                  </View>
-                  <View style={styles.statusPillSoonGreen}>
-                    <Ionicons name="time-outline" size={9} color="#1D6B45" />
-                    <Text style={styles.statusTextSoonGreen}>Bientôt</Text>
-                  </View>
-                </View>
-
-                <Text style={styles.serviceTitleDisabled}>Coiffure</Text>
-                <Text style={styles.serviceCategoryDisabled}>
-                  Tresses & Soins
-                </Text>
-                <Text style={styles.serviceDescriptionDisabled}>
-                  Tresseuses spécialisées à domicile.
-                </Text>
-              </View>
-
-              <Text style={styles.soonFooterText}>Prochainement</Text>
-            </View>
-          </View>
-
-          {/* Section: Commandes Récentes */}
-          {isLoggedIn && (commandesTraiteur.length > 0 || ordersPlats.length > 0 || gpRequests.length > 0) ? (
-            <View style={styles.recentOrdersCard}>
-              <View style={styles.recentOrdersHeader}>
-                <Text style={styles.recentOrdersTitle}>Commandes récentes</Text>
-                <TouchableOpacity
-                  onPress={() => {
-                    router.push("/commandes");
-                  }}
-                >
-                  <Text style={styles.seeAllText}>Voir tout →</Text>
+              <Link href="/profil" asChild>
+                <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.8}>
+                  <Text style={styles.avatarText}>
+                    {fullname ? fullname.charAt(0).toUpperCase() : "?"}
+                  </Text>
+                  <View style={styles.avatarStatusDot} />
                 </TouchableOpacity>
+              </Link>
+            </View>
+          </View>
+
+          <View style={styles.mainBody}>
+            {/* Alert Error Box (si une erreur de chargement survient) */}
+            {error && (
+              <View style={styles.errorBox}>
+                <Ionicons
+                  name="alert-circle-outline"
+                  size={18}
+                  color="#B91C1C"
+                />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
+
+            {/* Notification Alert Banner */}
+            {unreadNotifications.length > 0 && (
+              <TouchableOpacity style={styles.notifBanner} activeOpacity={0.9}>
+                <View style={styles.notifLeft}>
+                  <View style={styles.notifIconContainer}>
+                    <Ionicons name="notifications" size={20} color="#1D6B45" />
+                    <View style={styles.notifBadgeCount}>
+                      <Text style={styles.notifBadgeText}>{unreadCount}</Text>
+                    </View>
+                  </View>
+
+                  <View style={{ flex: 1 }}>
+                    {unreadCount > 1 ? (
+                      <Text style={styles.notifTitle}>
+                        {unreadCount} nouvelles notifications !
+                      </Text>
+                    ) : (
+                      <Text style={styles.notifTitle}>
+                        {unreadCount} nouvelle notification !
+                      </Text>
+                    )}
+                    <Text style={styles.notifDesc}>
+                      Votre commande traiteur est en cours de préparation.
+                    </Text>
+                  </View>
+                </View>
+
+                <View style={styles.notifActionBtn}>
+                  <Text style={styles.notifActionText}>Voir</Text>
+                </View>
+              </TouchableOpacity>
+            )}
+            {/* Section: Services Disponibles */}
+            <View style={styles.sectionHeader}>
+              <Text style={styles.sectionTitle}>Services disponibles</Text>
+              <TouchableOpacity onPress={() => router.push("/services")}>
+                <Text style={styles.seeAllText}>Voir tout →</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Grille 2x2 de Services */}
+            <View style={styles.servicesGrid}>
+              {/* 1. Traiteur (Actif) */}
+              <TouchableOpacity
+                style={styles.serviceCardActiveTraiteur}
+                activeOpacity={0.85}
+                onPress={() => {
+                  router.push("/traiteur");
+                }}
+              >
+                <View>
+                  <View style={styles.serviceTopRow}>
+                    <View style={styles.serviceIconBgTraiteur}>
+                      <Ionicons name="restaurant" size={24} color="#1D6B45" />
+                    </View>
+                    <View style={styles.statusPillActiveGreen}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={10}
+                        color="#1D6B45"
+                      />
+                      <Text style={styles.statusTextGreen}>Actif</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.serviceTitle}>Traiteur</Text>
+                  <Text style={styles.serviceCategoryGreen}>Plats & Devis</Text>
+                  <Text style={styles.serviceDescription}>
+                    Plats faits maison & devis événements.
+                  </Text>
+                </View>
+
+                <View style={styles.serviceFooterRow}>
+                  <Text style={styles.serviceFooterActionGreen}>Commander</Text>
+                  <View style={styles.actionCircleGreen}>
+                    <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* 2. GP Colis (Actif) */}
+              <TouchableOpacity
+                style={styles.serviceCardActiveGp}
+                activeOpacity={0.85}
+                onPress={() => {
+                  router.push("/gp");
+                }}
+              >
+                <View>
+                  <View style={styles.serviceTopRow}>
+                    <View style={styles.serviceIconBgGp}>
+                      <Ionicons name="airplane" size={24} color="#D4870A" />
+                    </View>
+                    <View style={styles.statusPillActiveGold}>
+                      <Ionicons
+                        name="checkmark-circle"
+                        size={10}
+                        color="#D4870A"
+                      />
+                      <Text style={styles.statusTextGold}>Actif</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.serviceTitle}>GP Colis</Text>
+                  <Text style={styles.serviceCategoryGold}>
+                    Transport de colis
+                  </Text>
+                  <Text style={styles.serviceDescription}>
+                    Envois sécurisés Europe - Afrique.
+                  </Text>
+                </View>
+
+                <View style={styles.serviceFooterRow}>
+                  <Text style={styles.serviceFooterActionGold}>Envoyer</Text>
+                  <View style={styles.actionCircleGold}>
+                    <Ionicons name="arrow-forward" size={12} color="#FFFFFF" />
+                  </View>
+                </View>
+              </TouchableOpacity>
+
+              {/* 3. Épicerie (Bientôt) */}
+              <View style={styles.serviceCardDisabled}>
+                <View>
+                  <View style={styles.serviceTopRow}>
+                    <View style={styles.serviceIconBgDisabled}>
+                      <Ionicons name="cart-outline" size={22} color="#9CA3AF" />
+                    </View>
+                    <View style={styles.statusPillSoon}>
+                      <Ionicons name="time-outline" size={9} color="#D4870A" />
+                      <Text style={styles.statusTextSoon}>Bientôt</Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.serviceTitleDisabled}>Épicerie</Text>
+                  <Text style={styles.serviceCategoryDisabled}>
+                    Produits du pays
+                  </Text>
+                  <Text style={styles.serviceDescriptionDisabled}>
+                    Ingrédients & condiments exotiques.
+                  </Text>
+                </View>
+
+                <Text style={styles.soonFooterText}>Prochainement</Text>
               </View>
 
-              {/* Order Item 1 */}
-              {commandesTraiteur?.slice(0, 2).map((cmd: CommandeTraiteur) => {
-                const traiteurName =
-                  cmd.traiteur?.name || cmd.traiteurs?.name || "Traiteur";
-                return (
-                  <View key={cmd.id} style={styles.orderItemRow}>
-                    <View style={styles.orderItemLeft}>
-                      <View style={styles.orderIconBoxTraiteur}>
-                        <Ionicons name="restaurant" size={18} color="#1D6B45" />
-                      </View>
-                      <View>
-                        <Text style={styles.orderItemName}>{traiteurName}</Text>
-                        <Text style={styles.orderItemDate}>
-                          {formatDate(cmd.created_at)} · {cmd.nb_personnes}{" "}
-                          pers.
-                        </Text>
-                      </View>
+              {/* 4. Coiffure (Bientôt) */}
+              <View style={styles.serviceCardDisabled}>
+                <View>
+                  <View style={styles.serviceTopRow}>
+                    <View style={styles.serviceIconBgDisabled}>
+                      <Ionicons name="cut-outline" size={22} color="#9CA3AF" />
                     </View>
-                    {getStatutBadge(cmd.statut)}
-                  </View>
-                );
-              })}
-              {/* Order Item 2 */}
-              {ordersPlats?.slice(0, 2).map((order: OrderPlat) => {
-                const traiteurName =
-                  order.traiteur?.name || order.traiteurs?.name || "Traiteur";
-                return (
-                  <View key={order.id} style={styles.orderItemRow}>
-                    <View style={styles.orderItemLeft}>
-                      <View style={styles.orderIconBoxTraiteur}>
-                        <Ionicons name="restaurant" size={18} color="#1D6B45" />
-                      </View>
-                      <View>
-                        <Text style={styles.orderItemName}>{traiteurName}</Text>
-                        <Text style={styles.orderItemDate}>
-                          {formatDate(order.created_at)} · {order.total_amount}{" "}
-                          €
-                        </Text>
-                      </View>
+                    <View style={styles.statusPillSoonGreen}>
+                      <Ionicons name="time-outline" size={9} color="#1D6B45" />
+                      <Text style={styles.statusTextSoonGreen}>Bientôt</Text>
                     </View>
-                    {getStatutBadge(order.status)}
                   </View>
-                );
-              })}
-              {gpRequests?.slice(0, 2).map((gp: GpRequest) => {
-                return (
-                  <View key={gp.id} style={styles.orderItemRow}>
-                    <View style={styles.orderItemLeft}>
-                      <View style={styles.orderIconBoxTraiteur}>
-                        <Ionicons name="airplane" size={18} color="#D4870A" />
-                      </View>
-                      <View>
-                        <Text style={styles.orderItemName}>{gp.departure_city} → {gp.arrival_city}</Text>
-                        <Text style={styles.orderItemDate}>
-                          {formatDate(gp.created_at)} · {gp.weight_kg}{" "}Kg
-                        </Text>
-                      </View>
-                    </View>
-                    {getStatutBadge(gp.status)}
-                  </View>
-                );
-              })}
-            </View>
-          ) : null}
 
-          {/* Footer Security Notice */}
-          <View style={styles.footerTrustBar}>
-            <Ionicons name="shield-checkmark" size={14} color="#1D6B45" />
-            <Text style={styles.footerTrustText}>
-              Plateforme 100% sécurisée • Réseau de confiance Dabari
-            </Text>
+                  <Text style={styles.serviceTitleDisabled}>Coiffure</Text>
+                  <Text style={styles.serviceCategoryDisabled}>
+                    Tresses & Soins
+                  </Text>
+                  <Text style={styles.serviceDescriptionDisabled}>
+                    Tresseuses spécialisées à domicile.
+                  </Text>
+                </View>
+
+                <Text style={styles.soonFooterText}>Prochainement</Text>
+              </View>
+            </View>
+
+            {/* Section: Commandes Récentes */}
+            {isLoggedIn &&
+            (commandesTraiteur.length > 0 ||
+              ordersPlats.length > 0 ||
+              gpRequests.length > 0) ? (
+              <View style={styles.recentOrdersCard}>
+                <View style={styles.recentOrdersHeader}>
+                  <Text style={styles.recentOrdersTitle}>
+                    Commandes récentes
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      router.push("/commandes");
+                    }}
+                  >
+                    <Text style={styles.seeAllText}>Voir tout →</Text>
+                  </TouchableOpacity>
+                </View>
+
+                {/* Order Item 1 */}
+                {commandesTraiteur?.slice(0, 2).map((cmd: CommandeTraiteur) => {
+                  const traiteurName =
+                    cmd.traiteur?.name || cmd.traiteurs?.name || "Traiteur";
+                  return (
+                    <View key={cmd.id} style={styles.orderItemRow}>
+                      <View style={styles.orderItemLeft}>
+                        <View style={styles.orderIconBoxTraiteur}>
+                          <Ionicons
+                            name="restaurant"
+                            size={18}
+                            color="#1D6B45"
+                          />
+                        </View>
+                        <View>
+                          <Text style={styles.orderItemName}>
+                            {traiteurName}
+                          </Text>
+                          <Text style={styles.orderItemDate}>
+                            {formatDate(cmd.created_at)} · {cmd.nb_personnes}{" "}
+                            pers.
+                          </Text>
+                        </View>
+                      </View>
+                      {getStatutBadge(cmd.statut)}
+                    </View>
+                  );
+                })}
+                {/* Order Item 2 */}
+                {ordersPlats?.slice(0, 2).map((order: OrderPlat) => {
+                  const traiteurName =
+                    order.traiteur?.name || order.traiteurs?.name || "Traiteur";
+                  return (
+                    <View key={order.id} style={styles.orderItemRow}>
+                      <View style={styles.orderItemLeft}>
+                        <View style={styles.orderIconBoxTraiteur}>
+                          <Ionicons
+                            name="restaurant"
+                            size={18}
+                            color="#1D6B45"
+                          />
+                        </View>
+                        <View>
+                          <Text style={styles.orderItemName}>
+                            {traiteurName}
+                          </Text>
+                          <Text style={styles.orderItemDate}>
+                            {formatDate(order.created_at)} ·{" "}
+                            {order.total_amount} €
+                          </Text>
+                        </View>
+                      </View>
+                      {getStatutBadge(order.status)}
+                    </View>
+                  );
+                })}
+                {gpRequests?.slice(0, 2).map((gp: GpRequest) => {
+                  return (
+                    <View key={gp.id} style={styles.orderItemRow}>
+                      <View style={styles.orderItemLeft}>
+                        <View style={styles.orderIconBoxTraiteur}>
+                          <Ionicons name="airplane" size={18} color="#D4870A" />
+                        </View>
+                        <View>
+                          <Text style={styles.orderItemName}>
+                            {gp.departure_city} → {gp.arrival_city}
+                          </Text>
+                          <Text style={styles.orderItemDate}>
+                            {formatDate(gp.created_at)} · {gp.weight_kg} Kg
+                          </Text>
+                        </View>
+                      </View>
+                      {getStatutBadge(gp.status)}
+                    </View>
+                  );
+                })}
+              </View>
+            ) : null}
+
+            {/* Footer Security Notice */}
+            <View style={styles.footerTrustBar}>
+              <Ionicons name="shield-checkmark" size={14} color="#1D6B45" />
+              <Text style={styles.footerTrustText}>
+                Plateforme 100% sécurisée • Réseau de confiance Dabari
+              </Text>
+            </View>
           </View>
-        </View>
-      </ScrollView>
-    </SafeAreaView>
-  </View>
+        </ScrollView>
+      </SafeAreaView>
+    </View>
   );
 }
 
