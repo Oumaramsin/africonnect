@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   ScrollView,
   ActivityIndicator,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
@@ -48,9 +49,11 @@ export default function HomeScreen() {
         {/* Brand Header */}
         <View style={styles.header}>
           <View style={styles.logoContainer}>
-            <View style={styles.logoBadge}>
-              <Ionicons name="restaurant-sharp" size={22} color="#FFFFFF" />
-            </View>
+            <Image
+              source={require("../assets/logo.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
             <Text style={styles.logoTitle}>Dabari</Text>
           </View>
           <View style={styles.pillBadge}>
@@ -161,18 +164,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 10,
   },
-  logoBadge: {
-    width: 40,
-    height: 40,
-    borderRadius: 14,
-    backgroundColor: "#1D6B45",
-    justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#1D6B45",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 6,
-    elevation: 3,
+  logoImage: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
   },
   logoTitle: {
     fontSize: 22,

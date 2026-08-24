@@ -8,6 +8,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
@@ -96,9 +97,11 @@ export default function LoginScreen() {
             </TouchableOpacity>
 
             <View style={styles.logoRow}>
-              <View style={styles.logoBadge}>
-                <Ionicons name="restaurant-sharp" size={18} color="#FFFFFF" />
-              </View>
+              <Image
+                source={require("../../assets/logo.png")}
+                style={styles.logoImage}
+                resizeMode="contain"
+              />
               <Text style={styles.logoTitle}>Dabari</Text>
             </View>
 
@@ -337,13 +340,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
   },
-  logoBadge: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: "#1D6B45",
-    justifyContent: "center",
-    alignItems: "center",
+  logoImage: {
+    width: 36,
+    height: 36,
+    borderRadius: 8,
   },
   logoTitle: {
     fontSize: 20,

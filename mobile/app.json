@@ -4,10 +4,48 @@
     "slug": "dabari",
     "scheme": "dabari",
     "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#FFFFFF"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.dabari.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "Dabari utilise votre appareil photo pour vous permettre de photographier vos plats et colis.",
+        "NSPhotoLibraryUsageDescription": "Dabari a besoin d'accéder à votre galerie pour importer des photos de vos plats traiteur et annonces GP."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#FFFFFF"
+      },
+      "package": "com.dabari.app",
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
     "plugins": [
       "expo-router",
       "expo-secure-store",
-      "@react-native-community/datetimepicker"
+      "@react-native-community/datetimepicker",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Autorisez Dabari à accéder à vos photos pour vos annonces et plats.",
+          "cameraPermission": "Autorisez Dabari à accéder à votre appareil photo."
+        }
+      ]
     ]
   }
 }
