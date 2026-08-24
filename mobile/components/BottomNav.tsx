@@ -86,9 +86,14 @@ export default function BottomNav() {
     return () => sub.remove();
   }, [pathname]);
 
-  // Masquer le BottomNav sur les pages de connexion/inscription
+  // Masquer le BottomNav sur les pages de bienvenue, connexion et inscription
   const hideOn = ["/login", "/register", "/(auth)/login", "/(auth)/register"];
-  if (hideOn.some((route) => pathname.includes(route))) {
+  if (
+    pathname === "/" ||
+    pathname === "" ||
+    pathname === "/index" ||
+    hideOn.some((route) => pathname.includes(route))
+  ) {
     return null;
   }
 

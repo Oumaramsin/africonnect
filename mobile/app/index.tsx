@@ -1,16 +1,46 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
   View,
   TouchableOpacity,
   ScrollView,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { getSecureToken } from "../utils/storage";
 
 export default function HomeScreen() {
+  const router = useRouter();
+  const [checkingAuth, setCheckingAuth] = useState(true);
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const token = await getSecureToken("token");
+        if (token) {
+          router.replace("/accueil");
+          return;
+        }
+      } catch (err) {
+        console.warn("[AuthCheck] Erreur lors de la lecture du token:", err);
+      } finally {
+        setCheckingAuth(false);
+      }
+    }
+    checkAuth();
+  }, [router]);
+
+  if (checkingAuth) {
+    return (
+      <View style={[styles.container, styles.centerLoader]}>
+        <ActivityIndicator size="large" color="#1D6B45" />
+      </View>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.container}>
       <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
@@ -42,7 +72,7 @@ export default function HomeScreen() {
             Bienvenue sur <Text style={styles.headingHighlight}>Dabari</Text>
           </Text>
           <Text style={styles.headingSubtitle}>
-            Vos traiteurs faits maison préférés et vos envois de colis GP réunies en toute sérénité.
+            Vos traiteurs faits maison préférés et vos envois de colis GP réunis en toute sérénité.
           </Text>
 
           {/* Service Feature Highlights */}
@@ -82,6 +112,16 @@ export default function HomeScreen() {
                 <Text style={styles.secondaryBtnText}>Inscription</Text>
               </TouchableOpacity>
             </Link>
+
+            {/* Bouton Continuer en tant qu'invité */}
+            <TouchableOpacity
+              style={styles.guestBtn}
+              activeOpacity={0.85}
+              onPress={() => router.replace("/accueil")}
+            >
+              <Ionicons name="sparkles" size={16} color="#1D6B45" style={{ marginRight: 6 }} />
+              <Text style={styles.guestBtnText}>Continuer en tant qu'invité</Text>
+            </TouchableOpacity>
           </View>
 
         </View>
@@ -275,6 +315,25 @@ const styles = StyleSheet.create({
     color: "#1F2937",
     fontSize: 16,
     fontWeight: "700",
+  },
+  guestBtn: {
+    backgroundColor: "rgba(29, 107, 69, 0.08)",
+    borderColor: "rgba(29, 107, 69, 0.25)",
+    borderWidth: 1.5,
+    paddingVertical: 15,
+    borderRadius: 18,
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  guestBtnText: {
+    color: "#1D6B45",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  centerLoader: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   footerTrust: {
     flexDirection: "row",

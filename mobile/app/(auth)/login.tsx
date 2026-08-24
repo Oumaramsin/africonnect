@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,7 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { saveSecureToken } from "../../utils/storage";
+import { getSecureToken, saveSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
 
 export default function LoginScreen() {
@@ -24,6 +24,20 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const token = await getSecureToken("token");
+        if (token) {
+          router.replace("/accueil");
+        }
+      } catch (err) {
+        console.warn("[Login] Erreur lors de la vérification de la session:", err);
+      }
+    }
+    checkAuth();
+  }, [router]);
 
   async function handleSubmit() {
     setError(null);

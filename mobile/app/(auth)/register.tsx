@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { getSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
 
 export default function RegisterScreen() {
@@ -27,6 +28,20 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    async function checkAuth() {
+      try {
+        const token = await getSecureToken("token");
+        if (token) {
+          router.replace("/accueil");
+        }
+      } catch (err) {
+        console.warn("[Register] Erreur lors de la vérification de la session:", err);
+      }
+    }
+    checkAuth();
+  }, [router]);
 
   async function handleSubmit() {
     setError(null);

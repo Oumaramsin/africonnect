@@ -6,17 +6,19 @@ import {
   TouchableOpacity,
   ScrollView,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getSecureToken } from "../utils/storage";
+import { getSecureToken, saveSecureToken } from "../utils/storage";
 import { apiFetch } from "../utils/api";
 import type { CommandeTraiteur, OrderPlat } from "../utils/types/traiteur";
 import { GpRequest } from "../utils/types/gp";
 
 export default function AccueilScreen() {
   const router = useRouter();
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [fullname, setFullname] = useState("");
@@ -28,12 +30,29 @@ export default function AccueilScreen() {
   const [pendingCount, setPendingCount] = useState<number>(0);
   const [unreadNotifications, setUnreadNotifications] = useState<any[]>([]);
   const [unreadCount, setUnreadCount] = useState<number>(0);
+  const [showDescription, setShowDescription] = useState<boolean>(false);
 
   useEffect(() => {
+    async function checkBanner() {
+      try {
+        const isDismissed = await getSecureToken("hide_description");
+        if (isDismissed !== "true") {
+          setShowDescription(true);
+        }
+      } catch (e) {
+        console.warn("[Accueil] Erreur lors de la lecture du statut hide_description:", e);
+        setShowDescription(true);
+      }
+    }
+    checkBanner();
+
     async function loadData() {
+      setLoading(true);
       const token = await getSecureToken("token");
       if (!token) {
         setFullname("");
+        setIsLoggedIn(false);
+        setLoading(false);
         return;
       }
       setIsLoggedIn(true);
@@ -44,6 +63,7 @@ export default function AccueilScreen() {
           setError(
             data.message || "Erreur lors de la récupération de vos commande",
           );
+          setLoading(false);
           return;
         }
         const userProfile = data.data?.orders;
@@ -87,10 +107,21 @@ export default function AccueilScreen() {
         }
       } catch (error) {
         console.error("Erreur dans le fetch du dashboard :", error);
+      } finally {
+        setLoading(false);
       }
     }
     loadData();
   }, []);
+
+  const handleDismissDescription = async () => {
+    setShowDescription(false);
+    try {
+      await saveSecureToken("hide_description", "true");
+    } catch (e) {
+      console.warn("[Accueil] Erreur lors de la sauvegarde hide_description:", e);
+    }
+  };
 
   const formatDate = (d: string) =>
     new Date(d).toLocaleDateString("fr-FR", {
@@ -129,6 +160,18 @@ export default function AccueilScreen() {
     }
   };
 
+  if (loading) {
+    return (
+      <View style={[styles.topGreenWrapper, styles.centerLoader]}>
+        <StatusBar barStyle="light-content" />
+        <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={styles.initialLoadingText}>
+          Chargement de Dabari...
+        </Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
@@ -153,24 +196,68 @@ export default function AccueilScreen() {
                   </Text>
                 </View>
 
-                <Text style={styles.greetingText}>Bonjour, {fullname}</Text>
+                <Text style={styles.greetingText}>
+                  {isLoggedIn && fullname ? `Bonjour, ${fullname}` : "Bonjour"}
+                </Text>
                 <Text style={styles.greetingSubtext}>
-                  Que souhaitez-vous commander ou envoyer aujourd'hui ?
+                  {isLoggedIn
+                    ? "Que souhaitez-vous commander ou envoyer aujourd'hui ?"
+                    : "Connectez-vous pour profiter de tous vos services."}
                 </Text>
               </View>
 
-              <Link href="/profil" asChild>
-                <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.8}>
-                  <Text style={styles.avatarText}>
-                    {fullname ? fullname.charAt(0).toUpperCase() : "?"}
-                  </Text>
-                  <View style={styles.avatarStatusDot} />
+              {isLoggedIn ? (
+                <Link href="/profil" asChild>
+                  <TouchableOpacity style={styles.avatarBtn} activeOpacity={0.8}>
+                    <Text style={styles.avatarText}>
+                      {fullname ? fullname.charAt(0).toUpperCase() : "?"}
+                    </Text>
+                    <View style={styles.avatarStatusDot} />
+                  </TouchableOpacity>
+                </Link>
+              ) : (
+                <TouchableOpacity
+                  style={styles.loginBtnHeader}
+                  activeOpacity={0.85}
+                  onPress={() => router.push("/login")}
+                >
+                  <Text style={styles.loginBtnHeaderText}>Connexion</Text>
                 </TouchableOpacity>
-              </Link>
+              )}
             </View>
           </View>
 
           <View style={styles.mainBody}>
+            {/* Description Banner (Dismissible with X) */}
+            {showDescription && (
+              <View style={styles.descriptionCard}>
+                <View style={styles.descriptionHeaderRow}>
+                  <View style={styles.descriptionTagRow}>
+                    <Ionicons name="sparkles" size={12} color="#D4870A" />
+                    <Text style={styles.descriptionTagText}>Services de Confiance</Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={styles.descriptionCloseBtn}
+                    activeOpacity={0.7}
+                    onPress={handleDismissDescription}
+                    hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+                  >
+                    <Ionicons name="close" size={18} color="#6B7280" />
+                  </TouchableOpacity>
+                </View>
+
+                <Text style={styles.descriptionTitle}>
+                  Bienvenue sur <Text style={{ color: "#1D6B45" }}>Dabari</Text>
+                </Text>
+
+                <Text style={styles.descriptionBody}>
+                  <Text style={{ fontWeight: "800", color: "#111827" }}>Dabari</Text> est une plateforme de mise en relation. Elle vous permet de commander des{" "}
+                  <Text style={{ fontWeight: "700", color: "#1D6B45" }}>plats faits maison & devis traiteur</Text>, et d'envoyer vos{" "}
+                  <Text style={{ fontWeight: "700", color: "#D4870A" }}>colis (GP)</Text> en toute sécurité entre l'Europe et l'Afrique.
+                </Text>
+              </View>
+            )}
             {/* Alert Error Box (si une erreur de chargement survient) */}
             {error && (
               <View style={styles.errorBox}>
@@ -471,6 +558,17 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#165034",
   },
+  centerLoader: {
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 14,
+  },
+  initialLoadingText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+    letterSpacing: -0.2,
+  },
   container: {
     flex: 1,
     backgroundColor: "#165034",
@@ -569,6 +667,78 @@ const styles = StyleSheet.create({
     backgroundColor: "#D4870A",
     borderWidth: 2,
     borderColor: "#165034",
+  },
+  loginBtnHeader: {
+    backgroundColor: "#D4870A",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 14,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 3,
+  },
+  loginBtnHeaderText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  /* Description Banner (Dismissible) */
+  descriptionCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#E5E7EB",
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  descriptionHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  descriptionTagRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(212, 135, 10, 0.1)",
+    borderColor: "rgba(212, 135, 10, 0.25)",
+    borderWidth: 1,
+    paddingHorizontal: 10,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 5,
+  },
+  descriptionTagText: {
+    color: "#D4870A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  descriptionCloseBtn: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "#F3F4F6",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  descriptionTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 6,
+    letterSpacing: -0.3,
+  },
+  descriptionBody: {
+    fontSize: 13,
+    color: "#4B5563",
+    lineHeight: 19,
   },
 
   /* Body Content */
