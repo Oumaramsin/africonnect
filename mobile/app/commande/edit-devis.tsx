@@ -7,17 +7,26 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
-import {
-  showConfirmAlert,
-  showSuccessAlert,
-  showErrorAlert,
-} from "../../utils/alerts";
+import OrderEditModal, {
+  DetailRowItem,
+} from "../../components/OrderEditModal";
+import { showErrorAlert } from "../../utils/alerts";
+
+let DateTimePicker: any = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch (e) {
+    DateTimePicker = null;
+  }
+}
 
 const EVENT_TYPES = [
   "Mariage",
@@ -34,6 +43,18 @@ export default function EditDevisScreen() {
   const [loading, setLoading] = useState(true);
   const [commande, setCommande] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  // DatePicker state
+  const [selectedDate, setSelectedDate] = useState<Date>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d;
+  });
+  const [showDatePicker, setShowDatePicker] = useState(false);
+
+  // Modales visuelles de confirmation et succès
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Valeurs initiales
   const [initialData, setInitialData] = useState<{
@@ -87,6 +108,19 @@ export default function EditDevisScreen() {
       const initNotes = cmd.notes || "";
 
       setDateEvenement(initDate);
+      if (initDate) {
+        const parsed = new Date(initDate);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (!isNaN(parsed.getTime())) {
+          if (parsed < today) {
+            setSelectedDate(new Date());
+          } else {
+            setSelectedDate(parsed);
+          }
+        }
+      }
+
       setNbPersonnes(initNb);
       setTypeEvenement(initType);
       setAdresse(initAdr);
@@ -107,6 +141,30 @@ export default function EditDevisScreen() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === "android") setShowDatePicker(false);
+    if (date) {
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const chosen = new Date(date);
+      chosen.setHours(0, 0, 0, 0);
+
+      if (chosen < today) {
+        showErrorAlert(
+          "Date non valide",
+          "La date de l'événement ne peut pas être antérieure à aujourd'hui.",
+        );
+        return;
+      }
+
+      setSelectedDate(date);
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      const dd = String(date.getDate()).padStart(2, "0");
+      setDateEvenement(`${yyyy}-${mm}-${dd}`);
     }
   };
 
@@ -135,6 +193,19 @@ export default function EditDevisScreen() {
       return;
     }
 
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const chosen = new Date(dateEvenement);
+    chosen.setHours(0, 0, 0, 0);
+
+    if (isNaN(chosen.getTime()) || chosen < today) {
+      showErrorAlert(
+        "Date invalide",
+        "La date de l'événement ne peut pas être antérieure à aujourd'hui.",
+      );
+      return;
+    }
+
     if (!adresse.trim()) {
       showErrorAlert(
         "Adresse manquante",
@@ -143,11 +214,7 @@ export default function EditDevisScreen() {
       return;
     }
 
-    showConfirmAlert(
-      "Confirmer les modifications",
-      "Êtes-vous sûr(e) de vouloir enregistrer les modifications pour cette demande de devis ?",
-      performSave,
-    );
+    setShowConfirmModal(true);
   };
 
   const performSave = async () => {
@@ -171,11 +238,8 @@ export default function EditDevisScreen() {
         throw new Error(data.error || "Erreur lors de la modification");
       }
 
-      showSuccessAlert(
-        "Succès 🎉",
-        "Votre demande de devis a été mise à jour avec succès !",
-        () => router.replace("/commandes"),
-      );
+      setShowConfirmModal(false);
+      setShowSuccessModal(true);
     } catch (e: any) {
       showErrorAlert(
         "Erreur",
@@ -185,6 +249,38 @@ export default function EditDevisScreen() {
       setIsSaving(false);
     }
   };
+
+  // Détails récapitulatifs pour la modale de confirmation
+  const modalDetails: DetailRowItem[] = [
+    {
+      icon: "calendar-outline",
+      label: "Date de l'événement",
+      value: dateEvenement
+        ? selectedDate.toLocaleDateString("fr-FR", {
+            weekday: "short",
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : "Date sélectionnée",
+      isHighlight: true,
+    },
+    {
+      icon: "ribbon-outline",
+      label: "Type d'événement",
+      value: typeEvenement,
+    },
+    {
+      icon: "people-outline",
+      label: "Nombre de convives",
+      value: `${nbPersonnes} personne(s)`,
+    },
+    {
+      icon: "location-outline",
+      label: "Lieu de réception",
+      value: adresse || "Adresse spécifiée",
+    },
+  ];
 
   if (loading) {
     return (
@@ -219,19 +315,65 @@ export default function EditDevisScreen() {
         contentContainerStyle={styles.scrollContent}
         showsVerticalScrollIndicator={false}
       >
-        {/* Date de l'événement */}
+        {/* Date de l'événement avec Pick Date */}
         <View style={styles.cardSection}>
           <Text style={styles.sectionLabel}>DATE DE L'ÉVÉNEMENT</Text>
-          <View style={styles.inputWithIcon}>
-            <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
-            <TextInput
-              style={styles.inlineInput}
-              value={dateEvenement}
-              onChangeText={setDateEvenement}
-              placeholder="AAAA-MM-JJ (ex: 2026-09-20)"
-              placeholderTextColor="#94A3B8"
+          {Platform.OS === "web" ? (
+            <View style={styles.inputWithIcon}>
+              <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
+              <TextInput
+                style={styles.inlineInput}
+                value={dateEvenement}
+                onChangeText={(val) => {
+                  setDateEvenement(val);
+                  const parsed = new Date(val);
+                  if (!isNaN(parsed.getTime())) setSelectedDate(parsed);
+                }}
+                placeholder="AAAA-MM-JJ (ex: 2026-09-20)"
+                placeholderTextColor="#94A3B8"
+              />
+            </View>
+          ) : (
+            <TouchableOpacity
+              style={styles.datePickerBtn}
+              onPress={() => setShowDatePicker(true)}
+              activeOpacity={0.85}
+            >
+              <View style={styles.datePickerLeft}>
+                <View style={styles.dateIconCircle}>
+                  <Ionicons name="calendar" size={20} color="#1D6B45" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.datePickerValueText}>
+                    {dateEvenement
+                      ? selectedDate.toLocaleDateString("fr-FR", {
+                          weekday: "long",
+                          day: "numeric",
+                          month: "long",
+                          year: "numeric",
+                        })
+                      : "Choisir la date de l'événement"}
+                  </Text>
+                  <Text style={styles.datePickerHintText}>
+                    Appuyez pour ouvrir le calendrier
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+          )}
+
+          {Boolean(
+            Platform.OS !== "web" && DateTimePicker && showDatePicker,
+          ) && (
+            <DateTimePicker
+              value={selectedDate < new Date() ? new Date() : selectedDate}
+              mode="date"
+              display={Platform.OS === "ios" ? "spinner" : "default"}
+              minimumDate={new Date()}
+              onChange={handleDateChange}
             />
-          </View>
+          )}
         </View>
 
         {/* Nombre de personnes */}
@@ -353,6 +495,53 @@ export default function EditDevisScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── MODALE VISUELLE DE CONFIRMATION DE MODIFICATION ── */}
+      <OrderEditModal
+        visible={showConfirmModal}
+        type="confirm"
+        service="devis"
+        title="Confirmer la modification du devis"
+        subtitle={`Êtes-vous sûr(e) de vouloir valider les nouvelles informations pour votre demande chez ${commande?.traiteur?.name || "le traiteur"} ?`}
+        details={modalDetails}
+        noticeText="Le traiteur recevra immédiatement ces détails révisés pour ajuster votre proposition de devis."
+        confirmLabel="Oui, enregistrer le devis"
+        cancelLabel="Continuer d'éditer"
+        isLoading={isSaving}
+        onConfirm={performSave}
+        onCancel={() => setShowConfirmModal(false)}
+      />
+
+      {/* ── MODALE VISUELLE DE SUCCÈS ── */}
+      <OrderEditModal
+        visible={showSuccessModal}
+        type="success"
+        service="devis"
+        title="Demande de devis mise à jour !"
+        subtitle="Votre demande a été actualisée et transmise au traiteur."
+        details={[
+          {
+            icon: "checkmark-circle-outline",
+            label: "Statut",
+            value: "En attente du traiteur",
+            isHighlight: true,
+          },
+          {
+            icon: "calendar-outline",
+            label: "Date de l'événement",
+            value: selectedDate.toLocaleDateString("fr-FR", {
+              day: "numeric",
+              month: "long",
+              year: "numeric",
+            }),
+          },
+        ]}
+        confirmLabel="Voir mes demandes"
+        onConfirm={() => {
+          setShowSuccessModal(false);
+          router.replace("/commandes");
+        }}
+      />
     </SafeAreaView>
   );
 }
@@ -427,6 +616,43 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#64748B",
     letterSpacing: 0.6,
+  },
+  datePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1.5,
+    borderColor: "#E2E8F0",
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+  },
+  datePickerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  dateIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#DCFCE7",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  datePickerValueText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#0F172A",
+    textTransform: "capitalize",
+  },
+  datePickerHintText: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "500",
+    marginTop: 2,
   },
   inputWithIcon: {
     flexDirection: "row",

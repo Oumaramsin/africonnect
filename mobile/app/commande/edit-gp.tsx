@@ -12,11 +12,10 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "../../utils/api";
-import {
-  showConfirmAlert,
-  showSuccessAlert,
-  showErrorAlert,
-} from "../../utils/alerts";
+import OrderEditModal, {
+  DetailRowItem,
+} from "../../components/OrderEditModal";
+import { showErrorAlert } from "../../utils/alerts";
 
 export default function EditGpScreen() {
   const router = useRouter();
@@ -25,6 +24,9 @@ export default function EditGpScreen() {
   const [loading, setLoading] = useState(true);
   const [request, setRequest] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
 
   // Valeurs initiales
   const [initialData, setInitialData] = useState<{
@@ -129,11 +131,7 @@ export default function EditGpScreen() {
       return;
     }
 
-    showConfirmAlert(
-      "Confirmer les modifications",
-      "Êtes-vous sûr(e) de vouloir enregistrer les modifications pour cette demande GP ?",
-      performSave,
-    );
+    setShowConfirmModal(true);
   };
 
   const performSave = async () => {
@@ -156,11 +154,8 @@ export default function EditGpScreen() {
         throw new Error(data.error || "Erreur lors de la modification");
       }
 
-      showSuccessAlert(
-        "Succès 🎉",
-        "Votre demande de colis GP a été mise à jour avec succès !",
-        () => router.replace("/commandes"),
-      );
+      setShowConfirmModal(false);
+      setShowSuccessModal(true);
     } catch (e: any) {
       showErrorAlert(
         "Erreur",
@@ -171,6 +166,36 @@ export default function EditGpScreen() {
     }
   };
 
+  const listing = request?.listing || request?.gp_listings;
+  const depCity = request?.departure_city || listing?.departure_city;
+  const arrCity = request?.arrival_city || listing?.arrival_city;
+  const pricePerKg = getPricePerKg();
+
+  const modalDetails: DetailRowItem[] = [
+    {
+      icon: "airplane-outline",
+      label: "Trajet GP",
+      value: depCity && arrCity ? `${depCity} ➔ ${arrCity}` : "Transport de colis GP",
+    },
+    {
+      icon: "scale-outline",
+      label: "Poids révisé du colis",
+      value: `${weightKg || 0} kg (${pricePerKg > 0 ? `${pricePerKg.toFixed(2)} € / kg` : ""})`,
+      isHighlight: true,
+    },
+    {
+      icon: "cash-outline",
+      label: "Nouveau montant estimé",
+      value: `${getEstimatedTotal()} €`,
+      isHighlight: true,
+    },
+    {
+      icon: "cube-outline",
+      label: "Contenu",
+      value: contentDesc || "Colis personnel",
+    },
+  ];
+
   if (loading) {
     return (
       <SafeAreaView style={styles.centerContainer}>
@@ -179,11 +204,6 @@ export default function EditGpScreen() {
       </SafeAreaView>
     );
   }
-
-  const listing = request?.listing || request?.gp_listings;
-  const depCity = request?.departure_city || listing?.departure_city;
-  const arrCity = request?.arrival_city || listing?.arrival_city;
-  const pricePerKg = getPricePerKg();
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -355,6 +375,54 @@ export default function EditGpScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── MODALE VISUELLE DE CONFIRMATION DE MODIFICATION ── */}
+      <OrderEditModal
+        visible={showConfirmModal}
+        type="confirm"
+        service="gp"
+        title="Confirmer la modification GP"
+        subtitle="Êtes-vous sûr(e) de vouloir valider les changements pour votre transport de colis ?"
+        details={modalDetails}
+        noticeText="Le transporteur GP sera notifié de ce nouveau poids et des détails révisés de votre colis."
+        confirmLabel="Oui, enregistrer la demande GP"
+        cancelLabel="Continuer d'éditer"
+        isLoading={isSaving}
+        onConfirm={performSave}
+        onCancel={() => setShowConfirmModal(false)}
+      />
+
+      {/* ── MODALE VISUELLE DE SUCCÈS ── */}
+      <OrderEditModal
+        visible={showSuccessModal}
+        type="success"
+        service="gp"
+        title="Demande GP mise à jour !"
+        subtitle="Votre demande de colis GP a été actualisée avec succès."
+        details={[
+          {
+            icon: "checkmark-circle-outline",
+            label: "Statut",
+            value: "En attente du transporteur",
+            isHighlight: true,
+          },
+          {
+            icon: "scale-outline",
+            label: "Poids",
+            value: `${weightKg} kg`,
+          },
+          {
+            icon: "cash-outline",
+            label: "Montant révisé",
+            value: `${getEstimatedTotal()} €`,
+          },
+        ]}
+        confirmLabel="Voir mes demandes GP"
+        onConfirm={() => {
+          setShowSuccessModal(false);
+          router.replace("/commandes");
+        }}
+      />
     </SafeAreaView>
   );
 }

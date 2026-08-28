@@ -14,11 +14,10 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
-import {
-  showConfirmAlert,
-  showSuccessAlert,
-  showErrorAlert,
-} from "../../utils/alerts";
+import OrderEditModal, {
+  DetailRowItem,
+} from "../../components/OrderEditModal";
+import { showErrorAlert } from "../../utils/alerts";
 
 type OrderItem = {
   dish_id: string;
@@ -55,7 +54,10 @@ export default function EditPlatScreen() {
   const [order, setOrder] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
 
-  // Valeurs initiales pour détecter les modifications réelles
+
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
   const [initialData, setInitialData] = useState<{
     deliveryType: "delivery" | "pickup";
     deliveryAddress: string;
@@ -227,7 +229,10 @@ export default function EditPlatScreen() {
     );
   };
 
-  // Demande de confirmation avant enregistrement 
+  const getTotalCount = () => {
+    return orderItems.reduce((acc, cur) => acc + cur.quantity, 0);
+  };
+
   const handleSaveClick = () => {
     if (orderItems.length === 0) {
       showErrorAlert(
@@ -245,11 +250,7 @@ export default function EditPlatScreen() {
       return;
     }
 
-    showConfirmAlert(
-      "Confirmer les modifications",
-      "Êtes-vous sûr(e) de vouloir enregistrer les modifications pour cette commande de plats ?",
-      performSave,
-    );
+    setShowConfirmModal(true);
   };
 
   const performSave = async () => {
@@ -275,11 +276,8 @@ export default function EditPlatScreen() {
         throw new Error(data.error || "Erreur lors de la modification");
       }
 
-      showSuccessAlert(
-        "Succès 🎉",
-        "Votre commande a été modifiée avec succès !",
-        () => router.replace("/commandes"),
-      );
+      setShowConfirmModal(false);
+      setShowSuccessModal(true);
     } catch (e: any) {
       showErrorAlert(
         "Erreur",
@@ -289,6 +287,28 @@ export default function EditPlatScreen() {
       setIsSaving(false);
     }
   };
+
+  const modalDetails: DetailRowItem[] = [
+    {
+      icon: "fast-food-outline",
+      label: "Plats sélectionnés",
+      value: `${getTotalCount()} portion(s) (${orderItems.length} référence${orderItems.length > 1 ? "s" : ""})`,
+    },
+    {
+      icon: "cash-outline",
+      label: "Nouveau total révisé",
+      value: `${getTotalAmount().toFixed(2)} €`,
+      isHighlight: true,
+    },
+    {
+      icon: deliveryType === "delivery" ? "bicycle-outline" : "storefront-outline",
+      label: "Réception",
+      value:
+        deliveryType === "delivery"
+          ? `Livraison · ${deliveryAddress || "Adresse renseignée"}`
+          : "À emporter (retrait sur place)",
+    },
+  ];
 
   if (loading) {
     return (
@@ -565,8 +585,7 @@ export default function EditPlatScreen() {
             </View>
             <View style={styles.itemsCountBadge}>
               <Text style={styles.itemsCountText}>
-                {orderItems.reduce((acc, cur) => acc + cur.quantity, 0)}{" "}
-                article(s)
+                {getTotalCount()} article(s)
               </Text>
             </View>
           </View>
@@ -630,6 +649,49 @@ export default function EditPlatScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView>
+
+      {/* ── MODALE VISUELLE DE CONFIRMATION DE MODIFICATION ── */}
+      <OrderEditModal
+        visible={showConfirmModal}
+        type="confirm"
+        service="plat"
+        title="Confirmer les modifications"
+        subtitle={`Êtes-vous sûr(e) de vouloir valider les changements pour votre commande chez ${order?.traiteur?.name || "votre traiteur"} ?`}
+        details={modalDetails}
+        noticeText="Le traiteur prendra immédiatement en compte vos nouveaux plats et informations."
+        confirmLabel="Oui, enregistrer la commande"
+        cancelLabel="Continuer d'éditer"
+        isLoading={isSaving}
+        onConfirm={performSave}
+        onCancel={() => setShowConfirmModal(false)}
+      />
+
+      {/* ── MODALE VISUELLE DE SUCCÈS ── */}
+      <OrderEditModal
+        visible={showSuccessModal}
+        type="success"
+        service="plat"
+        title="Commande mise à jour !"
+        subtitle="Votre commande de plats a été modifiée avec succès."
+        details={[
+          {
+            icon: "checkmark-circle-outline",
+            label: "Statut",
+            value: "Transmise au traiteur",
+            isHighlight: true,
+          },
+          {
+            icon: "cash-outline",
+            label: "Montant total révisé",
+            value: `${getTotalAmount().toFixed(2)} €`,
+          },
+        ]}
+        confirmLabel="Retourner à mes commandes"
+        onConfirm={() => {
+          setShowSuccessModal(false);
+          router.replace("/commandes");
+        }}
+      />
     </SafeAreaView>
   );
 }

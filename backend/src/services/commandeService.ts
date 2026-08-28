@@ -329,6 +329,18 @@ export const updateClientCommandeTraiteur = async (
     );
   }
 
+  if (data.date_evenement) {
+    const eventDate = new Date(data.date_evenement);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    eventDate.setHours(0, 0, 0, 0);
+    if (eventDate < today) {
+      throw new Error(
+        "La date de l'événement ne peut pas être antérieure à aujourd'hui.",
+      );
+    }
+  }
+
   return await db.commandeTraiteur.update({
     where: { id },
     data: {
