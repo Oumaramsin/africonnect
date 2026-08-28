@@ -9,6 +9,8 @@ import {
   ActivityIndicator,
   Modal,
   Linking,
+  TextInput,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect } from "expo-router";
@@ -131,6 +133,81 @@ export default function CommandeScreen() {
   const [ordersRecues, setOrdersRecues] = useState<OrderPlat[]>([]);
   const [gpRecues, setGpRecues] = useState<GpRequest[]>([]);
 
+  // ── Navigation vers les pages dédiées de modification ──
+  const openEditCommandeTraiteur = (cmd: CommandeTraiteur) => {
+    router.push({
+      pathname: "/commande/edit-devis",
+      params: { id: cmd.id },
+    });
+  };
+
+  const openEditOrderPlat = (ord: OrderPlat) => {
+    router.push({
+      pathname: "/commande/edit-plat",
+      params: { id: ord.id },
+    });
+  };
+
+  const openEditGpRequest = (gp: GpRequest) => {
+    router.push({
+      pathname: "/commande/edit-gp",
+      params: { id: gp.id },
+    });
+  };
+
+  // ── État Annulation Commande ──
+  const [cancelConfirmTarget, setCancelConfirmTarget] = useState<{
+    type: "traiteur" | "order" | "gp";
+    id: string;
+    title: string;
+  } | null>(null);
+  const [isCancelling, setIsCancelling] = useState(false);
+
+  const openCancelConfirm = (
+    type: "traiteur" | "order" | "gp",
+    id: string,
+    title: string,
+  ) => {
+    setCancelConfirmTarget({ type, id, title });
+  };
+
+  const executeCancelOrder = async () => {
+    if (!cancelConfirmTarget) return;
+    setIsCancelling(true);
+    const { type, id } = cancelConfirmTarget;
+    try {
+      const res = await apiFetch(`/commande/cancel/${type}/${id}`, {
+        method: "POST",
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Erreur lors de l'annulation");
+      }
+
+      // Mise à jour locale optimiste
+      if (type === "traiteur") {
+        setCommandesEnvoyees((prev) =>
+          prev.map((c) => (c.id === id ? { ...c, statut: "annulee" } : c)),
+        );
+      } else if (type === "order") {
+        setOrdersEnvoyees((prev) =>
+          prev.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o)),
+        );
+      } else if (type === "gp") {
+        setGpEnvoyees((prev) =>
+          prev.map((g) => (g.id === id ? { ...g, status: "cancelled" } : g)),
+        );
+      }
+
+      setCancelConfirmTarget(null);
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Erreur", e.message || "Erreur lors de l'annulation");
+    } finally {
+      setIsCancelling(false);
+    }
+  };
+
   useFocusEffect(
     useCallback(() => {
       loadAll();
@@ -240,6 +317,14 @@ export default function CommandeScreen() {
           <View style={styles.badgeDanger}>
             <Ionicons name="close-circle-outline" size={12} color="#B91C1C" />
             <Text style={styles.badgeDangerText}>Refusée</Text>
+          </View>
+        );
+      case "annulee":
+      case "cancelled":
+        return (
+          <View style={styles.badgeCancelled}>
+            <Ionicons name="close-circle-outline" size={12} color="#64748B" />
+            <Text style={styles.badgeCancelledText}>Annulée</Text>
           </View>
         );
       default:
@@ -608,6 +693,50 @@ export default function CommandeScreen() {
                                 )}
                               </View>
 
+                              {(cmd.statut === "en_attente" ||
+                                cmd.statut === "pending") && (
+                                <View style={styles.clientActionRow}>
+                                  <TouchableOpacity
+                                    style={styles.clientEditBtn}
+                                    onPress={() =>
+                                      openEditCommandeTraiteur(cmd)
+                                    }
+                                    activeOpacity={0.8}
+                                  >
+                                    <Ionicons
+                                      name="create-outline"
+                                      size={14}
+                                      color="#1D6B45"
+                                    />
+                                    <Text style={styles.clientEditBtnText}>
+                                      Modifier la demande
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    style={styles.clientCancelBtn}
+                                    onPress={() =>
+                                      openCancelConfirm(
+                                        "traiteur",
+                                        cmd.id,
+                                        traiteurInfo?.name ||
+                                          "votre demande de devis",
+                                      )
+                                    }
+                                    activeOpacity={0.8}
+                                  >
+                                    <Ionicons
+                                      name="close-circle-outline"
+                                      size={14}
+                                      color="#B91C1C"
+                                    />
+                                    <Text style={styles.clientCancelBtnText}>
+                                      Annuler
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              )}
+
                               {cmd.statut === "acceptee" && (
                                 <TouchableOpacity
                                   style={styles.whatsAppBtn}
@@ -695,7 +824,65 @@ export default function CommandeScreen() {
                                     {Number(ord.total_amount || 0).toFixed(2)} €
                                   </Text>
                                 </View>
+
+                                {ord.delivery_address && (
+                                  <View
+                                    style={[
+                                      styles.detailRow,
+                                      { marginTop: 8 },
+                                    ]}
+                                  >
+                                    <Ionicons
+                                      name="location-outline"
+                                      size={14}
+                                      color="#1D6B45"
+                                    />
+                                    <Text style={styles.detailText}>
+                                      {ord.delivery_address}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
+
+                              {ord.status === "pending" && (
+                                <View style={styles.clientActionRow}>
+                                  <TouchableOpacity
+                                    style={styles.clientEditBtn}
+                                    onPress={() => openEditOrderPlat(ord)}
+                                    activeOpacity={0.8}
+                                  >
+                                    <Ionicons
+                                      name="create-outline"
+                                      size={14}
+                                      color="#1D6B45"
+                                    />
+                                    <Text style={styles.clientEditBtnText}>
+                                      Modifier la commande
+                                    </Text>
+                                  </TouchableOpacity>
+
+                                  <TouchableOpacity
+                                    style={styles.clientCancelBtn}
+                                    onPress={() =>
+                                      openCancelConfirm(
+                                        "order",
+                                        ord.id,
+                                        "votre commande de plats",
+                                      )
+                                    }
+                                    activeOpacity={0.8}
+                                  >
+                                    <Ionicons
+                                      name="close-circle-outline"
+                                      size={14}
+                                      color="#B91C1C"
+                                    />
+                                    <Text style={styles.clientCancelBtnText}>
+                                      Annuler
+                                    </Text>
+                                  </TouchableOpacity>
+                                </View>
+                              )}
                             </View>
                           );
                         })}
@@ -761,6 +948,54 @@ export default function CommandeScreen() {
                                     {gp.content_desc}
                                   </Text>
                                 </View>
+
+                                {gp.status === "pending" && (
+                                  <View style={styles.clientActionRow}>
+                                    <TouchableOpacity
+                                      style={[
+                                        styles.clientEditBtn,
+                                        { borderColor: "#D4870A" },
+                                      ]}
+                                      onPress={() => openEditGpRequest(gp)}
+                                      activeOpacity={0.8}
+                                    >
+                                      <Ionicons
+                                        name="create-outline"
+                                        size={14}
+                                        color="#D4870A"
+                                      />
+                                      <Text
+                                        style={[
+                                          styles.clientEditBtnText,
+                                          { color: "#D4870A" },
+                                        ]}
+                                      >
+                                        Modifier la demande
+                                      </Text>
+                                    </TouchableOpacity>
+
+                                    <TouchableOpacity
+                                      style={styles.clientCancelBtn}
+                                      onPress={() =>
+                                        openCancelConfirm(
+                                          "gp",
+                                          gp.id,
+                                          "votre demande de colis GP",
+                                        )
+                                      }
+                                      activeOpacity={0.8}
+                                    >
+                                      <Ionicons
+                                        name="close-circle-outline"
+                                        size={14}
+                                        color="#B91C1C"
+                                      />
+                                      <Text style={styles.clientCancelBtnText}>
+                                        Annuler
+                                      </Text>
+                                    </TouchableOpacity>
+                                  </View>
+                                )}
                               </View>
                             </View>
                           );
@@ -1265,6 +1500,65 @@ export default function CommandeScreen() {
             </View>
           </Modal>
         )}
+
+        {/* MODALE CONFIRMATION ANNULATION CLIENT */}
+        {cancelConfirmTarget !== null && (
+          <Modal
+            visible={true}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setCancelConfirmTarget(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.confirmModalCard}>
+                <View style={styles.confirmIconContainer}>
+                  <Ionicons
+                    name="alert-circle-outline"
+                    size={36}
+                    color="#B91C1C"
+                  />
+                </View>
+
+                <Text style={styles.confirmModalTitle}>
+                  Annuler la commande ?
+                </Text>
+
+                <Text style={styles.confirmModalSubtext}>
+                  Êtes-vous sûr(e) de vouloir annuler {cancelConfirmTarget.title} ? Cette action est irréversible.
+                </Text>
+
+                <View style={styles.confirmModalButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.confirmCancelBtn}
+                    onPress={() => setCancelConfirmTarget(null)}
+                    disabled={isCancelling}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.confirmCancelText}>Non, garder</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.confirmExecuteBtn,
+                      isCancelling && { opacity: 0.7 },
+                    ]}
+                    onPress={executeCancelOrder}
+                    disabled={isCancelling}
+                    activeOpacity={0.85}
+                  >
+                    {isCancelling ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.confirmExecuteText}>
+                        Oui, annuler
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -1513,6 +1807,65 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#B91C1C",
   },
+  badgeCancelled: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 10,
+    gap: 4,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  badgeCancelledText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+
+  /* Client Action Row (Modifier / Annuler) */
+  clientActionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 4,
+  },
+  clientEditBtn: {
+    flex: 2,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 9,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "rgba(29, 107, 69, 0.3)",
+    gap: 6,
+  },
+  clientEditBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1D6B45",
+  },
+  clientCancelBtn: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 9,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "rgba(185, 28, 28, 0.2)",
+    gap: 4,
+  },
+  clientCancelBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#B91C1C",
+  },
 
   /* Order Details Box */
   orderDetailsBox: {
@@ -1597,6 +1950,75 @@ const styles = StyleSheet.create({
   whatsAppBtnText: {
     color: "#FFFFFF",
     fontSize: 12,
+    fontWeight: "800",
+  },
+
+  /* Confirm Cancel Modal */
+  confirmModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    width: "100%",
+    maxWidth: 340,
+    padding: 24,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 15,
+    elevation: 10,
+  },
+  confirmIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  confirmModalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  confirmModalSubtext: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  confirmModalButtonsRow: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  confirmCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmCancelText: {
+    color: "#475569",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  confirmExecuteBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#B91C1C",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  confirmExecuteText: {
+    color: "#FFFFFF",
+    fontSize: 14,
     fontWeight: "800",
   },
 
@@ -1795,3 +2217,4 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
 });
+
