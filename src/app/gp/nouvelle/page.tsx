@@ -15,6 +15,9 @@ import {
   PenLine,
 } from "lucide-react";
 import cookies from "js-cookie";
+import AddressAutocomplete, {
+  getQuarterOrCityFromAddress,
+} from "@/components/AddressAutocomplete";
 
 const schema = z.object({
   departure_city: z.string().min(2, "Ville de départ requise"),
@@ -91,6 +94,8 @@ export default function NouvelleAnnoncePage() {
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -402,15 +407,18 @@ export default function NouvelleAnnoncePage() {
               <div>
                 <label className="block text-xs text-gray-500 mb-1">
                   Adresse précise
-                  <span className="text-gray-600 ml-1">
+                  <span className="text-gray-400 ml-1">
                     (optionnel — partagée après accord)
                   </span>
                 </label>
-                <input
-                  {...register("pickup_address")}
-                  type="text"
-                  placeholder="Ex: Gare du Nord, Paris"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                <AddressAutocomplete
+                  value={watch("pickup_address") || ""}
+                  onChange={(val) => setValue("pickup_address", val)}
+                  onSelectAddress={(item) => {
+                    setValue("pickup_address", item.label);
+                    setValue("pickup_city", getQuarterOrCityFromAddress(item));
+                  }}
+                  placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
                 />
               </div>
             </div>

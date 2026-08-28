@@ -13,10 +13,10 @@ export const generalLimiter = rateLimit({
   },
 });
 
-// Limiteur strict pour l'authentification avec Journalisation & Alerte Admin (10 tentatives max par 15 minutes par IP)
+// Limiteur strict pour l'authentification avec Journalisation & Alerte Admin (15 min en Prod, 1s en Dev)
 export const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10,
+  windowMs: process.env.NODE_ENV === "production" ? 15 * 60 * 1000 : 1000,
+  max: process.env.NODE_ENV === "production" ? 10 : 1000,
   standardHeaders: true,
   legacyHeaders: false,
   handler: async (req, res) => {

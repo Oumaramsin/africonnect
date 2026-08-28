@@ -101,7 +101,7 @@ export const getAllOrderById = async (id: string) => {
 export const updateCommandeTraiteurStatus = async (
   id: string,
   statut: string,
-  message_traiteur?: string
+  message_traiteur?: string,
 ) => {
   return await db.$transaction(async (tx) => {
     const commande = await tx.commandeTraiteur.update({
@@ -134,8 +134,8 @@ export const updateCommandeTraiteurStatus = async (
           message: isAccepted
             ? `Votre commande du ${dateStr} a été acceptée.`
             : message_traiteur
-            ? `Votre commande du ${dateStr} a été refusée. Motif : ${message_traiteur}`
-            : `Votre commande du ${dateStr} a été refusée.`,
+              ? `Votre commande du ${dateStr} a été refusée. Motif : ${message_traiteur}`
+              : `Votre commande du ${dateStr} a été refusée.`,
           data: { commande_id: id },
         },
       });
@@ -189,7 +189,10 @@ export const updateOrderPlatStatus = async (id: string, status: string) => {
 
       if (order.client?.email) {
         const dishSummary = order.order_items
-          .map((item) => `- ${item.dish?.name || "Plat"} x${item.quantity} (${(Number(item.unit_price) * item.quantity).toFixed(2)} €)`)
+          .map(
+            (item) =>
+              `- ${item.dish?.name || "Plat"} x${item.quantity} (${(Number(item.unit_price) * item.quantity).toFixed(2)} €)`,
+          )
           .join("\n");
 
         sendOrderNotificationToClientMail({
@@ -199,7 +202,9 @@ export const updateOrderPlatStatus = async (id: string, status: string) => {
           traiteurWhatsapp: order.traiteur?.whatsapp || undefined,
           status: isAccepted ? "ACCEPTÉE" : "REFUSÉE",
           details: dishSummary || "Plats commandés sur la carte du traiteur",
-          totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+          totalAmount: order.total_amount
+            ? Number(order.total_amount)
+            : undefined,
         }).catch((err) => console.error("Erreur envoi email client:", err));
       }
     }
@@ -211,9 +216,13 @@ export const updateOrderPlatStatus = async (id: string, status: string) => {
 export const updateGpRequestStatus = async (
   id: string,
   status: string,
-  message?: string
+  message?: string,
 ) => {
   return await db.$transaction(async (tx) => {
+    const oldRequest = await tx.gpRequest.findUnique({
+      where: { id },
+    });
+
     const request = await tx.gpRequest.update({
       where: { id },
       data: { status },
@@ -227,18 +236,40 @@ export const updateGpRequestStatus = async (
       },
     });
 
+    if (
+      (status === "rejected" ||
+        status === "refused" ||
+        status === "cancelled") &&
+      oldRequest &&
+      oldRequest.status !== "rejected" &&
+      oldRequest.status !== "refused" &&
+      request.listing_id &&
+      request.weight_kg
+    ) {
+      await tx.gpListing.update({
+        where: { id: request.listing_id },
+        data: {
+          available_kg: {
+            increment: request.weight_kg,
+          },
+        },
+      });
+    }
+
     if (request.sender_id) {
       const isAccepted = status === "accepted";
       await tx.notification.create({
         data: {
           user_id: request.sender_id,
           type: isAccepted ? "gp_acceptee" : "gp_refusee",
-          titre: isAccepted ? "✅ Demande GP acceptée !" : "❌ Demande GP refusée",
+          titre: isAccepted
+            ? "✅ Demande GP acceptée !"
+            : "❌ Demande GP refusée",
           message: isAccepted
             ? "Le GP a accepté votre demande de transport de colis !"
             : message
-            ? `Le GP a refusé votre demande de transport. Motif : ${message}`
-            : "Le GP a refusé votre demande de transport.",
+              ? `Le GP a refusé votre demande de transport. Motif : ${message}`
+              : "Le GP a refusé votre demande de transport.",
           data: { request_id: id },
         },
       });
@@ -250,10 +281,16 @@ export const updateGpRequestStatus = async (
           gpName: request.listing?.gp?.full_name || "GP Transporteur",
           gpPhone: request.listing?.gp?.phone || undefined,
           status: isAccepted ? "ACCEPTÉE" : "REFUSÉE",
-          departureCity: request.departure_city || request.listing?.departure_city || undefined,
-          arrivalCity: request.arrival_city || request.listing?.arrival_city || undefined,
+          departureCity:
+            request.departure_city ||
+            request.listing?.departure_city ||
+            undefined,
+          arrivalCity:
+            request.arrival_city || request.listing?.arrival_city || undefined,
           weightKg: request.weight_kg ? Number(request.weight_kg) : undefined,
-          totalAmount: request.total_amount ? Number(request.total_amount) : undefined,
+          totalAmount: request.total_amount
+            ? Number(request.total_amount)
+            : undefined,
           messageGp: message,
         }).catch((err) => console.error("Erreur e-mail expéditeur:", err));
       }

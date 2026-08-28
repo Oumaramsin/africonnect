@@ -138,20 +138,23 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
       ? await tx.profile.findUnique({ where: { id: commande.client_id } })
       : null;
 
+    const parsedDate = new Date(commande.delivery_date);
+    const finalDeliveryDate = isNaN(parsedDate.getTime()) ? new Date() : parsedDate;
+
     const newOrder = await tx.order.create({
       data: {
         client_id: commande.client_id,
         traiteur_id: commande.traiteur_id,
         delivery_type: commande.delivery_type || "delivery",
         delivery_address: commande.delivery_address,
-        delivery_date: new Date(commande.delivery_date),
+        delivery_date: finalDeliveryDate,
         total_amount: total,
         notes: commande.notes,
         order_items: {
           create: commande.items.map((item) => ({
             dish_id: item.dish_id,
             quantity: item.quantity,
-            unit_price: item.unit_price,
+            unit_price: Number(item.unit_price),
           })),
         },
       },
@@ -161,18 +164,22 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
     });
 
     if (traiteur?.user_id) {
-      await tx.notification.create({
-        data: {
-          user_id: traiteur.user_id,
-          type: "nouvelle_commande_plat",
-          titre: "🛒 Nouvelle commande de plats !",
-          message: `Commande de plats pour un montant total de ${total} €`,
+      try {
+        await tx.notification.create({
           data: {
-            order_id: newOrder.id,
-            total_amount: total,
+            user_id: traiteur.user_id,
+            type: "nouvelle_commande_plat",
+            titre: "🛒 Nouvelle commande de plats !",
+            message: `Commande de plats pour un montant total de ${total.toFixed(2)} €`,
+            data: {
+              order_id: newOrder.id,
+              total_amount: total,
+            },
           },
-        },
-      });
+        });
+      } catch (notifErr) {
+        console.error("Impossible de créer la notification traiteur (ignoré):", notifErr);
+      }
     }
 
     // E-mails automatiques
@@ -223,6 +230,13 @@ export const createTraiteurProfile = async (
   data: CreateTraiteurProfileInput
 ) => {
   return await db.$transaction(async (tx) => {
+    const existing = await tx.traiteur.findFirst({
+      where: { user_id: userId },
+    });
+    if (existing) {
+      throw new Error("Vous possédez déjà un profil traiteur actif.");
+    }
+
     const traiteur = await tx.traiteur.create({
       data: {
         user_id: userId,

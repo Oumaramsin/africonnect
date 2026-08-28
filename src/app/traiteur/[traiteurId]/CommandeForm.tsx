@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { CheckCircle2, MessageSquare, Lock } from "lucide-react";
 import cookies from "js-cookie";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 
 type Props = {
   traiteurId: string;
@@ -207,12 +208,12 @@ export default function CommandeForm({
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {"Adresse de l'événement *"}
               </label>
-              <input
-                type="text"
+              <AddressAutocomplete
                 value={form.adresse}
-                onChange={(e) => updateField("adresse", e.target.value)}
-                placeholder="Ex: 12 rue des Lilas, Paris 75010"
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                onChange={(val) => updateField("adresse", val)}
+                onSelectAddress={(item) => updateField("adresse", item.label)}
+                placeholder="Ex: 12 rue des Lilas, Paris 75010..."
+                required
               />
             </div>
 

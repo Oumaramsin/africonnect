@@ -57,6 +57,11 @@ export const getGpByIdController = async (req: Request, res: Response) => {
 export const createGpOrderController = async (req: Request, res: Response) => {
   try {
     const user = (req as AuthenticatedRequest).user as any;
+    console.log("[BACKEND] createGpOrderController appelé:", {
+      paramsId: req.params.id,
+      body: req.body,
+      userId: user?.userId,
+    });
 
     const sender_id = user?.userId || req.body.gp_id;
     const listing_id = req.params.id;
@@ -73,7 +78,6 @@ export const createGpOrderController = async (req: Request, res: Response) => {
       !listing_id ||
       !weight_kg ||
       !content_desc ||
-      !declared_value ||
       !total_amount
     ) {
       return res.status(400).json({
@@ -83,7 +87,7 @@ export const createGpOrderController = async (req: Request, res: Response) => {
     }
 
     const total_amountParsed = parseFloat(total_amount);
-    const declared_valueParsed = parseFloat(declared_value);
+    const declared_valueParsed = declared_value ? parseFloat(declared_value) : 0;
     const weight_kgParsed = parseFloat(weight_kg);
     if (
       isNaN(total_amountParsed) ||
@@ -91,11 +95,11 @@ export const createGpOrderController = async (req: Request, res: Response) => {
       isNaN(weight_kgParsed) ||
       weight_kgParsed <= 0 ||
       isNaN(declared_valueParsed) ||
-      declared_valueParsed <= 0
+      declared_valueParsed < 0
     ) {
       return res.status(400).json({
         success: false,
-        error: "Les montants doit être un nombre supérieur à 0.",
+        error: "Les montants doivent être valides.",
       });
     }
     const gp = await createGpOrder({

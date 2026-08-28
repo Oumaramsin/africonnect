@@ -16,6 +16,9 @@ import {
 } from "lucide-react";
 import { useRouter } from "next/navigation";
 import cookies  from "js-cookie";
+import AddressAutocomplete, {
+  getQuarterOrCityFromAddress,
+} from "@/components/AddressAutocomplete";
 
 interface Gp {
   id: string;
@@ -635,21 +638,26 @@ export default function GpEspacePage() {
                 <div>
                   <label className="block text-xs text-gray-500 mb-1">
                     Adresse précise
-                    <span className="text-gray-600 ml-1">
+                    <span className="text-gray-400 ml-1">
                       (optionnel — partagée après accord)
                     </span>
                   </label>
-                  <input
-                    type="text"
+                  <AddressAutocomplete
                     value={formData.pickup_address}
-                    onChange={(e) =>
+                    onChange={(val) =>
                       setFormData({
                         ...formData,
-                        pickup_address: e.target.value,
+                        pickup_address: val,
                       })
                     }
-                    placeholder="Ex: Gare du Nord, Paris"
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                    onSelectAddress={(item) =>
+                      setFormData({
+                        ...formData,
+                        pickup_address: item.label,
+                        pickup_city: getQuarterOrCityFromAddress(item),
+                      })
+                    }
+                    placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
                   />
                 </div>
               </div>

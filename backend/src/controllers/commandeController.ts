@@ -50,13 +50,17 @@ export const getOrderByClientIdController = async (
 
 export const updateCommandeTraiteurStatusController = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { id } = req.params;
     const { statut, message_traiteur } = req.body;
 
-    const commande = await updateCommandeTraiteurStatus(id, statut, message_traiteur);
+    const commande = await updateCommandeTraiteurStatus(
+      id,
+      statut,
+      message_traiteur,
+    );
 
     res.json({
       success: true,
@@ -70,7 +74,7 @@ export const updateCommandeTraiteurStatusController = async (
 
 export const updateOrderPlatStatusController = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { id } = req.params;
@@ -90,7 +94,7 @@ export const updateOrderPlatStatusController = async (
 
 export const updateGpRequestStatusController = async (
   req: Request,
-  res: Response
+  res: Response,
 ) => {
   try {
     const { id } = req.params;
