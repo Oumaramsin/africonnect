@@ -9,6 +9,7 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -35,6 +36,8 @@ export default function ProfilScreen() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [deleting, setDeleting] = useState(false);
 
   const getInitials = (name: string) => {
     if (!name.trim()) return "U";
@@ -104,6 +107,31 @@ export default function ProfilScreen() {
   async function disconnect() {
     await deleteSecureToken("token");
     router.replace("/login");
+  }
+
+  async function confirmDeleteAccount() {
+    if (!userId) return;
+    setDeleting(true);
+    try {
+      const response = await apiFetch(`/auth/${userId}`, {
+        method: "DELETE",
+      });
+      if (response.ok) {
+        await deleteSecureToken("token");
+        setShowDeleteModal(false);
+        router.replace("/login");
+      } else {
+        const data = await response.json();
+        Alert.alert(
+          "Erreur",
+          data.message || "Impossible de supprimer le compte.",
+        );
+      }
+    } catch (err: any) {
+      Alert.alert("Erreur", "Erreur lors de la suppression du compte.");
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function updateProfil() {
@@ -452,7 +480,7 @@ export default function ProfilScreen() {
             )}
           </View>
 
-          {/* CARTE 3: DÉCONNEXION */}
+          {/* CARTE 3: COMPTE & SÉCURITÉ */}
           <View style={styles.card}>
             <TouchableOpacity
               style={styles.logoutRow}
@@ -461,16 +489,89 @@ export default function ProfilScreen() {
             >
               <View style={styles.activityLeft}>
                 <View style={styles.logoutIconCircle}>
-                  <Ionicons name="log-out-outline" size={18} color="#B91C1C" />
+                  <Ionicons name="log-out-outline" size={18} color="#475569" />
                 </View>
                 <Text style={styles.logoutText}>Se déconnecter</Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#B91C1C" />
+              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <View style={styles.rowDivider} />
+
+            <TouchableOpacity
+              style={styles.logoutRow}
+              activeOpacity={0.7}
+              onPress={() => setShowDeleteModal(true)}
+            >
+              <View style={styles.activityLeft}>
+                <View style={styles.deleteIconCircle}>
+                  <Ionicons name="trash-outline" size={18} color="#DC2626" />
+                </View>
+                <Text style={styles.deleteText}>Supprimer mon compte</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={18} color="#DC2626" />
             </TouchableOpacity>
           </View>
 
           <Text style={styles.versionFooter}>Dabari v1.0 — MVP Mobile</Text>
         </ScrollView>
+
+        {/* MODALE CONFIRMATION SUPPRESSION DE COMPTE */}
+        {showDeleteModal && (
+          <Modal
+            visible={true}
+            transparent
+            animationType="fade"
+            onRequestClose={() => {
+              if (!deleting) setShowDeleteModal(false);
+            }}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.deleteModalCard}>
+                <View style={styles.deleteIconContainer}>
+                  <Ionicons name="warning-outline" size={32} color="#DC2626" />
+                </View>
+
+                <Text style={styles.deleteModalTitle}>
+                  Supprimer votre compte ?
+                </Text>
+
+                <Text style={styles.deleteModalSubtext}>
+                  Êtes-vous sûr(e) de vouloir supprimer définitivement votre compte Dabari ? Cette action est irréversible et supprimera l&apos;ensemble de vos données.
+                </Text>
+
+                <View style={styles.deleteModalButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.deleteCancelBtn}
+                    onPress={() => setShowDeleteModal(false)}
+                    disabled={deleting}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.deleteCancelText}>Annuler</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.deleteConfirmBtn,
+                      deleting && { opacity: 0.7 },
+                    ]}
+                    onPress={confirmDeleteAccount}
+                    disabled={deleting}
+                    activeOpacity={0.85}
+                  >
+                    {deleting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.deleteConfirmText}>
+                        Oui, supprimer
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -809,7 +910,89 @@ const styles = StyleSheet.create({
   logoutText: {
     fontSize: 14,
     fontWeight: "700",
+    color: "#475569",
+  },
+  deleteIconCircle: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#FEF2F2",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  deleteText: {
+    fontSize: 14,
+    fontWeight: "700",
     color: "#DC2626",
+  },
+
+  /* Modale de suppression de compte */
+  deleteModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 24,
+    width: "100%",
+    maxWidth: 360,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.15,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  deleteIconContainer: {
+    width: 64,
+    height: 64,
+    borderRadius: 32,
+    backgroundColor: "#FEE2E2",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  deleteModalTitle: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  deleteModalSubtext: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 19,
+    marginBottom: 20,
+  },
+  deleteModalButtonsRow: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
+  deleteCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteCancelText: {
+    color: "#475569",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  deleteConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#DC2626",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  deleteConfirmText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
   },
 
   versionFooter: {
