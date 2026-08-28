@@ -15,6 +15,7 @@ import { Platform } from "react-native";
 import { CartItem } from "../../utils/types/traiteur";
 import { deleteSecureToken, getSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
+import AddressAutocomplete from "../../components/AddressAutocomplete";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -338,14 +339,13 @@ export default function CommanderScreen() {
 
           {/* 3. Adresse de Livraison (Si Livraison) */}
           {deliveryType === "delivery" && (
-            <View style={styles.sectionCard}>
+            <View style={[styles.sectionCard, { zIndex: 50 }]}>
               <Text style={styles.cardTitle}>Adresse de livraison</Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="12 rue de la Paix, 75001 Paris"
-                placeholderTextColor="#9CA3AF"
+              <AddressAutocomplete
                 value={deliveryAddress}
                 onChangeText={setDeliveryAddress}
+                onSelectAddress={(item) => setDeliveryAddress(item.label)}
+                placeholder="12 rue de la Paix, 75001 Paris..."
               />
             </View>
           )}

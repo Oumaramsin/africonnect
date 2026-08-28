@@ -191,9 +191,7 @@ export default function CommandeScreen() {
         const allCommandes = allTraiteurs.flatMap(
           (t: any) => t.commandes || [],
         );
-        const allOrders = allTraiteurs.flatMap(
-          (t: any) => t.orders || [],
-        );
+        const allOrders = allTraiteurs.flatMap((t: any) => t.orders || []);
         setCommandesRecues(sortOrdersByPendingFirst(allCommandes));
         setOrdersRecues(sortOrdersByPendingFirst(allOrders));
       }

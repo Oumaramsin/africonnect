@@ -8,7 +8,6 @@ import {
   StatusBar,
   TextInput,
   Modal,
-  FlatList,
   ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -16,22 +15,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { deleteSecureToken, getSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
-
-const CITIES = [
-  "Paris",
-  "Saint-Denis",
-  "Aubervilliers",
-  "Montreuil",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Toulouse",
-  "Lille",
-  "Créteil",
-  "Vitry-sur-Seine",
-  "Évry",
-  "Bruxelles",
-];
+import AddressAutocomplete from "../../components/AddressAutocomplete";
 
 export default function ProfilScreen() {
   const router = useRouter();
@@ -47,7 +31,6 @@ export default function ProfilScreen() {
   const [city, setCity] = useState("");
 
   const [showInfo, setShowInfo] = useState(false);
-  const [showCityPicker, setShowCityPicker] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -336,24 +319,18 @@ export default function ProfilScreen() {
                       size={14}
                       color="#1D6B45"
                     />{" "}
-                    Ville <Text style={styles.optionalText}>(optionnel)</Text>
+                    Ville ou Adresse{" "}
+                    <Text style={styles.optionalText}>(optionnel)</Text>
                   </Text>
 
-                  <TouchableOpacity
-                    style={styles.cityPickerBtn}
-                    onPress={() => setShowCityPicker(true)}
-                    activeOpacity={0.8}
-                  >
-                    <Text
-                      style={[
-                        styles.cityPickerBtnText,
-                        !city && { color: "#94A3B8" },
-                      ]}
-                    >
-                      {city || "Sélectionne ta ville"}
-                    </Text>
-                    <Ionicons name="chevron-down" size={16} color="#64748B" />
-                  </TouchableOpacity>
+                  <AddressAutocomplete
+                    value={city}
+                    onChangeText={setCity}
+                    onSelectAddress={(item) => {
+                      setCity(item.label);
+                    }}
+                    placeholder="Rechercher une adresse ou une ville (ex: Paris, 10 rue de...)"
+                  />
                 </View>
 
                 <TouchableOpacity
@@ -494,58 +471,6 @@ export default function ProfilScreen() {
 
           <Text style={styles.versionFooter}>Dabari v1.0 — MVP Mobile</Text>
         </ScrollView>
-
-        {/* MODAL SÉLECTION DE VILLE */}
-        <Modal
-          visible={showCityPicker}
-          transparent
-          animationType="slide"
-          onRequestClose={() => setShowCityPicker(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setShowCityPicker(false)}
-          >
-            <View style={styles.cityModalCard}>
-              <View style={styles.cityModalHeader}>
-                <Text style={styles.cityModalTitle}>Sélectionne ta ville</Text>
-                <TouchableOpacity onPress={() => setShowCityPicker(false)}>
-                  <Ionicons name="close" size={22} color="#64748B" />
-                </TouchableOpacity>
-              </View>
-
-              <FlatList
-                data={CITIES}
-                keyExtractor={(item) => item}
-                renderItem={({ item }) => (
-                  <TouchableOpacity
-                    style={[
-                      styles.cityOption,
-                      city === item && styles.cityOptionSelected,
-                    ]}
-                    onPress={() => {
-                      setCity(item);
-                      setShowCityPicker(false);
-                    }}
-                  >
-                    <Text
-                      style={[
-                        styles.cityOptionText,
-                        city === item && styles.cityOptionTextSelected,
-                      ]}
-                    >
-                      {item}
-                    </Text>
-                    {city === item && (
-                      <Ionicons name="checkmark" size={18} color="#1D6B45" />
-                    )}
-                  </TouchableOpacity>
-                )}
-              />
-            </View>
-          </TouchableOpacity>
-        </Modal>
       </SafeAreaView>
     </View>
   );

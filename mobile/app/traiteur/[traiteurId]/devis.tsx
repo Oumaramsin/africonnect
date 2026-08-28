@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Traiteur } from "../../../utils/types/traiteur";
 import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
+import AddressAutocomplete from "../../../components/AddressAutocomplete";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -394,16 +395,15 @@ export default function DevisScreen() {
             </View>
 
             {/* 4. Lieu / Adresse de l'événement */}
-            <View style={styles.formFieldGroup}>
+            <View style={[styles.formFieldGroup, { zIndex: 50 }]}>
               <Text style={styles.fieldLabel}>
                 Lieu ou Adresse de l'événement *
               </Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Ex: Salle des Fêtes, 75011 Paris"
-                placeholderTextColor="#9CA3AF"
+              <AddressAutocomplete
                 value={adresse}
                 onChangeText={setAdresse}
+                onSelectAddress={(item) => setAdresse(item.label)}
+                placeholder="Ex: Salle des Fêtes, 75011 Paris..."
               />
             </View>
 

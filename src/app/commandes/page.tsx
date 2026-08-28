@@ -850,8 +850,8 @@ export default function CommandesPage() {
                   {serviceFilter === "traiteur"
                     ? "Vous n'avez fait aucune demande de devis ni commande de plat."
                     : serviceFilter === "gp"
-                    ? "Vous n'avez fait aucune réservation de transport GP."
-                    : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
+                      ? "Vous n'avez fait aucune réservation de transport GP."
+                      : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
                 </p>
                 <Link
                   href="/dashboard"

@@ -272,7 +272,7 @@ export default function AccueilScreen() {
 
             {/* Notification Alert Banner */}
             {unreadNotifications.length > 0 && (
-              <TouchableOpacity style={styles.notifBanner} activeOpacity={0.9}>
+              <TouchableOpacity style={styles.notifBanner} activeOpacity={0.9} onPress={() => router.push("/commandes")}>
                 <View style={styles.notifLeft}>
                   <View style={styles.notifIconContainer}>
                     <Ionicons name="notifications" size={20} color="#1D6B45" />

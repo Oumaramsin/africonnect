@@ -16,6 +16,9 @@ import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
 import { GpListing } from "../../utils/types/gp";
 import { apiFetch } from "../../utils/api";
+import AddressAutocomplete, {
+  getQuarterOrCityFromAddress,
+} from "../../components/AddressAutocomplete";
 
 const CITIES_DEPARTURE = [
   "Paris",
@@ -816,14 +819,17 @@ export default function GpProfilScreen() {
                     placeholderTextColor="#94A3B8"
                   />
                 </View>
-                <View style={styles.fieldGroup}>
+                <View style={[styles.fieldGroup, { zIndex: 50 }]}>
                   <Text style={styles.fieldLabel}>ADRESSE PRÉCISE</Text>
-                  <TextInput
-                    style={styles.input}
+                  <AddressAutocomplete
                     value={pickupAddress}
                     onChangeText={setPickupAddress}
-                    placeholder="Ex: Gare du Nord"
-                    placeholderTextColor="#94A3B8"
+                    onSelectAddress={(item) => {
+                      setPickupAddress(item.label);
+                      const cleanQuarter = getQuarterOrCityFromAddress(item);
+                      setPickupCity(cleanQuarter);
+                    }}
+                    placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
                   />
                 </View>
               </View>

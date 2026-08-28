@@ -9,6 +9,7 @@ import { type CartItem } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { PartyPopper, Car, Home } from "lucide-react";
 import cookies from "js-cookie";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 
 const schema = z
   .object({
@@ -47,6 +48,7 @@ export default function CheckoutPage() {
     register,
     handleSubmit,
     watch,
+    setValue,
     formState: { errors },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -285,11 +287,17 @@ export default function CheckoutPage() {
                 <h2 className="font-semibold text-gray-800 mb-4">
                   Adresse de livraison
                 </h2>
-                <input
-                  {...register("delivery_address")}
-                  type="text"
-                  placeholder="12 rue de la Paix, 75001 Paris"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                <AddressAutocomplete
+                  value={watch("delivery_address") || ""}
+                  onChange={(val) =>
+                    setValue("delivery_address", val, { shouldValidate: true })
+                  }
+                  onSelectAddress={(item) =>
+                    setValue("delivery_address", item.label, {
+                      shouldValidate: true,
+                    })
+                  }
+                  placeholder="12 rue de la Paix, 75001 Paris..."
                 />
                 {errors.delivery_address && (
                   <p className="text-red-500 text-xs mt-1">

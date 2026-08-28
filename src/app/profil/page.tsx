@@ -8,6 +8,7 @@ import { z } from "zod";
 import Link from "next/link";
 import { ChefHat, Plane, User, Package, LogOut, Lock, ChevronDown, ChevronUp, Edit3, Phone, MapPin, Mail } from "lucide-react";
 import cookies from "js-cookie";
+import AddressAutocomplete from "@/components/AddressAutocomplete";
 
 const schema = z.object({
   full_name: z.string().min(2, "Nom requis"),
@@ -16,22 +17,6 @@ const schema = z.object({
 });
 
 type FormData = z.infer<typeof schema>;
-
-const CITIES = [
-  "Paris",
-  "Saint-Denis",
-  "Aubervilliers",
-  "Montreuil",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Toulouse",
-  "Lille",
-  "Créteil",
-  "Vitry-sur-Seine",
-  "Évry",
-  "Bruxelles",
-];
 
 export default function ProfilPage() {
   const router = useRouter();
@@ -47,6 +32,8 @@ export default function ProfilPage() {
     register,
     handleSubmit,
     reset,
+    watch,
+    setValue,
     formState: { errors, isDirty },
   } = useForm<FormData>({
     resolver: zodResolver(schema),
@@ -290,22 +277,19 @@ export default function ProfilPage() {
                 {/* Ville */}
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1 flex items-center gap-1.5">
-                    <MapPin size={14} className="text-[#1D6B45]" /> Ville
+                    <MapPin size={14} className="text-[#1D6B45]" /> Ville ou Adresse
                     <span className="text-gray-400 font-normal ml-1">
                       (optionnel)
                     </span>
                   </label>
-                  <select
-                    {...register("city")}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                  >
-                    <option value="">Sélectionne ta ville</option>
-                    {CITIES.map((city) => (
-                      <option key={city} value={city}>
-                        {city}
-                      </option>
-                    ))}
-                  </select>
+                  <AddressAutocomplete
+                    value={watch("city") || ""}
+                    onChange={(val) => setValue("city", val, { shouldDirty: true })}
+                    onSelectAddress={(item) => {
+                      setValue("city", item.label, { shouldDirty: true });
+                    }}
+                    placeholder="Rechercher une adresse ou une ville (ex: Paris, 10 rue de...)"
+                  />
                 </div>
 
                 <button
