@@ -5,14 +5,6 @@ import { type Traiteur } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { ChefHat, Star, MapPin, Search, X } from "lucide-react";
 
-const CUISINES = [
-  { label: "Tout", value: "tout" },
-  { label: "🇸🇳 Sénégalais", value: "senegalais" },
-  { label: "🇨🇮 Ivoirien", value: "ivoirien" },
-  { label: "🇨🇲 Camerounais", value: "camerounais" },
-  { label: "🇨🇬 Congolais", value: "congolais" },
-];
-
 const CUISINE_EMOJI: Record<string, string> = {
   senegalais: "🇸🇳",
   ivoirien: "🇨🇮",
@@ -23,8 +15,6 @@ const CUISINE_EMOJI: Record<string, string> = {
 export default function TraiteurPage() {
   const [traiteurs, setTraiteurs] = useState<Traiteur[]>([]);
   const [loading, setLoading] = useState(true);
-  const [cuisine, setCuisine] = useState("tout");
-  const [selectedZone, setSelectedZone] = useState("Toutes");
   const [searchQuery, setSearchQuery] = useState("");
 
   useEffect(() => {
@@ -60,59 +50,26 @@ export default function TraiteurPage() {
     };
   }, []);
 
-  // Extraire zones de livraison uniques
-  const availableZones = useMemo(() => {
-    const set = new Set<string>();
-    traiteurs.forEach((t) => {
-      t.delivery_zones?.forEach((z) => {
-        if (z && z.trim()) {
-          set.add(z.trim());
-        }
-      });
-    });
-    return ["Toutes", ...Array.from(set).sort((a, b) => a.localeCompare(b, "fr"))];
-  }, [traiteurs]);
-
-  // Filtrage 
+  // Filtrage par recherche
   const filteredTraiteurs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return traiteurs;
+
     return traiteurs.filter((traiteur) => {
-      // Filtre Cuisine
-      const matchCuisine =
-        cuisine === "tout" ||
-        traiteur.cuisine_type?.some((c) =>
-          c.toLowerCase().includes(cuisine.toLowerCase()),
-        );
-
-      // Filtre Zone
-      const matchZone =
-        selectedZone === "Toutes" ||
-        traiteur.delivery_zones?.some((z) =>
-          z.toLowerCase().includes(selectedZone.toLowerCase()),
-        );
-
-      // Filtre Recherche
-      const query = searchQuery.trim().toLowerCase();
-      const matchSearch =
-        !query ||
+      return (
         traiteur.name.toLowerCase().includes(query) ||
         traiteur.bio?.toLowerCase().includes(query) ||
         traiteur.delivery_zones?.some((z) => z.toLowerCase().includes(query)) ||
-        traiteur.cuisine_type?.some((c) => c.toLowerCase().includes(query));
-
-      return matchCuisine && matchZone && matchSearch;
+        traiteur.cuisine_type?.some((c) => c.toLowerCase().includes(query))
+      );
     });
-  }, [traiteurs, cuisine, selectedZone, searchQuery]);
+  }, [traiteurs, searchQuery]);
 
   const handleResetFilters = () => {
-    setCuisine("tout");
-    setSelectedZone("Toutes");
     setSearchQuery("");
   };
 
-  const hasActiveFilters =
-    cuisine !== "tout" ||
-    selectedZone !== "Toutes" ||
-    searchQuery.trim().length > 0;
+  const hasActiveFilters = searchQuery.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-[#F3F4F6]">
@@ -153,54 +110,6 @@ export default function TraiteurPage() {
         </div>
       </div>
 
-      {/* Barre de Filtres */}
-      <div className="bg-white border-b border-gray-200/80 px-4 py-3 shadow-xs sticky top-0 z-30 space-y-2">
-        <div className="max-w-2xl mx-auto space-y-2">
-          {/* Ligne 1: Filtres Cuisine */}
-          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar">
-            <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
-              Cuisine :
-            </span>
-            {CUISINES.map((c) => (
-              <button
-                key={c.value}
-                onClick={() => setCuisine(c.value)}
-                className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all shrink-0 ${
-                  cuisine === c.value
-                    ? "bg-[#1D6B45] text-white shadow-sm"
-                    : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-                }`}
-              >
-                {c.label}
-              </button>
-            ))}
-          </div>
-
-          {/* Ligne 2: Filtres Zone de Livraison */}
-          {availableZones.length > 1 && (
-            <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar pt-1 border-t border-gray-50">
-              <span className="text-[11px] font-bold text-gray-400 uppercase tracking-wider shrink-0 mr-1">
-                Zone :
-              </span>
-              {availableZones.map((zone) => (
-                <button
-                  key={zone}
-                  onClick={() => setSelectedZone(zone)}
-                  className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold whitespace-nowrap transition-all shrink-0 flex items-center gap-1 border ${
-                    selectedZone === zone
-                      ? "bg-[#1D6B45] text-white border-[#1D6B45] shadow-xs"
-                      : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  <MapPin size={11} className={selectedZone === zone ? "text-white" : "text-[#1D6B45]"} />
-                  {zone === "Toutes" ? "Toutes les zones" : zone}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
-      </div>
-
       {/* Results counter */}
       {hasActiveFilters && (
         <div className="bg-[#E8F5E9]/60 border-b border-[#1D6B45]/10 px-4 py-2">
@@ -212,7 +121,7 @@ export default function TraiteurPage() {
               onClick={handleResetFilters}
               className="text-red-600 font-semibold hover:underline"
             >
-              Effacer les filtres
+              Effacer la recherche
             </button>
           </div>
         </div>
@@ -237,9 +146,7 @@ export default function TraiteurPage() {
               Aucun traiteur disponible
             </p>
             <p className="text-xs text-gray-500 max-w-xs mx-auto mb-4">
-              {selectedZone !== "Toutes"
-                ? `Aucun traiteur ne dessert la zone "${selectedZone}".`
-                : "Aucun traiteur ne correspond à vos critères de recherche."}
+              Aucun traiteur ne correspond à votre recherche.
             </p>
             {hasActiveFilters && (
               <button
@@ -311,23 +218,14 @@ export default function TraiteurPage() {
                       <div className="flex items-start gap-1.5 mb-3 bg-gray-50 p-2 rounded-xl border border-gray-100">
                         <MapPin size={13} className="text-[#1D6B45] shrink-0 mt-0.5" />
                         <div className="flex flex-wrap gap-1">
-                          {traiteur.delivery_zones.map((zone) => {
-                            const isMatch =
-                              selectedZone !== "Toutes" &&
-                              zone.toLowerCase().includes(selectedZone.toLowerCase());
-                            return (
-                              <span
-                                key={zone}
-                                className={`text-[10px] px-1.5 py-0.5 rounded-md font-medium border ${
-                                  isMatch
-                                    ? "bg-[#E8F5E9] text-[#1D6B45] border-[#1D6B45] font-bold"
-                                    : "bg-white text-gray-600 border-gray-200"
-                                }`}
-                              >
-                                {zone}
-                              </span>
-                            );
-                          })}
+                          {traiteur.delivery_zones.map((zone) => (
+                            <span
+                              key={zone}
+                              className="text-[10px] px-1.5 py-0.5 rounded-md font-medium border bg-white text-gray-600 border-gray-200"
+                            >
+                              {zone}
+                            </span>
+                          ))}
                         </div>
                       </div>
                     )}

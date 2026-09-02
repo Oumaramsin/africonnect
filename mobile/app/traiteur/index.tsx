@@ -16,15 +16,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { Traiteur } from "../../utils/types/traiteur";
 import { apiFetch } from "../../utils/api";
 
-// Filtres de cuisine
-const CUISINES = [
-  { label: "Tout", value: "tout" },
-  { label: "🇸🇳 Sénégalais", value: "senegalais" },
-  { label: "🇨🇮 Ivoirien", value: "ivoirien" },
-  { label: "🇨🇲 Camerounais", value: "camerounais" },
-  { label: "🇨🇬 Congolais", value: "congolais" },
-];
-
 const CUISINE_EMOJI: Record<string, string> = {
   senegalais: "🇸🇳",
   ivoirien: "🇨🇮",
@@ -35,8 +26,6 @@ const CUISINE_EMOJI: Record<string, string> = {
 export default function TraiteurScreen() {
   const router = useRouter();
 
-  const [selectedCuisine, setSelectedCuisine] = useState("tout");
-  const [selectedZone, setSelectedZone] = useState("Toutes");
   const [searchQuery, setSearchQuery] = useState("");
   const [traiteurs, setTraiteurs] = useState<Traiteur[]>([]);
   const [loading, setLoading] = useState(true);
@@ -71,58 +60,26 @@ export default function TraiteurScreen() {
     };
   }, []);
 
-  // Extraire les zones de livraison uniques
-  const availableZones = useMemo(() => {
-    const set = new Set<string>();
-    traiteurs.forEach((t) => {
-      t.delivery_zones?.forEach((z) => {
-        if (z && z.trim()) {
-          set.add(z.trim());
-        }
-      });
-    });
-    return ["Toutes", ...Array.from(set).sort((a, b) => a.localeCompare(b, "fr"))];
-  }, [traiteurs]);
-
-  // Filtrage 
+  // Filtrage par recherche
   const filteredTraiteurs = useMemo(() => {
+    const query = searchQuery.trim().toLowerCase();
+    if (!query) return traiteurs;
+
     return traiteurs.filter((traiteur) => {
-      const matchCuisine =
-        selectedCuisine === "tout" ||
-        traiteur.cuisine_type?.some((c) =>
-          c.toLowerCase().includes(selectedCuisine.toLowerCase()),
-        );
-
-      // Filtre Zone
-      const matchZone =
-        selectedZone === "Toutes" ||
-        traiteur.delivery_zones?.some((z) =>
-          z.toLowerCase().includes(selectedZone.toLowerCase()),
-        );
-
-      // Filtre Recherche
-      const query = searchQuery.trim().toLowerCase();
-      const matchSearch =
-        !query ||
+      return (
         traiteur.name.toLowerCase().includes(query) ||
         traiteur.bio?.toLowerCase().includes(query) ||
         traiteur.delivery_zones?.some((z) => z.toLowerCase().includes(query)) ||
-        traiteur.cuisine_type?.some((c) => c.toLowerCase().includes(query));
-
-      return matchCuisine && matchZone && matchSearch;
+        traiteur.cuisine_type?.some((c) => c.toLowerCase().includes(query))
+      );
     });
-  }, [traiteurs, selectedCuisine, selectedZone, searchQuery]);
+  }, [traiteurs, searchQuery]);
 
   const handleResetFilters = () => {
-    setSelectedCuisine("tout");
-    setSelectedZone("Toutes");
     setSearchQuery("");
   };
 
-  const hasActiveFilters =
-    selectedCuisine !== "tout" ||
-    selectedZone !== "Toutes" ||
-    searchQuery.trim().length > 0;
+  const hasActiveFilters = searchQuery.trim().length > 0;
 
   return (
     <View style={styles.topGreenWrapper}>
@@ -168,90 +125,6 @@ export default function TraiteurScreen() {
           </View>
         </View>
 
-        {/* Sticky Filter Bars */}
-        <View style={styles.filterBarContainer}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScrollContent}
-            style={styles.filterScroll}
-          >
-            <Text style={styles.filterPrefixLabel}>CUISINE :</Text>
-            {CUISINES.map((c) => {
-              const isActive = selectedCuisine === c.value;
-              return (
-                <TouchableOpacity
-                  key={c.value}
-                  style={[
-                    styles.filterPill,
-                    isActive
-                      ? styles.filterPillActive
-                      : styles.filterPillInactive,
-                  ]}
-                  onPress={() => setSelectedCuisine(c.value)}
-                  activeOpacity={0.8}
-                >
-                  <Text
-                    style={[
-                      styles.filterPillText,
-                      isActive
-                        ? styles.filterPillTextActive
-                        : styles.filterPillTextInactive,
-                    ]}
-                  >
-                    {c.label}
-                  </Text>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-
-          {/* Ligne 2: Filtres Zones de Livraison */}
-          {availableZones.length > 1 && (
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.filterScrollContent}
-              style={[styles.filterScroll, { marginTop: 8 }]}
-            >
-              <Text style={styles.filterPrefixLabel}>ZONE :</Text>
-              {availableZones.map((zone) => {
-                const isActive = selectedZone === zone;
-                return (
-                  <TouchableOpacity
-                    key={zone}
-                    style={[
-                      styles.zoneFilterPill,
-                      isActive
-                        ? styles.zoneFilterPillActive
-                        : styles.zoneFilterPillInactive,
-                    ]}
-                    onPress={() => setSelectedZone(zone)}
-                    activeOpacity={0.8}
-                  >
-                    <Ionicons
-                      name="location-sharp"
-                      size={12}
-                      color={isActive ? "#FFFFFF" : "#1D6B45"}
-                      style={{ marginRight: 4 }}
-                    />
-                    <Text
-                      style={[
-                        styles.zoneFilterPillText,
-                        isActive
-                          ? styles.zoneFilterPillTextActive
-                          : styles.zoneFilterPillTextInactive,
-                      ]}
-                    >
-                      {zone === "Toutes" ? "Toutes les zones" : zone}
-                    </Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </ScrollView>
-          )}
-        </View>
-
         {hasActiveFilters && (
           <View style={styles.resultsBar}>
             <Text style={styles.resultsText}>
@@ -260,10 +133,11 @@ export default function TraiteurScreen() {
               {filteredTraiteurs.length > 1 ? "s" : ""}
             </Text>
             <TouchableOpacity onPress={handleResetFilters}>
-              <Text style={styles.resetText}>Effacer les filtres</Text>
+              <Text style={styles.resetText}>Effacer la recherche</Text>
             </TouchableOpacity>
           </View>
         )}
+
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
@@ -281,9 +155,7 @@ export default function TraiteurScreen() {
               </View>
               <Text style={styles.emptyTitle}>Aucun traiteur disponible</Text>
               <Text style={styles.emptySubtitle}>
-                {selectedZone !== "Toutes"
-                  ? `Aucun traiteur ne livre actuellement à "${selectedZone}".`
-                  : "Aucun traiteur ne correspond à vos critères de recherche."}
+                Aucun traiteur ne correspond à votre recherche.
               </Text>
               {hasActiveFilters && (
                 <TouchableOpacity
@@ -354,29 +226,11 @@ export default function TraiteurScreen() {
                         style={{ marginTop: 1 }}
                       />
                       <View style={styles.deliveryZonesList}>
-                        {traiteur.delivery_zones.map((zone) => {
-                          const isMatch =
-                            selectedZone !== "Toutes" &&
-                            zone.toLowerCase().includes(selectedZone.toLowerCase());
-                          return (
-                            <View
-                              key={zone}
-                              style={[
-                                styles.zoneBadge,
-                                isMatch && styles.zoneBadgeHighlight,
-                              ]}
-                            >
-                              <Text
-                                style={[
-                                  styles.zoneBadgeText,
-                                  isMatch && styles.zoneBadgeTextHighlight,
-                                ]}
-                              >
-                                {zone}
-                              </Text>
-                            </View>
-                          );
-                        })}
+                        {traiteur.delivery_zones.map((zone) => (
+                          <View key={zone} style={styles.zoneBadge}>
+                            <Text style={styles.zoneBadgeText}>{zone}</Text>
+                          </View>
+                        ))}
                       </View>
                     </View>
                   )}
@@ -448,13 +302,13 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -0.3,
-    marginBottom: 2,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.85)",
-    lineHeight: 16,
-    marginBottom: 12,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 4,
+    marginBottom: 14,
+    lineHeight: 17,
   },
   searchBarWrapper: {
     flexDirection: "row",
@@ -463,91 +317,18 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     paddingHorizontal: 12,
     height: 42,
-    gap: 8,
+    shadowColor: "#000000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3,
   },
   searchInput: {
     flex: 1,
+    marginLeft: 8,
     fontSize: 13,
     color: "#0F172A",
-    height: "100%",
-    paddingVertical: 0,
-  },
-
-  /* Filter Bar */
-  filterBarContainer: {
-    backgroundColor: "#FFFFFF",
-    borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
-    paddingVertical: 10,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 4,
-    elevation: 2,
-  },
-  filterScroll: {
-    flexGrow: 0,
-  },
-  filterScrollContent: {
-    paddingHorizontal: 16,
-    alignItems: "center",
-    gap: 6,
-  },
-  filterPrefixLabel: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#94A3B8",
-    marginRight: 2,
-    letterSpacing: 0.5,
-  },
-  filterPill: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 18,
-  },
-  filterPillActive: {
-    backgroundColor: "#1D6B45",
-  },
-  filterPillInactive: {
-    backgroundColor: "#F1F5F9",
-  },
-  filterPillText: {
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  filterPillTextActive: {
-    color: "#FFFFFF",
-  },
-  filterPillTextInactive: {
-    color: "#475569",
-  },
-
-  /* Zone Filter Pills */
-  zoneFilterPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 16,
-    borderWidth: 1,
-  },
-  zoneFilterPillActive: {
-    backgroundColor: "#1D6B45",
-    borderColor: "#1D6B45",
-  },
-  zoneFilterPillInactive: {
-    backgroundColor: "#FFFFFF",
-    borderColor: "#E2E8F0",
-  },
-  zoneFilterPillText: {
-    fontSize: 11,
-    fontWeight: "700",
-  },
-  zoneFilterPillTextActive: {
-    color: "#FFFFFF",
-  },
-  zoneFilterPillTextInactive: {
-    color: "#334155",
+    fontWeight: "500",
   },
 
   /* Results Bar */
@@ -728,18 +509,10 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  zoneBadgeHighlight: {
-    backgroundColor: "#E8F5E9",
-    borderColor: "#1D6B45",
-  },
   zoneBadgeText: {
     fontSize: 10,
     fontWeight: "600",
     color: "#475569",
-  },
-  zoneBadgeTextHighlight: {
-    color: "#1D6B45",
-    fontWeight: "800",
   },
 
   /* Card Footer */
