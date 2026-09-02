@@ -161,6 +161,13 @@ export default async function DashboardPage() {
             <XCircle size={12} /> Refusée
           </span>
         );
+      case "annulee":
+      case "cancelled":
+        return (
+          <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-0.5 rounded-full flex items-center w-fit gap-1 font-medium border border-gray-200">
+            <XCircle size={12} className="text-gray-400" /> Annulée
+          </span>
+        );
       default:
         return null;
     }

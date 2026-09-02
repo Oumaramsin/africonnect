@@ -155,6 +155,21 @@ export default function AccueilScreen() {
             <Text style={styles.badgeRefusedText}>Refusée</Text>
           </View>
         );
+      case "annulee":
+      case "cancelled":
+        return (
+          <View
+            style={[
+              styles.badgeRefused,
+              { backgroundColor: "#F1F5F9", borderColor: "#CBD5E1" },
+            ]}
+          >
+            <Ionicons name="close-circle-outline" size={10} color="#64748B" />
+            <Text style={{ fontSize: 9, color: "#64748B", fontWeight: "600" }}>
+              Annulée
+            </Text>
+          </View>
+        );
       default:
         return null;
     }

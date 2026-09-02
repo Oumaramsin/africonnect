@@ -24,7 +24,12 @@ import {
   PartyPopper,
   Link,
   ArrowRight,
+  Edit3,
 } from "lucide-react";
+import CancelConfirmModal from "@/components/commandes/CancelConfirmModal";
+import EditDevisModal from "@/components/commandes/EditDevisModal";
+import EditPlatModal from "@/components/commandes/EditPlatModal";
+import EditGpModal from "@/components/commandes/EditGpModal";
 
 type CommandeTraiteur = {
   id: string;
@@ -141,6 +146,16 @@ export default function CommandesPage() {
   );
   const [ordersRecues, setOrdersRecues] = useState<OrderPlat[]>([]);
   const [gpRecues, setGpRecues] = useState<GpRequest[]>([]);
+
+  // Modales de modification & annulation client
+  const [editingDevis, setEditingDevis] = useState<CommandeTraiteur | null>(null);
+  const [editingOrder, setEditingOrder] = useState<OrderPlat | null>(null);
+  const [editingGp, setEditingGp] = useState<GpRequest | null>(null);
+  const [cancelTarget, setCancelTarget] = useState<{
+    type: "traiteur" | "order" | "gp";
+    id: string;
+    title: string;
+  } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -406,8 +421,19 @@ export default function CommandesPage() {
             <XCircle size={14} /> Refusée
           </span>
         );
+      case "annulee":
+      case "cancelled":
+        return (
+          <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium flex items-center w-fit gap-1 border border-gray-200">
+            <XCircle size={14} className="text-gray-400" /> Annulée
+          </span>
+        );
       default:
-        return null;
+        return (
+          <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium flex items-center w-fit gap-1 border border-gray-200">
+            {statut}
+          </span>
+        );
     }
   };
 
@@ -608,6 +634,31 @@ export default function CommandesPage() {
                                 Contacter le traiteur sur WhatsApp
                               </button>
                             )}
+                          {(commande.statut === "en_attente" ||
+                            commande.statut === "pending") && (
+                            <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                              <button
+                                type="button"
+                                onClick={() => setEditingDevis(commande)}
+                                className="flex-1 py-2.5 px-3 bg-[#1D6B45]/10 text-[#1D6B45] hover:bg-[#1D6B45]/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <Edit3 size={14} /> Modifier la demande
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCancelTarget({
+                                    type: "traiteur",
+                                    id: commande.id,
+                                    title: `votre devis chez ${traiteurInfo?.name || "le traiteur"}`,
+                                  })
+                                }
+                                className="flex-1 py-2.5 px-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <XCircle size={14} /> Annuler
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -721,6 +772,31 @@ export default function CommandesPage() {
                                 Contacter le traiteur sur WhatsApp
                               </button>
                             )}
+                          {(order.status === "pending" ||
+                            order.status === "en_attente") && (
+                            <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                              <button
+                                type="button"
+                                onClick={() => setEditingOrder(order)}
+                                className="flex-1 py-2.5 px-3 bg-[#1D6B45]/10 text-[#1D6B45] hover:bg-[#1D6B45]/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <Edit3 size={14} /> Modifier la commande
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCancelTarget({
+                                    type: "order",
+                                    id: order.id,
+                                    title: `votre commande chez ${traiteurInfo?.name || "le traiteur"}`,
+                                  })
+                                }
+                                className="flex-1 py-2.5 px-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <XCircle size={14} /> Annuler
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -822,6 +898,32 @@ export default function CommandesPage() {
                               </div>
                             )}
                           </div>
+
+                          {(request.status === "pending" ||
+                            request.status === "en_attente") && (
+                            <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
+                              <button
+                                type="button"
+                                onClick={() => setEditingGp(request)}
+                                className="flex-1 py-2.5 px-3 bg-amber-50 text-[#D4870A] hover:bg-amber-100 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <Edit3 size={14} /> Modifier la réservation
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() =>
+                                  setCancelTarget({
+                                    type: "gp",
+                                    id: request.id,
+                                    title: `votre réservation GP (${depCity} → ${arrCity})`,
+                                  })
+                                }
+                                className="flex-1 py-2.5 px-3 bg-red-50 text-red-600 hover:bg-red-100 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                              >
+                                <XCircle size={14} /> Annuler
+                              </button>
+                            </div>
+                          )}
                         </div>
                       );
                     })}
@@ -1370,7 +1472,7 @@ export default function CommandesPage() {
 
       {/* Pop-up (Modale) de confirmation */}
       {confirmAction && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs z-[999] flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
             <h3 className="text-lg font-bold text-gray-800 mb-2">
               {confirmAction.type.startsWith("accepter")
@@ -1435,6 +1537,38 @@ export default function CommandesPage() {
           </div>
         </div>
       )}
+
+      {/* Modale de modification Devis */}
+      <EditDevisModal
+        isOpen={Boolean(editingDevis)}
+        onClose={() => setEditingDevis(null)}
+        onSuccess={() => loadAll()}
+        commande={editingDevis}
+      />
+
+      {/* Modale de modification Commande Plats */}
+      <EditPlatModal
+        isOpen={Boolean(editingOrder)}
+        onClose={() => setEditingOrder(null)}
+        onSuccess={() => loadAll()}
+        order={editingOrder}
+      />
+
+      {/* Modale de modification GP */}
+      <EditGpModal
+        isOpen={Boolean(editingGp)}
+        onClose={() => setEditingGp(null)}
+        onSuccess={() => loadAll()}
+        request={editingGp}
+      />
+
+      {/* Modale de confirmation d'annulation */}
+      <CancelConfirmModal
+        isOpen={Boolean(cancelTarget)}
+        onClose={() => setCancelTarget(null)}
+        onSuccess={() => loadAll()}
+        target={cancelTarget}
+      />
     </div>
   );
 }

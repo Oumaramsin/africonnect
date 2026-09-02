@@ -219,8 +219,8 @@ export default function AddressAutocomplete({
 
       {/* Floating Suggestions Dropdown */}
       {isOpen && suggestions.length > 0 && (
-        <div className="absolute z-50 left-0 right-0 top-full mt-1.5 bg-white rounded-xl border border-gray-100 shadow-xl overflow-hidden divide-y divide-gray-50 max-h-64 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
-          <div className="px-3 py-1.5 bg-gray-50/80 text-[11px] font-semibold text-gray-500 flex items-center justify-between">
+        <div className="absolute z-[100] left-0 right-0 top-full mt-1.5 bg-white rounded-2xl border border-gray-200 shadow-2xl overflow-hidden divide-y divide-gray-50 max-h-64 overflow-y-auto animate-in fade-in slide-in-from-top-2 duration-150">
+          <div className="px-3.5 py-2 bg-emerald-50/70 text-[11px] font-bold text-[#1D6B45] flex items-center justify-between">
             <span>Suggestions officielles (data.gouv.fr)</span>
             <span className="text-[10px] text-gray-400 font-normal">
               {suggestions.length} résultat{suggestions.length > 1 ? "s" : ""}

@@ -109,7 +109,7 @@ export default function BottomNav() {
         flexShrink: 0,
         position: "fixed",
         bottom: 0,
-        zIndex: 50,
+        zIndex: 30,
       }}
     >
       <div

@@ -36,8 +36,13 @@ export const getUserNotifications = async (userId: string) => {
     },
   });
 
-  const pendingTraiteurOrders = profile?.traiteurs?.reduce((acc, t) => acc + t.orders.length + t.commandes.length, 0) || 0;
-  const pendingGpRequests = profile?.gp_listings?.reduce((acc, g) => acc + g.requests.length, 0) || 0;
+  const pendingTraiteurOrders =
+    profile?.traiteurs?.reduce(
+      (acc, t) => acc + t.orders.length + t.commandes.length,
+      0,
+    ) || 0;
+  const pendingGpRequests =
+    profile?.gp_listings?.reduce((acc, g) => acc + g.requests.length, 0) || 0;
   const pendingReceivedCount = pendingTraiteurOrders + pendingGpRequests;
 
   const totalBadgeCount = Math.max(unreadNotifCount, pendingReceivedCount);
@@ -49,7 +54,10 @@ export const getUserNotifications = async (userId: string) => {
   };
 };
 
-export const markNotificationAsRead = async (notificationId: string, userId: string) => {
+export const markNotificationAsRead = async (
+  notificationId: string,
+  userId: string,
+) => {
   return await db.notification.updateMany({
     where: {
       id: notificationId,

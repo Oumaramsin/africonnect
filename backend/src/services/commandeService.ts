@@ -344,7 +344,9 @@ export const updateClientCommandeTraiteur = async (
   return await db.commandeTraiteur.update({
     where: { id },
     data: {
-      date_evenement: data.date_evenement ? new Date(data.date_evenement) : undefined,
+      date_evenement: data.date_evenement
+        ? new Date(data.date_evenement)
+        : undefined,
       nb_personnes:
         data.nb_personnes !== undefined ? Number(data.nb_personnes) : undefined,
       adresse: data.adresse !== undefined ? data.adresse : undefined,
@@ -451,8 +453,7 @@ export const updateClientOrderPlat = async (
             ? data.delivery_address
             : undefined,
         notes: data.notes !== undefined ? data.notes : undefined,
-        total_amount:
-          newTotalAmount !== undefined ? newTotalAmount : undefined,
+        total_amount: newTotalAmount !== undefined ? newTotalAmount : undefined,
       },
       include: {
         traiteur: true,
@@ -572,8 +573,7 @@ export const cancelClientOrder = async (
         where: { id },
       });
       if (!order) throw new Error("Commande introuvable");
-      if (order.client_id !== user_id)
-        throw new Error("Action non autorisée");
+      if (order.client_id !== user_id) throw new Error("Action non autorisée");
       if (order.status !== "pending")
         throw new Error("Impossible d'annuler une commande déjà traitée");
 
@@ -617,10 +617,7 @@ export const getSingleOrderPlat = async (id: string, user_id?: string) => {
     where: user_id
       ? {
           id,
-          OR: [
-            { client_id: user_id },
-            { traiteur: { user_id } },
-          ],
+          OR: [{ client_id: user_id }, { traiteur: { user_id } }],
         }
       : { id },
     include: {
@@ -646,10 +643,7 @@ export const getSingleCommandeTraiteur = async (
     where: user_id
       ? {
           id,
-          OR: [
-            { client_id: user_id },
-            { traiteur: { user_id } },
-          ],
+          OR: [{ client_id: user_id }, { traiteur: { user_id } }],
         }
       : { id },
     include: { traiteur: true },
@@ -661,13 +655,9 @@ export const getSingleGpRequest = async (id: string, user_id?: string) => {
     where: user_id
       ? {
           id,
-          OR: [
-            { sender_id: user_id },
-            { listing: { gp_id: user_id } },
-          ],
+          OR: [{ sender_id: user_id }, { listing: { gp_id: user_id } }],
         }
       : { id },
     include: { listing: true },
   });
 };
-
