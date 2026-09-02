@@ -11,7 +11,7 @@ import {
   ShieldCheck,
   LogIn,
 } from "lucide-react";
-import cookies from "js-cookie";
+import { getValidToken, decodeToken, removeToken } from "@/lib/auth";
 
 const NAV_ITEMS = [
   { href: "/dashboard", icon: <Home size={22} />, label: "Accueil" },
@@ -26,17 +26,23 @@ export default function BottomNav() {
 
   useEffect(() => {
     const fetchUnread = async () => {
-      const token = cookies.get("token");
+      const token = getValidToken();
       if (!token) {
         setIsLoggedIn(false);
+        setIsAdmin(false);
         setUnreadCount(0);
         return;
       }
       try {
-        const payloadBase64 = token.split(".")[1];
-        const decodedPayload = JSON.parse(
-          Buffer.from(payloadBase64, "base64").toString("utf-8"),
-        );
+        const decodedPayload = decodeToken(token);
+        if (!decodedPayload) {
+          removeToken();
+          setIsLoggedIn(false);
+          setIsAdmin(false);
+          setUnreadCount(0);
+          return;
+        }
+
         setIsLoggedIn(true);
         setIsAdmin(decodedPayload.role === "admin");
 
@@ -49,6 +55,15 @@ export default function BottomNav() {
             cache: "no-store",
           }
         );
+
+        if (res.status === 401) {
+          removeToken();
+          setIsLoggedIn(false);
+          setIsAdmin(false);
+          setUnreadCount(0);
+          return;
+        }
+
         if (res.ok) {
           const data = await res.json();
           setUnreadCount(data.unread_count || 0);
@@ -59,10 +74,6 @@ export default function BottomNav() {
     };
 
     fetchUnread();
-
-    const handleRefresh = () => fetchUnread();
-    window.addEventListener("dabari_orders_updated", handleRefresh);
-    return () => window.removeEventListener("dabari_orders_updated", handleRefresh);
   }, [pathname]);
 
   const hideOn = ["/login", "/register", "/reset-password"];

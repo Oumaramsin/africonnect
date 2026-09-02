@@ -8,8 +8,8 @@ import { z } from "zod";
 import { type CartItem } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { PartyPopper, Car, Home } from "lucide-react";
-import cookies from "js-cookie";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
+import { getValidToken, removeToken, authFetch } from "@/lib/auth";
 
 const schema = z
   .object({
@@ -34,15 +34,15 @@ const schema = z
 
 type FormData = z.infer<typeof schema>;
 
-export default function CheckoutPage() {
+export default function CommanderPage() {
   const router = useRouter();
   const [cart, setCart] = useState<CartItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [pendingData, setPendingData] = useState<FormData>();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [pendingData, setPendingData] = useState<FormData | null>(null);
 
   const {
     register,
@@ -70,16 +70,13 @@ export default function CheckoutPage() {
       (deliveryType === "delivery" && deliveryAddress));
 
   useEffect(() => {
-    const load = async () => {
-      const token = cookies.get("token");
-      if (token) {
-        setIsLoggedIn(true);
-      } else {
-        router.push("/login");
-      }
-    };
-    load();
-  }, []);
+    const token = getValidToken();
+    if (token) {
+      setIsLoggedIn(true);
+    } else {
+      router.push("/login");
+    }
+  }, [router]);
 
   useEffect(() => {
     const stored = localStorage.getItem("dabari_cart");
@@ -99,14 +96,18 @@ export default function CheckoutPage() {
     setError(null);
 
     try {
-      const token = cookies.get("token");
-      const response = await fetch(
+      const token = getValidToken();
+      if (!token) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur/order`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             traiteur_id: cart[0].traiteur_id,

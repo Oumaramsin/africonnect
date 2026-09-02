@@ -7,8 +7,8 @@ import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import Link from "next/link";
 import { ChefHat, Plane, User, Package, LogOut, Lock, ChevronDown, ChevronUp, Edit3, Phone, MapPin, Mail, Trash2, AlertTriangle, X } from "lucide-react";
-import cookies from "js-cookie";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
+import { getValidToken, decodeToken, removeToken, authFetch } from "@/lib/auth";
 
 const schema = z.object({
   full_name: z.string().min(2, "Nom requis"),
@@ -43,33 +43,42 @@ export default function ProfilPage() {
 
   useEffect(() => {
     async function loadProfile() {
-      const token = cookies.get("token");
+      const token = getValidToken();
       if (!token) {
         router.push("/login");
         return;
       }
-      const payloadBase64 = token.split(".")[1];
-      const decodedPayload = JSON.parse(
-        Buffer.from(payloadBase64, "base64").toString("utf-8"),
-      );
-      const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/auth/user/${decodedPayload.userId}`,{
-        headers:{
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        }
-      })
-      const data = await response.json()
-      if(!response.ok){
-        setError(data.message || "Errueur lors de la récupération du profil utilisateur");
+      const decodedPayload = decodeToken(token);
+      if (!decodedPayload || !decodedPayload.userId) {
+        removeToken();
+        router.push("/login");
         return;
       }
-      setUserEmail(data.foundUser.email)
+      const response = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/user/${decodedPayload.userId}`,
+        {
+          headers: {
+            "Content-Type": "application/json",
+          },
+        },
+      );
+      if (response.status === 401) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || "Erreur lors de la récupération du profil utilisateur");
+        return;
+      }
+      setUserEmail(data.foundUser.email);
       setUserRole(data.foundUser.role || "client");
       reset({
-          full_name: data.foundUser.full_name || "",
-          phone: data.foundUser.phone || "",
-          city: data.foundUser.city || "",
-        });
+        full_name: data.foundUser.full_name || "",
+        phone: data.foundUser.phone || "",
+        city: data.foundUser.city || "",
+      });
       setLoading(false);
     }
     loadProfile();
@@ -80,28 +89,34 @@ export default function ProfilPage() {
     setError(null);
     setSuccess(false);
 
-    const token = cookies.get("token");
+    const token = getValidToken();
     if (!token) {
       router.push("/login");
       return;
     }
 
     try {
-      const payloadBase64 = token.split(".")[1];
-      const decodedPayload = JSON.parse(
-        Buffer.from(payloadBase64, "base64").toString("utf-8"),
-      );
-      const res = await fetch(
+      const decodedPayload = decodeToken(token);
+      if (!decodedPayload || !decodedPayload.userId) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
+      const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/${decodedPayload.userId}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(formData),
         },
       );
+      if (res.status === 401) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
       const data = await res.json();
       if (!res.ok) {
         setError(data.message || "Erreur lors de la mise à jour");
@@ -118,30 +133,34 @@ export default function ProfilPage() {
   };
 
   const handleSignOut = () => {
-    cookies.remove("token");
+    removeToken();
     router.push("/login");
   };
 
   const confirmDeleteAccount = async () => {
-    const token = cookies.get("token");
+    const token = getValidToken();
     if (!token) return;
     setDeleting(true);
     try {
-      const payloadBase64 = token.split(".")[1];
-      const decodedPayload = JSON.parse(
-        Buffer.from(payloadBase64, "base64").toString("utf-8"),
-      );
-      const res = await fetch(
+      const decodedPayload = decodeToken(token);
+      if (!decodedPayload || !decodedPayload.userId) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
+      const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/${decodedPayload.userId}`,
         {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         },
       );
+      if (res.status === 401) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
       if (res.ok) {
-        cookies.remove("token");
+        removeToken();
         router.push("/login");
       } else {
         const data = await res.json();

@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { MapPin, User, Utensils, Eye, ImagePlus, X } from "lucide-react";
 import Link from "next/link";
 import cookies from "js-cookie";
+import { getValidToken, removeToken, authFetch } from "@/lib/auth";
 
 type Dish = {
   id: string;
@@ -83,21 +84,25 @@ export default function TraiteurEspacePage() {
   const [isDeleting, setIsDeleting] = useState(false);
 
   async function loadTraiteur() {
-    const token = cookies.get("token");
+    const token = getValidToken();
     if (!token) {
       router.push("/login");
       return;
     }
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur/me`,
         {
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
         },
       );
+      if (response.status === 401) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
       const data = await response.json();
       if (!response.ok) {
         setError(data.error || data.message || "Erreur lors de la récupération du profil");

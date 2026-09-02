@@ -6,7 +6,7 @@ import { type Traiteur, type Dish, type CartItem } from "@/lib/types/traiteur";
 import Link from "next/link";
 import { Star, MapPin, ChefHat, Lock } from "lucide-react";
 import CommandeForm from "./CommandeForm";
-import cookies from "js-cookie";
+import { getValidToken } from "@/lib/auth";
 
 // Helper DishCard component to manage image navigation locally
 function DishCard({
@@ -171,13 +171,8 @@ export default function TraiteurDetailPage() {
   const [cart, setCart] = useState<CartItem[]>([]);
 
   useEffect(() => {
-    const load = async () => {
-      const token = cookies.get("token");
-      if (token) {
-        setIsLoggedIn(true);
-      }
-    };
-    load();
+    const token = getValidToken();
+    setIsLoggedIn(Boolean(token));
   }, []);
 
   useEffect(() => {

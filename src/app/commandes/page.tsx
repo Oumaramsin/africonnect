@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import cookies from "js-cookie";
+import { getValidToken, removeToken, authFetch } from "@/lib/auth";
 import {
   Clock,
   CheckCircle2,
@@ -143,7 +144,7 @@ export default function CommandesPage() {
 
   useEffect(() => {
     const load = async () => {
-      const token = cookies.get("token");
+      const token = getValidToken();
       if (!token) {
         router.push("/login");
         return;
@@ -177,26 +178,29 @@ export default function CommandesPage() {
 
   async function loadAll() {
     setLoading(true);
-    const token = cookies.get("token");
+    const token = getValidToken();
     if (!token) {
       router.push("/login");
       return;
     }
     try {
-      fetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/read-all`, {
+      authFetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/read-all`, {
         method: "PATCH",
-        headers: { Authorization: `Bearer ${token}` },
       }).catch((err) => console.error("Erreur mark-all-as-read:", err));
 
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/commande`,
         {
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
         },
       );
+      if (response.status === 401) {
+        removeToken();
+        router.push("/login");
+        return;
+      }
       const res = await response.json();
       if (!response.ok) {
         console.error(res.message || "Erreur de chargement des commandes");
@@ -257,7 +261,6 @@ export default function CommandesPage() {
         ),
       ),
     );
-    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleRefuserTraiteur(commande: CommandeTraiteur) {
@@ -285,7 +288,6 @@ export default function CommandesPage() {
         ),
       ),
     );
-    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleAccepterOrder(order: OrderPlat) {
@@ -308,7 +310,6 @@ export default function CommandesPage() {
         prev.map((o) => (o.id === order.id ? { ...o, status: "accepted" } : o)),
       ),
     );
-    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleRefuserOrder(order: OrderPlat) {
@@ -331,7 +332,6 @@ export default function CommandesPage() {
         prev.map((o) => (o.id === order.id ? { ...o, status: "rejected" } : o)),
       ),
     );
-    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleAccepterGp(request: GpRequest) {
@@ -356,7 +356,6 @@ export default function CommandesPage() {
         ),
       ),
     );
-    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   async function handleRefuserGp(request: GpRequest) {
@@ -382,7 +381,6 @@ export default function CommandesPage() {
         ),
       ),
     );
-    window.dispatchEvent(new Event("dabari_orders_updated"));
   }
 
   const getStatutBadge = (statut: string) => {

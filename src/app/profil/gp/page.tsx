@@ -15,7 +15,8 @@ import {
   PenLine,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import cookies  from "js-cookie";
+import cookies from "js-cookie";
+import { getValidToken, removeToken, authFetch } from "@/lib/auth";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "@/components/AddressAutocomplete";
@@ -185,22 +186,26 @@ export default function GpEspacePage() {
 
   useEffect(() => {
     async function loadGP() {
-      const token = cookies.get("token");
+      const token = getValidToken();
       if (!token) {
         router.push("/login");
         return;
       }
 
       try {
-        const response = await fetch(
+        const response = await authFetch(
           `${process.env.NEXT_PUBLIC_API_URL}/gp/me`,
           {
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
             },
           },
         );
+        if (response.status === 401) {
+          removeToken();
+          router.push("/login");
+          return;
+        }
         const res = await response.json();
         if (!response.ok) {
           console.error(res.error || "Erreur de chargement des trajets");

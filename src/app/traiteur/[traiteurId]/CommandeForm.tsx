@@ -11,8 +11,8 @@ import {
   LogIn,
   X,
 } from "lucide-react";
-import cookies from "js-cookie";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
+import { getValidToken, authFetch } from "@/lib/auth";
 
 type Props = {
   traiteurId: string;
@@ -57,13 +57,8 @@ export default function CommandeForm({
   });
 
   useEffect(() => {
-    const load = async () => {
-      const token = cookies.get("token");
-      if (token) {
-        setIsLoggedIn(true);
-      }
-    };
-    load();
+    const token = getValidToken();
+    setIsLoggedIn(Boolean(token));
   }, []);
 
   const updateField = (field: keyof FormState, value: string) => {
@@ -94,18 +89,20 @@ export default function CommandeForm({
   const confirmOrder = async () => {
     setLoading(true);
     setError(null);
-    const token = cookies.get("token");
+    const token = getValidToken();
     if (!token) {
+      setError("Session expirée. Veuillez vous reconnecter.");
+      setIsLoggedIn(false);
+      setLoading(false);
       return;
     }
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             traiteur_id: traiteurId,
