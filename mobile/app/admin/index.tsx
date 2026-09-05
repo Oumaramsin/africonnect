@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Switch,
   Platform,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -162,6 +163,8 @@ export default function AdminScreen() {
     onSelect: () => {},
   });
 
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
   const showSuccessMsg = (msg: string) => {
     setSuccess(msg);
     setTimeout(() => setSuccess(null), 4000);
@@ -194,6 +197,7 @@ export default function AdminScreen() {
         return;
       }
       setIsAuthorized(true);
+      setCurrentUserId(decodedPayload.userId || null);
 
       const response = await apiFetch("/admin");
       const data = await response.json();
@@ -210,6 +214,62 @@ export default function AdminScreen() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleToggleAdminRole = (profile: Profile) => {
+    if (profile.id === currentUserId) {
+      Alert.alert(
+        "Action impossible",
+        "Vous ne pouvez pas modifier vos propres droits d'administrateur.",
+      );
+      return;
+    }
+
+    const isCurrentlyAdmin = profile.role === "admin";
+    const title = isCurrentlyAdmin
+      ? "Retirer les droits admin ?"
+      : "Nommer administrateur ?";
+    const message = isCurrentlyAdmin
+      ? `Voulez-vous retirer les droits administrateur de ${profile.full_name} ? Son rôle d'origine (Traiteur, GP ou Client) sera automatiquement restauré.`
+      : `Voulez-vous accorder les droits administrateur à ${profile.full_name} ? Cet utilisateur aura accès à l'ensemble du panneau d'administration.`;
+
+    Alert.alert(title, message, [
+      { text: "Annuler", style: "cancel" },
+      {
+        text: isCurrentlyAdmin ? "Retirer" : "Confirmer",
+        style: isCurrentlyAdmin ? "destructive" : "default",
+        onPress: async () => {
+          setActionLoading(true);
+          try {
+            const res = await apiFetch("/admin/admin", {
+              method: "PATCH",
+              body: JSON.stringify({
+                id: profile.id,
+                is_admin: !isCurrentlyAdmin,
+              }),
+            });
+            const data = await res.json();
+            if (!res.ok || !data.success) {
+              Alert.alert(
+                "Erreur",
+                data.error || data.message || "Échec de l'opération.",
+              );
+              return;
+            }
+            setProfiles((prev) =>
+              prev.map((p) =>
+                p.id === profile.id ? { ...p, role: data.data.role } : p,
+              ),
+            );
+            showSuccessMsg(data.message || "Rôle mis à jour avec succès.");
+          } catch (err: any) {
+            Alert.alert("Erreur", "Impossible de joindre le serveur.");
+          } finally {
+            setActionLoading(false);
+          }
+        },
+      },
+    ]);
   };
 
   useFocusEffect(
@@ -1558,41 +1618,85 @@ export default function AdminScreen() {
               <View style={styles.listGap}>
                 {profiles.map((profile) => (
                   <View key={profile.id} style={styles.userRowCard}>
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.userRowName}>
-                        {profile.full_name}
-                      </Text>
+                    <View style={{ flex: 1, marginRight: 8 }}>
+                      <View style={styles.userRowHeaderLine}>
+                        <Text style={styles.userRowName}>
+                          {profile.full_name}
+                        </Text>
+                        {currentUserId === profile.id && (
+                          <View style={styles.youBadge}>
+                            <Text style={styles.youBadgeText}>Vous</Text>
+                          </View>
+                        )}
+                      </View>
                       <Text style={styles.userRowSub}>
                         {profile.phone || profile.email || "Pas de contact"}
                       </Text>
                     </View>
 
-                    <View
-                      style={[
-                        styles.roleTag,
-                        profile.role === "admin"
-                          ? styles.roleAdmin
-                          : profile.role === "traiteur"
-                            ? styles.roleTraiteur
-                            : profile.role === "gp"
-                              ? styles.roleGp
-                              : styles.roleClient,
-                      ]}
-                    >
-                      <Text
+                    <View style={styles.userRowRightActions}>
+                      <View
                         style={[
-                          styles.roleTagText,
+                          styles.roleTag,
                           profile.role === "admin"
-                            ? styles.roleAdminText
+                            ? styles.roleAdmin
                             : profile.role === "traiteur"
-                              ? styles.roleTraiteurText
+                              ? styles.roleTraiteur
                               : profile.role === "gp"
-                                ? styles.roleGpText
-                                : styles.roleClientText,
+                                ? styles.roleGp
+                                : styles.roleClient,
                         ]}
                       >
-                        {profile.role}
-                      </Text>
+                        <Text
+                          style={[
+                            styles.roleTagText,
+                            profile.role === "admin"
+                              ? styles.roleAdminText
+                              : profile.role === "traiteur"
+                                ? styles.roleTraiteurText
+                                : profile.role === "gp"
+                                  ? styles.roleGpText
+                                  : styles.roleClientText,
+                          ]}
+                        >
+                          {profile.role}
+                        </Text>
+                      </View>
+
+                      {currentUserId !== profile.id && (
+                        <TouchableOpacity
+                          style={[
+                            styles.adminActionBtn,
+                            profile.role === "admin"
+                              ? styles.adminActionBtnRemove
+                              : styles.adminActionBtnAdd,
+                          ]}
+                          onPress={() => handleToggleAdminRole(profile)}
+                          activeOpacity={0.7}
+                        >
+                          <Ionicons
+                            name={
+                              profile.role === "admin"
+                                ? "shield-outline"
+                                : "shield-checkmark-outline"
+                            }
+                            size={13}
+                            color={
+                              profile.role === "admin" ? "#DC2626" : "#1D6B45"
+                            }
+                          />
+                          <Text
+                            style={[
+                              styles.adminActionBtnText,
+                              profile.role === "admin"
+                                ? styles.adminActionBtnRemoveText
+                                : styles.adminActionBtnAddText,
+                            ]}
+                          >
+                            {profile.role === "admin" ? "Retirer" : "+ Admin"}
+                          </Text>
+                        </TouchableOpacity>
+                      )}
                     </View>
                   </View>
                 ))}
@@ -2127,6 +2231,11 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
+  userRowHeaderLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   userRowName: {
     fontSize: 14,
     fontWeight: "800",
@@ -2137,7 +2246,24 @@ const styles = StyleSheet.create({
     color: "#64748B",
     marginTop: 2,
   },
-
+  youBadge: {
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  youBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#1D6B45",
+  },
+  userRowRightActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
   roleTag: {
     paddingHorizontal: 8,
     paddingVertical: 4,
@@ -2156,6 +2282,34 @@ const styles = StyleSheet.create({
   roleGpText: { color: "#C2410C" },
   roleClient: { backgroundColor: "#F1F5F9" },
   roleClientText: { color: "#64748B" },
+
+  adminActionBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  adminActionBtnText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  adminActionBtnAdd: {
+    backgroundColor: "#E8F5E9",
+    borderColor: "#A7F3D0",
+  },
+  adminActionBtnAddText: {
+    color: "#1D6B45",
+  },
+  adminActionBtnRemove: {
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FECACA",
+  },
+  adminActionBtnRemoveText: {
+    color: "#DC2626",
+  },
 
   itemCard: {
     backgroundColor: "#FFFFFF",

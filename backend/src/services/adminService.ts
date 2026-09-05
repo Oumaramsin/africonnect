@@ -1,6 +1,5 @@
 import { db } from "../db";
 
-
 export const updateStateTraiteur = async (id: string, is_active: boolean) => {
   return await db.traiteur.update({
     where: { id: id },
@@ -20,7 +19,9 @@ export const deleteTraiteur = async (id: string) => {
     }
 
     if (traiteur.user_id) {
-      const p = await tx.profile.findUnique({ where: { id: traiteur.user_id } });
+      const p = await tx.profile.findUnique({
+        where: { id: traiteur.user_id },
+      });
       if (p && p.role !== "admin") {
         await tx.profile.update({
           where: { id: traiteur.user_id },
@@ -101,6 +102,10 @@ export const getAdminOverview = async () => {
     }),
     db.profile.findMany({
       orderBy: { full_name: "asc" },
+      include: {
+        traiteurs: { select: { id: true, name: true, is_active: true } },
+        gp_listings: { select: { id: true, is_active: true } },
+      },
     }),
   ]);
   return { traiteurs, gpListings, profiles };
@@ -112,6 +117,48 @@ export const updateStateGp = async (id: string, is_active: boolean) => {
     data: {
       is_active: is_active,
     },
+  });
+};
+
+export const setAdmin = async (id: string, makeAdmin?: boolean) => {
+  return await db.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({ where: { id } });
+    if (!user) {
+      throw new Error("Utilisateur introuvable.");
+    }
+
+    const shouldBeAdmin =
+      makeAdmin !== undefined ? makeAdmin : user.role !== "admin";
+
+    let targetRole = "admin";
+    if (!shouldBeAdmin) {
+      const hasTraiteur = await tx.traiteur.findFirst({
+        where: { user_id: id },
+      });
+      const hasGp = await tx.gpListing.findFirst({
+        where: { gp_id: id },
+      });
+      targetRole = hasTraiteur ? "traiteur" : hasGp ? "gp" : "client";
+    }
+
+    const updatedUser = await tx.user.update({
+      where: { id },
+      data: { role: targetRole },
+    });
+
+    const profile = await tx.profile.findUnique({ where: { id } });
+    if (profile) {
+      await tx.profile.update({
+        where: { id },
+        data: { role: targetRole },
+      });
+    }
+
+    return {
+      id: updatedUser.id,
+      role: targetRole,
+      is_admin: targetRole === "admin",
+    };
   });
 };
 
@@ -169,4 +216,3 @@ export const createGpFromUser = async (
     return gpListing;
   });
 };
-

@@ -68,6 +68,12 @@ class AuthService {
         phone: true,
         city: true,
         created_at: true,
+        traiteurs: {
+          select: { id: true, name: true, is_active: true },
+        },
+        gp_listings: {
+          select: { id: true, is_active: true },
+        },
       },
     });
   };

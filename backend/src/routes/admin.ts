@@ -8,6 +8,7 @@ import {
   updateStateGpController,
   deleteGpController,
   getAdminOverviewController,
+  setAdminController,
 } from "../controllers/adminController";
 
 const adminRouter = Router();
@@ -18,6 +19,8 @@ adminRouter.get("/", AuthMiddleware.authenticate, AuthMiddleware.isAdmin, getAdm
 adminRouter.post("/", AuthMiddleware.authenticate, AuthMiddleware.isAdmin, createTraiteurFromUserController);
 adminRouter.patch("/", AuthMiddleware.authenticate, AuthMiddleware.isAdmin, updateStateTraiteurController);
 adminRouter.delete("/", AuthMiddleware.authenticate, AuthMiddleware.isAdmin, deleteTraiteurController);
+
+adminRouter.patch("/admin", AuthMiddleware.authenticate, AuthMiddleware.isAdmin, setAdminController);
 
 // Routes administration GP Colis
 adminRouter.post("/gp", AuthMiddleware.authenticate, AuthMiddleware.isAdmin, createGpFromUserController);

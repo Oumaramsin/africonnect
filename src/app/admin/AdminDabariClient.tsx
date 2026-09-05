@@ -16,9 +16,12 @@ import {
   Banknote,
   FileText,
   Info,
+  ShieldAlert,
+  Check,
 } from "lucide-react";
 import Link from "next/link";
 import cookies from "js-cookie";
+import { decodeToken } from "@/lib/auth";
 
 type Profile = {
   id: string;
@@ -111,6 +114,13 @@ export default function AdminDabariClient({
   const [view, setView] = useState<"liste" | "nouveau">("liste");
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const token = cookies.get("token");
+  const currentUserId = token ? decodeToken(token)?.userId : null;
+
+  const [roleModal, setRoleModal] = useState<{
+    profile: Profile;
+    targetIsAdmin: boolean;
+  } | null>(null);
+  const [roleLoading, setRoleLoading] = useState(false);
 
   // Formulaire traiteur
   const [traiteurForm, setTraiteurForm] = useState({
@@ -147,6 +157,46 @@ export default function AdminDabariClient({
   const showSuccess = (msg: string) => {
     setSuccess(msg);
     setTimeout(() => setSuccess(null), 5000);
+  };
+
+  const handleToggleAdmin = async () => {
+    if (!roleModal) return;
+    setRoleLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/admin/admin`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${token}`,
+          },
+          body: JSON.stringify({
+            id: roleModal.profile.id,
+            is_admin: roleModal.targetIsAdmin,
+          }),
+        },
+      );
+
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        setError(data.error || data.message || "Erreur lors de la modification du rôle.");
+        return;
+      }
+
+      setProfiles((prev) =>
+        prev.map((p) =>
+          p.id === roleModal.profile.id ? { ...p, role: data.data.role } : p,
+        ),
+      );
+      showSuccess(data.message || "Rôle utilisateur mis à jour avec succès.");
+      setRoleModal(null);
+    } catch (err: any) {
+      setError("Erreur de communication avec le serveur.");
+    } finally {
+      setRoleLoading(false);
+    }
   };
 
   const toggleCuisine = (c: string) => {
@@ -667,29 +717,73 @@ export default function AdminDabariClient({
               {profiles.map((profile) => (
                 <div
                   key={profile.id}
-                  className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center justify-between"
+                  className="bg-white rounded-2xl border border-gray-100 p-4 flex items-center justify-between gap-3 shadow-xs hover:border-gray-200 transition-all"
                 >
-                  <div>
-                    <p className="font-medium text-gray-800 text-sm">
-                      {profile.full_name}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-0.5">
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold text-gray-900 text-sm truncate">
+                        {profile.full_name}
+                      </p>
+                      {currentUserId === profile.id && (
+                        <span className="text-[10px] bg-emerald-50 text-[#1D6B45] font-bold px-1.5 py-0.5 rounded-md border border-emerald-200 shrink-0">
+                          Vous
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-xs text-gray-400 mt-0.5 truncate">
                       {profile.phone || profile.email || "Pas de contact"}
                     </p>
                   </div>
-                  <span
-                    className={`text-xs px-2 py-1 rounded-full font-medium ${
-                      profile.role === "admin"
-                        ? "bg-red-100 text-red-600"
+
+                  <div className="flex items-center gap-2 shrink-0">
+                    <span
+                      className={`text-xs px-2.5 py-1 rounded-full font-medium ${
+                        profile.role === "admin"
+                          ? "bg-red-50 text-red-600 border border-red-200"
+                          : profile.role === "traiteur"
+                            ? "bg-purple-50 text-purple-600 border border-purple-200"
+                            : profile.role === "gp"
+                              ? "bg-orange-50 text-orange-600 border border-orange-200"
+                              : "bg-gray-100 text-gray-600 border border-gray-200"
+                      }`}
+                    >
+                      {profile.role === "admin"
+                        ? "Admin"
                         : profile.role === "traiteur"
-                          ? "bg-purple-100 text-purple-600"
+                          ? "Traiteur"
                           : profile.role === "gp"
-                            ? "bg-orange-100 text-orange-600"
-                            : "bg-gray-100 text-gray-500"
-                    }`}
-                  >
-                    {profile.role}
-                  </span>
+                            ? "GP"
+                            : "Client"}
+                    </span>
+
+                    {currentUserId !== profile.id && (
+                      profile.role === "admin" ? (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRoleModal({ profile, targetIsAdmin: false })
+                          }
+                          className="text-xs px-2.5 py-1.5 rounded-xl border border-red-200 text-red-600 hover:bg-red-50 font-medium transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                          title="Retirer les droits administrateur"
+                        >
+                          <ShieldAlert size={13} />
+                          <span className="hidden sm:inline">Retirer admin</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setRoleModal({ profile, targetIsAdmin: true })
+                          }
+                          className="text-xs px-2.5 py-1.5 rounded-xl border border-emerald-200 text-[#1D6B45] bg-emerald-50/60 hover:bg-emerald-100/70 font-medium transition-all flex items-center gap-1 active:scale-95 cursor-pointer"
+                          title="Promouvoir en administrateur"
+                        >
+                          <ShieldCheck size={13} />
+                          <span className="hidden sm:inline">Nommer admin</span>
+                        </button>
+                      )
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1327,9 +1421,83 @@ export default function AdminDabariClient({
               <button
                 onClick={confirmDelete}
                 disabled={loading}
-                className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors shadow-md shadow-red-200 disabled:opacity-60"
+                className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold bg-red-600 text-white hover:bg-red-700 transition-colors shadow-md shadow-red-200 disabled:opacity-60 cursor-pointer"
               >
                 {loading ? "Suppression..." : "Supprimer"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmation de changement de rôle admin */}
+      {roleModal && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] animate-fadeIn">
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4">
+            <div
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
+                roleModal.targetIsAdmin
+                  ? "bg-emerald-50 text-[#1D6B45]"
+                  : "bg-red-50 text-red-500"
+              }`}
+            >
+              {roleModal.targetIsAdmin ? (
+                <ShieldCheck size={24} />
+              ) : (
+                <ShieldAlert size={24} />
+              )}
+            </div>
+            <div className="text-center">
+              <h3 className="text-lg font-bold text-gray-900 mb-1">
+                {roleModal.targetIsAdmin
+                  ? "Nommer administrateur ?"
+                  : "Retirer les droits administrateur ?"}
+              </h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                {roleModal.targetIsAdmin ? (
+                  <>
+                    Voulez-vous accorder les droits d&apos;administration à{" "}
+                    <span className="font-semibold text-gray-800">
+                      {roleModal.profile.full_name}
+                    </span>{" "}
+                    ? Cet utilisateur aura un accès complet au panneau de gestion.
+                  </>
+                ) : (
+                  <>
+                    Voulez-vous retirer les droits administrateur de{" "}
+                    <span className="font-semibold text-gray-800">
+                      {roleModal.profile.full_name}
+                    </span>{" "}
+                    ? Son rôle d&apos;origine (Traiteur, GP ou Client) sera
+                    automatiquement restauré.
+                  </>
+                )}
+              </p>
+            </div>
+            <div className="flex gap-3 pt-2">
+              <button
+                type="button"
+                onClick={() => setRoleModal(null)}
+                disabled={roleLoading}
+                className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                onClick={handleToggleAdmin}
+                disabled={roleLoading}
+                className={`flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-white transition-all shadow-md disabled:opacity-60 cursor-pointer ${
+                  roleModal.targetIsAdmin
+                    ? "bg-[#1D6B45] hover:bg-[#0F4A30] shadow-emerald-200"
+                    : "bg-red-600 hover:bg-red-700 shadow-red-200"
+                }`}
+              >
+                {roleLoading
+                  ? "En cours..."
+                  : roleModal.targetIsAdmin
+                    ? "Confirmer"
+                    : "Retirer"}
               </button>
             </div>
           </div>

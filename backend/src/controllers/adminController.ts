@@ -7,6 +7,7 @@ import {
   deleteGp,
   createGpFromUser,
   getAdminOverview,
+  setAdmin,
 } from "../services/adminService";
 
 export const getAdminOverviewController = async (
@@ -143,6 +144,41 @@ export const updateStateGpController = async (req: Request, res: Response) => {
   } catch (error) {
     console.error("Erreur dans updateStateGpController:", error);
     res.status(500).json({ error: "Server error" });
+  }
+};
+
+export const setAdminController = async (req: Request, res: Response) => {
+  try {
+    const { id, is_admin } = req.body;
+    const currentAdmin = (req as any).user;
+
+    if (!id) {
+      return res.status(400).json({
+        success: false,
+        error: "Veuillez renseigner tous les champs obligatoires (id).",
+      });
+    }
+
+    // Empêcher un administrateur de se retirer accidentellement ses propres droits
+    if (currentAdmin?.userId === id && is_admin === false) {
+      return res.status(400).json({
+        success: false,
+        error: "Vous ne pouvez pas retirer vos propres droits d'administrateur.",
+      });
+    }
+
+    const result = await setAdmin(id, is_admin);
+
+    res.json({
+      success: true,
+      data: result,
+      message: result.is_admin
+        ? "L'utilisateur a été promu administrateur avec succès."
+        : `Droits administrateur retirés. Rôle rétabli : ${result.role}.`,
+    });
+  } catch (error: any) {
+    console.error("Erreur dans setAdminController:", error);
+    res.status(500).json({ success: false, error: error.message || "Erreur serveur" });
   }
 };
 
