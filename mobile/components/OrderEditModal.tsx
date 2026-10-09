@@ -74,6 +74,15 @@ export default function OrderEditModal({
       onRequestClose={onCancel}
     >
       <View style={styles.backdropOverlay}>
+        <TouchableOpacity
+          style={StyleSheet.absoluteFill}
+          activeOpacity={1}
+          onPress={() => {
+            if (!isLoading && onCancel) {
+              onCancel();
+            }
+          }}
+        />
         <View style={styles.modalCard}>
           {/* Badge Icon Rond Supérieur */}
           <View

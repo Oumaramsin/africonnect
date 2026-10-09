@@ -8,17 +8,10 @@ import {
   type GpListing,
 } from "@/lib/types/gp";
 import Link from "next/link";
-import { Plane, MapPin, Lock, Star, Plus } from "lucide-react";
-import cookies from "js-cookie";
+import { Plane, PlaneTakeoff, PlaneLanding, MapPin, Lock, Star, Plus } from "lucide-react";
+import { getValidToken } from "@/lib/auth";
 
-const DESTINATIONS = [
-  { label: "Tout", value: "tout" },
-  { label: "🇸🇳 Sénégal", value: "Sénégal" },
-  { label: "🇨🇮 Côte d'Ivoire", value: "Côte d'Ivoire" },
-  { label: "🇨🇲 Cameroun", value: "Cameroun" },
-  { label: "🇨🇬 Congo", value: "Congo" },
-  { label: "🇲🇱 Mali", value: "Mali" },
-];
+import { GP_DESTINATION_FILTERS as DESTINATIONS } from "@/lib/constants/locations";
 
 export default function GpPage() {
   const [listings, setListings] = useState<GpListing[]>([]);
@@ -63,40 +56,52 @@ export default function GpPage() {
         });
         const data = await response.json();
         if (!response.ok) {
-          console.error(data.message || "Erreur de fetch des gp");
+          console.error(data.message || "Erreur de chargement des GP");
           return;
         }
-        setListings(data.data.gp);
-        setLoading(false);
+        if (!ignore) {
+          setListings(data.data?.gp || []);
+        }
       } catch (error) {
-        console.error(error);
+        console.error("Erreur lors de la récupération des GP:", error);
+      } finally {
+        if (!ignore) {
+          setLoading(false);
+        }
       }
     }
     fetchListings();
     return () => {
       ignore = true;
     };
-  }, [destination]);
+  }, []);
 
   useEffect(() => {
-    const load = async () => {
-      const token = cookies.get("token");
-      if (token) {
-        return setIsLoggedIn(true);
-      }
-    };
-    load();
+    const token = getValidToken();
+    if (token) {
+      setIsLoggedIn(true);
+    }
   }, []);
 
   const formatDate = (dateStr: string) => {
     return new Date(dateStr).toLocaleDateString("fr-FR", {
       day: "numeric",
-      month: "long",
+      month: "short",
     });
   };
 
+  // Filtrage selon destination ou départ (support 2 sens)
+  const filteredListings = listings.filter((l) => {
+    if (destination === "tout") return true;
+    const dest = destination.toLowerCase();
+    return (
+      (l.arrival_country && l.arrival_country.toLowerCase().includes(dest)) ||
+      (l.departure_country && l.departure_country.toLowerCase().includes(dest))
+    );
+  });
+
   // Tri par distance si activé
-  const sortedListings = [...listings].sort((a, b) => {
+  const sortedListings = [...filteredListings].sort((a, b) => {
     if (!sortByDistance || !userLocation) return 0;
     const distA =
       a.latitude && a.longitude
@@ -257,25 +262,34 @@ export default function GpPage() {
                       </span>
                     </div>
 
-                    {/* Nom du GP */}
-                    {listing.profiles?.full_name && (
-                      <div className="flex items-center gap-2 mt-1 mb-2">
-                        <div className="w-6 h-6 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xs font-bold">
-                          {listing.profiles.full_name.charAt(0).toUpperCase()}
-                        </div>
-                        <span className="text-sm text-gray-600 font-medium">
-                          {listing.profiles.full_name}
-                        </span>
+                    {/* Badge retard si le vol a été décalé */}
+                    {listing.is_delayed && (
+                      <div className="my-2 bg-amber-50 border border-amber-200 rounded-xl px-2.5 py-1 text-[11px] font-semibold text-amber-800 flex items-center gap-1.5 flex-wrap">
+                        <span className="text-amber-700">⚠️ Arrivée retardée</span>
+                        {listing.arrival_date && (
+                          <span className="text-amber-900">• estimée le {formatDate(listing.arrival_date)}</span>
+                        )}
+                        {listing.delay_reason && (
+                          <span className="text-gray-500 font-normal italic truncate">({listing.delay_reason})</span>
+                        )}
                       </div>
                     )}
 
-                    {/* Localisation + date */}
-                    <div className="flex items-center gap-3 mb-3">
-                      {listing.pickup_city && (
-                        <span className="text-xs text-gray-500 flex items-center gap-1">
-                          <MapPin size={12} /> {listing.pickup_city}
-                        </span>
+                    {/* Nom du GP & Distance */}
+                    <div className="flex items-center justify-between mt-1 mb-3">
+                      {listing.profiles?.full_name ? (
+                        <div className="flex items-center gap-2">
+                          <div className="w-6 h-6 rounded-full bg-[#E8F5E9] flex items-center justify-center text-[#1D6B45] text-xs font-bold">
+                            {listing.profiles.full_name.charAt(0).toUpperCase()}
+                          </div>
+                          <span className="text-sm text-gray-600 font-medium">
+                            {listing.profiles.full_name}
+                          </span>
+                        </div>
+                      ) : (
+                        <div />
                       )}
+
                       {distance !== null && (
                         <span
                           className={`text-xs font-medium px-2 py-0.5 rounded-full ${
@@ -289,10 +303,38 @@ export default function GpPage() {
                           {formatDistance(distance)}
                         </span>
                       )}
-                      <span className="text-xs text-gray-600 ml-auto flex items-center">
-                        <Plane size={12} className="mr-1" />{" "}
-                        {formatDate(listing.departure_date)}
-                      </span>
+                    </div>
+
+                    {/* Bloc Départ & Arrivée avec Zones */}
+                    <div className="bg-gray-50 rounded-xl p-3 mb-3 grid grid-cols-2 gap-2 text-xs">
+                      <div className="border-r border-gray-200/80 pr-2">
+                        <span className="text-gray-400 flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider mb-0.5">
+                          <PlaneTakeoff size={12} className="text-[#1D6B45]" /> Départ
+                        </span>
+                        <p className="font-semibold text-gray-800">
+                          {formatDate(listing.departure_date)}
+                        </p>
+                        {listing.pickup_city && (
+                          <p className="text-gray-500 flex items-center gap-1 mt-1 text-[11px] truncate">
+                            <MapPin size={11} className="text-[#1D6B45] shrink-0" />
+                            <span>Dépôt : {listing.pickup_city}</span>
+                          </p>
+                        )}
+                      </div>
+                      <div className="pl-1">
+                        <span className="text-gray-400 flex items-center gap-1 text-[10px] uppercase font-bold tracking-wider mb-0.5">
+                          <PlaneLanding size={12} className="text-[#D4870A]" /> Arrivée
+                        </span>
+                        <p className="font-semibold text-gray-800">
+                          {listing.arrival_date ? formatDate(listing.arrival_date) : "Non précisée"}
+                        </p>
+                        {listing.dropoff_city && (
+                          <p className="text-gray-500 flex items-center gap-1 mt-1 text-[11px] truncate">
+                            <MapPin size={11} className="text-[#D4870A] shrink-0" />
+                            <span>Récup. : {listing.dropoff_city}</span>
+                          </p>
+                        )}
+                      </div>
                     </div>
 
                     {/* Détails */}

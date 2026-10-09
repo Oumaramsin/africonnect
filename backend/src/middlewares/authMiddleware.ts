@@ -10,7 +10,7 @@ class AuthMiddleware {
     }
     try {
       const decoded = verifyToken(token);
-      (req as AuthenticatedRequest).user = decoded;
+      (req as AuthenticatedRequest).user = decoded as any;
       next();
     } catch (error) {
       res.status(401).json({ message: "invalid token" });

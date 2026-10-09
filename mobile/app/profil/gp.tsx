@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -14,59 +14,19 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
-import { GpListing } from "../../utils/types/gp";
+import { GpListing, GP_COUNTRIES } from "../../utils/types/gp";
 import { apiFetch } from "../../utils/api";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "../../components/AddressAutocomplete";
 
-const CITIES_DEPARTURE = [
-  "Paris",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Toulouse",
-  "Lille",
-  "Bruxelles",
-  "Genève",
-  "Autre (Saisie libre)",
-];
+import { COMMON_CITIES_WITH_OTHER as COMMON_CITIES } from "../../utils/constants/locations";
 
-const COUNTRIES_DEPARTURE = [
-  "France",
-  "Belgique",
-  "Suisse",
-  "Canada",
-  "Autre (Saisie libre)",
-];
+const CITIES_DEPARTURE = COMMON_CITIES;
+const COUNTRIES_DEPARTURE = [...GP_COUNTRIES];
 
-const CITIES_ARRIVAL = [
-  "Dakar",
-  "Abidjan",
-  "Douala",
-  "Yaoundé",
-  "Brazzaville",
-  "Bamako",
-  "Conakry",
-  "Ouagadougou",
-  "Autre (Saisie libre)",
-];
-
-const COUNTRIES_ARRIVAL = [
-  "Sénégal",
-  "Côte d'Ivoire",
-  "Cameroun",
-  "Congo",
-  "Mali",
-  "Guinée",
-  "Burkina Faso",
-  "Gabon",
-  "Madagascar",
-  "Maroc",
-  "Algérie",
-  "Tunisie",
-  "Autre (Saisie libre)",
-];
+const CITIES_ARRIVAL = COMMON_CITIES;
+const COUNTRIES_ARRIVAL = [...GP_COUNTRIES];
 
 export default function GpProfilScreen() {
   const router = useRouter();
@@ -81,17 +41,36 @@ export default function GpProfilScreen() {
 
   const [editGpId, setEditGpId] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
+  const [initialEditData, setInitialEditData] = useState<{
+    departureCity: string;
+    departureCountry: string;
+    arrivalCity: string;
+    arrivalCountry: string;
+    departureDate: string;
+    arrivalDate: string;
+    flightType: "direct" | "escale";
+    availableKg: string;
+    pricePerKg: string;
+    pickupCity: string;
+    pickupAddress: string;
+    dropoffCity: string;
+    dropoffAddress: string;
+    description: string;
+  } | null>(null);
 
   const [departureCity, setDepartureCity] = useState("");
   const [departureCountry, setDepartureCountry] = useState("France");
   const [arrivalCity, setArrivalCity] = useState("");
   const [arrivalCountry, setArrivalCountry] = useState("");
   const [departureDate, setDepartureDate] = useState("");
+  const [arrivalDate, setArrivalDate] = useState("");
   const [flightType, setFlightType] = useState<"direct" | "escale">("direct");
   const [availableKg, setAvailableKg] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
   const [pickupCity, setPickupCity] = useState("");
   const [pickupAddress, setPickupAddress] = useState("");
+  const [dropoffCity, setDropoffCity] = useState("");
+  const [dropoffAddress, setDropoffAddress] = useState("");
   const [description, setDescription] = useState("");
 
   const [isCustomDepartureCity, setIsCustomDepartureCity] = useState(false);
@@ -182,38 +161,133 @@ export default function GpProfilScreen() {
 
   const startEdit = (item: GpListing) => {
     setEditGpId(item.id);
+    const depDateStr = item.departure_date
+      ? new Date(item.departure_date).toISOString().split("T")[0]
+      : "";
+    const arrDateStr = item.arrival_date
+      ? new Date(item.arrival_date).toISOString().split("T")[0]
+      : "";
+    const fType = (item.flight_type as "direct" | "escale") || "direct";
+    const kgStr = item.available_kg ? item.available_kg.toString() : "";
+    const pStr = item.price_per_kg ? item.price_per_kg.toString() : "";
+
     setDepartureCity(item.departure_city || "");
     setDepartureCountry(item.departure_country || "France");
     setArrivalCity(item.arrival_city || "");
     setArrivalCountry(item.arrival_country || "");
-    setDepartureDate(
-      item.departure_date
-        ? new Date(item.departure_date).toISOString().split("T")[0]
-        : "",
-    );
-    setFlightType((item.flight_type as "direct" | "escale") || "direct");
-    setAvailableKg(item.available_kg ? item.available_kg.toString() : "");
-    setPricePerKg(item.price_per_kg ? item.price_per_kg.toString() : "");
+    setDepartureDate(depDateStr);
+    setArrivalDate(arrDateStr);
+    setFlightType(fType);
+    setAvailableKg(kgStr);
+    setPricePerKg(pStr);
     setPickupCity(item.pickup_city || "");
     setPickupAddress(item.pickup_address || "");
+    setDropoffCity(item.dropoff_city || "");
+    setDropoffAddress(item.dropoff_address || "");
     setDescription(item.description || "");
+
+    setInitialEditData({
+      departureCity: item.departure_city || "",
+      departureCountry: item.departure_country || "France",
+      arrivalCity: item.arrival_city || "",
+      arrivalCountry: item.arrival_country || "",
+      departureDate: depDateStr,
+      arrivalDate: arrDateStr,
+      flightType: fType,
+      availableKg: kgStr,
+      pricePerKg: pStr,
+      pickupCity: item.pickup_city || "",
+      pickupAddress: item.pickup_address || "",
+      dropoffCity: item.dropoff_city || "",
+      dropoffAddress: item.dropoff_address || "",
+      description: item.description || "",
+    });
 
     setIsCustomDepartureCity(!CITIES_DEPARTURE.includes(item.departure_city));
     setIsCustomDepartureCountry(
-      !COUNTRIES_DEPARTURE.includes(item.departure_country || "France"),
+      !COUNTRIES_DEPARTURE.includes((item.departure_country || "France") as any),
     );
     setIsCustomArrivalCity(!CITIES_ARRIVAL.includes(item.arrival_city));
     setIsCustomArrivalCountry(
-      !COUNTRIES_ARRIVAL.includes(item.arrival_country || ""),
+      !COUNTRIES_ARRIVAL.includes((item.arrival_country || "") as any),
     );
 
     setView("edit");
   };
 
+  const isEditModified = useMemo(() => {
+    if (!initialEditData) return false;
+    return (
+      departureCity.trim() !== initialEditData.departureCity.trim() ||
+      departureCountry.trim() !== initialEditData.departureCountry.trim() ||
+      arrivalCity.trim() !== initialEditData.arrivalCity.trim() ||
+      arrivalCountry.trim() !== initialEditData.arrivalCountry.trim() ||
+      departureDate.trim() !== initialEditData.departureDate.trim() ||
+      arrivalDate.trim() !== initialEditData.arrivalDate.trim() ||
+      flightType !== initialEditData.flightType ||
+      availableKg.trim() !== initialEditData.availableKg.trim() ||
+      pricePerKg.trim() !== initialEditData.pricePerKg.trim() ||
+      pickupCity.trim() !== initialEditData.pickupCity.trim() ||
+      pickupAddress.trim() !== initialEditData.pickupAddress.trim() ||
+      dropoffCity.trim() !== initialEditData.dropoffCity.trim() ||
+      dropoffAddress.trim() !== initialEditData.dropoffAddress.trim() ||
+      description.trim() !== initialEditData.description.trim()
+    );
+  }, [
+    initialEditData,
+    departureCity,
+    departureCountry,
+    arrivalCity,
+    arrivalCountry,
+    departureDate,
+    arrivalDate,
+    flightType,
+    availableKg,
+    pricePerKg,
+    pickupCity,
+    pickupAddress,
+    dropoffCity,
+    dropoffAddress,
+    description,
+  ]);
+
   const handleSaveEdit = async () => {
     if (!editGpId) return;
     setIsSaving(true);
     setError(null);
+
+    if (!departureCity.trim() || !departureCountry.trim()) {
+      setError("Veuillez indiquer la ville et le pays de départ.");
+      setIsSaving(false);
+      return;
+    }
+
+    if (!arrivalCity.trim() || !arrivalCountry.trim()) {
+      setError("Veuillez indiquer la ville et le pays d'arrivée.");
+      setIsSaving(false);
+      return;
+    }
+
+    if (
+      departureCountry.trim().toLowerCase() ===
+      arrivalCountry.trim().toLowerCase()
+    ) {
+      setError("Le pays de départ et le pays d'arrivée doivent être différents.");
+      setIsSaving(false);
+      return;
+    }
+
+    if (!pickupAddress || !pickupAddress.trim()) {
+      setError("L'adresse précise de dépôt est obligatoire.");
+      setIsSaving(false);
+      return;
+    }
+
+    if (!dropoffAddress || !dropoffAddress.trim()) {
+      setError("L'adresse précise de récupération est obligatoire.");
+      setIsSaving(false);
+      return;
+    }
 
     const kgNum = parseFloat(availableKg.replace(",", "."));
     const priceNum = parseFloat(pricePerKg.replace(",", "."));
@@ -239,11 +313,14 @@ export default function GpProfilScreen() {
           arrival_city: arrivalCity,
           arrival_country: arrivalCountry,
           departure_date: departureDate,
+          arrival_date: arrivalDate || null,
           available_kg: kgNum,
           price_per_kg: priceNum,
           flight_type: flightType,
-          pickup_address: pickupAddress,
-          pickup_city: pickupCity,
+          pickup_address: pickupAddress || null,
+          pickup_city: pickupCity || null,
+          dropoff_address: dropoffAddress || null,
+          dropoff_city: dropoffCity || null,
           description: description,
         }),
       });
@@ -433,27 +510,75 @@ export default function GpProfilScreen() {
                           </View>
                         </View>
 
-                        <View style={styles.statusBadgeActive}>
-                          <Text style={styles.statusBadgeActiveText}>
-                            Actif
-                          </Text>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          {item.is_delayed && (
+                            <View style={styles.delayBadge}>
+                              <Ionicons name="warning" size={11} color="#92400E" />
+                              <Text style={styles.delayBadgeText}>Retardé</Text>
+                            </View>
+                          )}
+                          <View style={styles.statusBadgeActive}>
+                            <Text style={styles.statusBadgeActiveText}>
+                              Actif
+                            </Text>
+                          </View>
+                        </View>
+                      </View>
+
+                      {item.is_delayed && (
+                        <View style={styles.delayCardNotice}>
+                          <Ionicons name="alert-circle" size={14} color="#D97706" />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.delayNoticeTitle}>
+                              Arrivée retardée{item.arrival_date ? ` • Est. ${formatDate(item.arrival_date)}` : ""}
+                            </Text>
+                            {item.delay_reason ? (
+                              <Text style={styles.delayNoticeReason} numberOfLines={2}>
+                                {item.delay_reason}
+                              </Text>
+                            ) : null}
+                          </View>
+                        </View>
+                      )}
+
+                      {/* Trajet & Dates / Lieux */}
+                      <View style={styles.cardRouteDetailBox}>
+                        <View style={styles.cardRouteStep}>
+                          <Ionicons
+                            name="airplane-outline"
+                            size={14}
+                            color="#1D6B45"
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.cardStepTitle}>
+                              Départ : {formatDate(item.departure_date)}
+                            </Text>
+                            <Text style={styles.cardStepSub}>
+                              Dépôt : {item.pickup_city || item.departure_city}
+                              {item.pickup_address ? ` (${item.pickup_address})` : ""}
+                            </Text>
+                          </View>
+                        </View>
+
+                        <View style={styles.cardRouteStep}>
+                          <Ionicons
+                            name="navigate-outline"
+                            size={14}
+                            color="#D4870A"
+                          />
+                          <View style={{ flex: 1 }}>
+                            <Text style={styles.cardStepTitle}>
+                              Arrivée : {item.arrival_date ? formatDate(item.arrival_date) : "Non précisée"}
+                            </Text>
+                            <Text style={styles.cardStepSub}>
+                              Récupération : {item.dropoff_city || item.arrival_city}
+                              {item.dropoff_address ? ` (${item.dropoff_address})` : ""}
+                            </Text>
+                          </View>
                         </View>
                       </View>
 
                       <View style={styles.metricsBox}>
-                        <View style={styles.metricItem}>
-                          <Ionicons
-                            name="calendar-outline"
-                            size={14}
-                            color="#64748B"
-                          />
-                          <Text style={styles.metricItemText}>
-                            {formatDate(item.departure_date)}
-                          </Text>
-                        </View>
-
-                        <View style={styles.dividerVertical} />
-
                         <View style={styles.metricItem}>
                           <Ionicons
                             name="cube-outline"
@@ -461,7 +586,7 @@ export default function GpProfilScreen() {
                             color="#64748B"
                           />
                           <Text style={styles.metricItemText}>
-                            {Number(item.available_kg)} kg
+                            {Number(item.available_kg)} kg dispo
                           </Text>
                         </View>
 
@@ -579,7 +704,9 @@ export default function GpProfilScreen() {
                       onPress={() =>
                         openPicker(
                           "Pays de départ",
-                          COUNTRIES_DEPARTURE,
+                          COUNTRIES_DEPARTURE.filter(
+                            (c) => c !== arrivalCountry,
+                          ),
                           (val) => {
                             if (val.includes("Autre")) {
                               setIsCustomDepartureCountry(true);
@@ -587,6 +714,11 @@ export default function GpProfilScreen() {
                             } else {
                               setIsCustomDepartureCountry(false);
                               setDepartureCountry(val);
+                              if (arrivalCountry === val) {
+                                setArrivalCountry(
+                                  val === "France" ? "Sénégal" : "France",
+                                );
+                              }
                             }
                           },
                         )
@@ -665,7 +797,9 @@ export default function GpProfilScreen() {
                       onPress={() =>
                         openPicker(
                           "Pays d'arrivée",
-                          COUNTRIES_ARRIVAL,
+                          COUNTRIES_ARRIVAL.filter(
+                            (c) => c !== departureCountry,
+                          ),
                           (val) => {
                             if (val.includes("Autre")) {
                               setIsCustomArrivalCountry(true);
@@ -673,6 +807,11 @@ export default function GpProfilScreen() {
                             } else {
                               setIsCustomArrivalCountry(false);
                               setArrivalCountry(val);
+                              if (departureCountry === val) {
+                                setDepartureCountry(
+                                  val === "France" ? "Sénégal" : "France",
+                                );
+                              }
                             }
                           },
                         )
@@ -702,20 +841,36 @@ export default function GpProfilScreen() {
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
                   <Ionicons name="calendar-outline" size={16} color="#1D6B45" />{" "}
-                  Détails du vol
+                  Détails du vol & dates
                 </Text>
 
-                <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>DATE DE DÉPART *</Text>
-                  <View style={styles.dateInputWrapper}>
-                    <Ionicons name="calendar" size={18} color="#1D6B45" />
-                    <TextInput
-                      style={styles.dateInput}
-                      value={departureDate}
-                      onChangeText={setDepartureDate}
-                      placeholder="AAAA-MM-JJ"
-                      placeholderTextColor="#94A3B8"
-                    />
+                <View style={styles.inputGridRow}>
+                  <View style={styles.flexField}>
+                    <Text style={styles.fieldLabel}>DATE DE DÉPART *</Text>
+                    <View style={styles.dateInputWrapper}>
+                      <Ionicons name="calendar" size={18} color="#1D6B45" />
+                      <TextInput
+                        style={styles.dateInput}
+                        value={departureDate}
+                        onChangeText={setDepartureDate}
+                        placeholder="AAAA-MM-JJ"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={styles.flexField}>
+                    <Text style={styles.fieldLabel}>DATE D'ARRIVÉE</Text>
+                    <View style={styles.dateInputWrapper}>
+                      <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
+                      <TextInput
+                        style={styles.dateInput}
+                        value={arrivalDate}
+                        onChangeText={setArrivalDate}
+                        placeholder="AAAA-MM-JJ"
+                        placeholderTextColor="#94A3B8"
+                      />
+                    </View>
                   </View>
                 </View>
 
@@ -805,32 +960,88 @@ export default function GpProfilScreen() {
               <View style={styles.sectionCard}>
                 <Text style={styles.cardSectionTitle}>
                   <Ionicons name="location-outline" size={16} color="#1D6B45" />{" "}
-                  Point de remise
+                  Point de dépôt du colis (Départ)
                 </Text>
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>
-                    QUARTIER / ARRONDISSEMENT
+                    QUARTIER / ZONE DE DÉPÔT
                   </Text>
                   <TextInput
                     style={styles.input}
                     value={pickupCity}
                     onChangeText={setPickupCity}
-                    placeholder="Ex: Paris 10e"
+                    placeholder="Ex: Paris 10e, Dakar Plateau..."
                     placeholderTextColor="#94A3B8"
                   />
                 </View>
                 <View style={[styles.fieldGroup, { zIndex: 50 }]}>
-                  <Text style={styles.fieldLabel}>ADRESSE PRÉCISE</Text>
-                  <AddressAutocomplete
-                    value={pickupAddress}
-                    onChangeText={setPickupAddress}
-                    onSelectAddress={(item) => {
-                      setPickupAddress(item.label);
-                      const cleanQuarter = getQuarterOrCityFromAddress(item);
-                      setPickupCity(cleanQuarter);
-                    }}
-                    placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
+                  <Text style={styles.fieldLabel}>
+                    ADRESSE PRÉCISE DE DÉPÔT * (OBLIGATOIRE)
+                  </Text>
+                  {departureCountry === "France" ? (
+                    <AddressAutocomplete
+                      value={pickupAddress}
+                      onChangeText={setPickupAddress}
+                      onSelectAddress={(item) => {
+                        setPickupAddress(item.label);
+                        const cleanQuarter = getQuarterOrCityFromAddress(item);
+                        setPickupCity(cleanQuarter);
+                      }}
+                      placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
+                    />
+                  ) : (
+                    <TextInput
+                      style={styles.input}
+                      value={pickupAddress}
+                      onChangeText={setPickupAddress}
+                      placeholder="Ex: Rue 10 angle Boulevard Dial Diop..."
+                      placeholderTextColor="#94A3B8"
+                    />
+                  )}
+                </View>
+              </View>
+
+              <View style={styles.sectionCard}>
+                <Text style={styles.cardSectionTitle}>
+                  <Ionicons name="navigate-outline" size={16} color="#1D6B45" />{" "}
+                  Point de récupération du colis (Arrivée)
+                </Text>
+                <View style={styles.fieldGroup}>
+                  <Text style={styles.fieldLabel}>
+                    QUARTIER / ZONE DE RÉCUPÉRATION
+                  </Text>
+                  <TextInput
+                    style={styles.input}
+                    value={dropoffCity}
+                    onChangeText={setDropoffCity}
+                    placeholder="Ex: Almadies, Akwa, Cocody..."
+                    placeholderTextColor="#94A3B8"
                   />
+                </View>
+                <View style={[styles.fieldGroup, { zIndex: 40 }]}>
+                  <Text style={styles.fieldLabel}>
+                    ADRESSE PRÉCISE DE RÉCUPÉRATION * (OBLIGATOIRE)
+                  </Text>
+                  {arrivalCountry === "France" ? (
+                    <AddressAutocomplete
+                      value={dropoffAddress}
+                      onChangeText={setDropoffAddress}
+                      onSelectAddress={(item) => {
+                        setDropoffAddress(item.label);
+                        const cleanQuarter = getQuarterOrCityFromAddress(item);
+                        setDropoffCity(cleanQuarter);
+                      }}
+                      placeholder="Ex: 18 Rue de Dunkerque, Paris..."
+                    />
+                  ) : (
+                    <TextInput
+                      style={styles.input}
+                      value={dropoffAddress}
+                      onChangeText={setDropoffAddress}
+                      placeholder="Ex: Près de la pharmacie, aéroport, rond-point..."
+                      placeholderTextColor="#94A3B8"
+                    />
+                  )}
                 </View>
               </View>
 
@@ -851,8 +1062,11 @@ export default function GpProfilScreen() {
               </View>
 
               <TouchableOpacity
-                style={[styles.saveBtn, isSaving && styles.saveBtnDisabled]}
-                disabled={isSaving}
+                style={[
+                  styles.saveBtn,
+                  (isSaving || !isEditModified) && styles.saveBtnDisabled,
+                ]}
+                disabled={isSaving || !isEditModified}
                 onPress={handleSaveEdit}
                 activeOpacity={0.85}
               >
@@ -863,10 +1077,17 @@ export default function GpProfilScreen() {
                     <Ionicons
                       name="checkmark-circle"
                       size={18}
-                      color="#FFFFFF"
+                      color={!isEditModified ? "#94A3B8" : "#FFFFFF"}
                     />
-                    <Text style={styles.saveBtnText}>
-                      Enregistrer les modifications
+                    <Text
+                      style={[
+                        styles.saveBtnText,
+                        !isEditModified && { color: "#94A3B8" },
+                      ]}
+                    >
+                      {!isEditModified
+                        ? "Aucune modification à enregistrer"
+                        : "Enregistrer les modifications"}
                     </Text>
                   </>
                 )}
@@ -957,8 +1178,16 @@ export default function GpProfilScreen() {
           visible={Boolean(deleteGpId)}
           onRequestClose={() => !isDeleting && setDeleteGpId(null)}
         >
-          <View style={styles.modalOverlay}>
-            <View style={styles.modalCard}>
+          <TouchableOpacity
+            style={styles.modalOverlay}
+            activeOpacity={1}
+            onPress={() => !isDeleting && setDeleteGpId(null)}
+          >
+            <TouchableOpacity
+              style={styles.modalCard}
+              activeOpacity={1}
+              onPress={(e) => e.stopPropagation()}
+            >
               <View style={styles.deleteIconCircle}>
                 <Ionicons name="trash-outline" size={28} color="#DC2626" />
               </View>
@@ -994,8 +1223,8 @@ export default function GpProfilScreen() {
                   )}
                 </TouchableOpacity>
               </View>
-            </View>
-          </View>
+            </TouchableOpacity>
+          </TouchableOpacity>
         </Modal>
       </SafeAreaView>
     </View>
@@ -1247,6 +1476,32 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "800",
     color: "#1D6B45",
+  },
+
+  /* Route Details on card */
+  cardRouteDetailBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 10,
+    gap: 8,
+  },
+  cardRouteStep: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  cardStepTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  cardStepSub: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
   },
 
   /* Metrics Box */
@@ -1584,5 +1839,44 @@ const styles = StyleSheet.create({
   pickerOptionTextCustom: {
     color: "#1D6B45",
     fontWeight: "800",
+  },
+
+  /* Retard Vol GP */
+  delayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  delayBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  delayCardNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  delayNoticeTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  delayNoticeReason: {
+    fontSize: 11,
+    color: "#B45309",
+    marginTop: 2,
   },
 });

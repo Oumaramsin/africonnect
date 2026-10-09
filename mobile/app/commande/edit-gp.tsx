@@ -169,6 +169,10 @@ export default function EditGpScreen() {
   const listing = request?.listing || request?.gp_listings;
   const depCity = request?.departure_city || listing?.departure_city;
   const arrCity = request?.arrival_city || listing?.arrival_city;
+  const depDate = request?.departure_date || listing?.departure_date;
+  const arrDate = request?.arrival_date || listing?.arrival_date;
+  const pickupCity = listing?.pickup_city;
+  const dropoffCity = listing?.dropoff_city;
   const pricePerKg = getPricePerKg();
 
   const modalDetails: DetailRowItem[] = [
@@ -240,8 +244,30 @@ export default function EditGpScreen() {
                 {depCity} ➔ {arrCity}
               </Text>
             </View>
+            {(Boolean(depDate) || Boolean(arrDate)) && (
+              <View style={{ marginTop: 6, gap: 2 }}>
+                {Boolean(depDate) && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                    <Ionicons name="airplane-outline" size={13} color="#1D6B45" />
+                    <Text style={{ fontSize: 12, color: "#64748B" }}>
+                      Départ : {new Date(depDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}
+                      {pickupCity ? ` (Dépôt: ${pickupCity})` : ""}
+                    </Text>
+                  </View>
+                )}
+                {Boolean(arrDate) && (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                    <Ionicons name="navigate-outline" size={13} color="#D4870A" />
+                    <Text style={{ fontSize: 12, color: "#64748B" }}>
+                      Arrivée : {new Date(arrDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}
+                      {dropoffCity ? ` (Récup: ${dropoffCity})` : ""}
+                    </Text>
+                  </View>
+                )}
+              </View>
+            )}
             {Boolean(pricePerKg > 0) && (
-              <Text style={styles.pricePerKgText}>
+              <Text style={[styles.pricePerKgText, { marginTop: 4 }]}>
                 Tarif : {pricePerKg.toFixed(2)} € / kg
               </Text>
             )}

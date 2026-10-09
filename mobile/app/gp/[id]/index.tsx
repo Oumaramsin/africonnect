@@ -9,12 +9,13 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
-import { GpListing } from "../../../utils/types/gp";
+import { GpListing, formatWhatsAppUrl } from "../../../utils/types/gp";
 import { apiFetch } from "../../../utils/api";
 
 export default function GpBookingScreen() {
@@ -234,7 +235,11 @@ export default function GpBookingScreen() {
                 style={styles.whatsappBtn}
                 activeOpacity={0.85}
                 onPress={() => {
-                  // Action WhatsApp
+                  const url = formatWhatsAppUrl(
+                    gpProfile?.whatsapp,
+                    `Bonjour ${gpProfile?.full_name || ""}, je viens d'effectuer une réservation pour mon colis sur Dabari.`,
+                  );
+                  if (url) Linking.openURL(url);
                 }}
               >
                 <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />
@@ -291,9 +296,17 @@ export default function GpBookingScreen() {
               <View style={styles.headerDateRow}>
                 <Ionicons name="airplane-outline" size={14} color="rgba(255, 255, 255, 0.8)" />
                 <Text style={styles.headerDateText}>
-                  Départ le {formatDate(listing.departure_date)}
+                  Départ : {formatDate(listing.departure_date)}
                 </Text>
               </View>
+              {Boolean(listing.arrival_date) && (
+                <View style={[styles.headerDateRow, { marginTop: 3 }]}>
+                  <Ionicons name="navigate-outline" size={14} color="rgba(255, 255, 255, 0.8)" />
+                  <Text style={styles.headerDateText}>
+                    Arrivée : {formatDate(listing.arrival_date!)}
+                  </Text>
+                </View>
+              )}
             </View>
 
             {Boolean(listing.flight_type) && (
@@ -311,6 +324,23 @@ export default function GpBookingScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {listing.is_delayed && (
+            <View style={styles.delayAlertBanner}>
+              <Ionicons name="warning" size={20} color="#D97706" />
+              <View style={{ flex: 1 }}>
+                <Text style={styles.delayAlertTitle}>Arrivée retardée</Text>
+                {listing.arrival_date ? (
+                  <Text style={styles.delayAlertDate}>
+                    Nouvelle date prévue : {formatDate(listing.arrival_date)}
+                  </Text>
+                ) : null}
+                {listing.delay_reason ? (
+                  <Text style={styles.delayAlertReason}>{listing.delay_reason}</Text>
+                ) : null}
+              </View>
+            </View>
+          )}
+
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
               <Ionicons name="person-outline" size={16} color="#1D6B45" /> À propos du GP
@@ -346,6 +376,13 @@ export default function GpBookingScreen() {
                 <TouchableOpacity
                   style={styles.miniWhatsappBtn}
                   activeOpacity={0.8}
+                  onPress={() => {
+                    const url = formatWhatsAppUrl(
+                      gpProfile?.whatsapp,
+                      `Bonjour ${gpProfile?.full_name || ""}, je vous contacte concernant votre annonce GP (${listing.departure_city} → ${listing.arrival_city}) sur Dabari.`,
+                    );
+                    if (url) Linking.openURL(url);
+                  }}
                 >
                   <Ionicons name="logo-whatsapp" size={16} color="#FFFFFF" />
                   <Text style={styles.miniWhatsappBtnText}>WhatsApp</Text>
@@ -373,28 +410,90 @@ export default function GpBookingScreen() {
               </View>
             </View>
 
-            {/* Adresses et lieux de remise */}
-            <View style={styles.infoRowGroup}>
-              {Boolean(listing.pickup_city) && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="location" size={16} color="#1D6B45" />
-                  <Text style={styles.infoRowText}>
-                    Remise des colis à <Text style={{ fontWeight: "700" }}>{listing.pickup_city}</Text>
+            {/* Adresses et lieux de remise / récupération */}
+            <View style={styles.routeCardsContainer}>
+              {/* Point de Dépôt (Départ) */}
+              <View style={styles.locationCardDeparture}>
+                <View style={styles.locationCardTopRow}>
+                  <View style={styles.locationBadgeGreen}>
+                    <Ionicons name="airplane" size={12} color="#1D6B45" />
+                    <Text style={styles.locationBadgeGreenText}>DÉPÔT (DÉPART)</Text>
+                  </View>
+                  <Text style={styles.locationDateText}>
+                    {formatDate(listing.departure_date)}
                   </Text>
                 </View>
-              )}
 
-              {Boolean(listing.pickup_address) && (
-                <View style={styles.infoRow}>
-                  <Ionicons name="home-outline" size={16} color="#1D6B45" />
-                  <Text style={styles.infoRowText}>{listing.pickup_address}</Text>
+                {/* Zone / Ville */}
+                <View style={styles.locationRow}>
+                  <Ionicons name="location-sharp" size={18} color="#1D6B45" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locationLabelText}>Zone & Ville de dépôt :</Text>
+                    <Text style={styles.locationCityText}>
+                      {listing.pickup_city || listing.departure_city}
+                    </Text>
+                  </View>
                 </View>
-              )}
+
+                {/* Adresse exacte si disponible */}
+                {Boolean(listing.pickup_address) && (
+                  <View style={styles.locationAddressRow}>
+                    <Ionicons name="home" size={14} color="#166534" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.locationAddressLabel}>Adresse exacte de remise :</Text>
+                      <Text style={styles.locationAddressText}>
+                        {listing.pickup_address}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
+
+              {/* Point de Récupération (Arrivée) */}
+              <View style={styles.locationCardArrival}>
+                <View style={styles.locationCardTopRow}>
+                  <View style={styles.locationBadgeAmber}>
+                    <Ionicons name="navigate" size={12} color="#92400E" />
+                    <Text style={styles.locationBadgeAmberText}>RÉCUPÉRATION (ARRIVÉE)</Text>
+                  </View>
+                  <Text style={styles.locationDateTextAmber}>
+                    {listing.arrival_date ? formatDate(listing.arrival_date) : "Date à confirmer"}
+                  </Text>
+                </View>
+
+                {/* Zone / Ville */}
+                <View style={styles.locationRow}>
+                  <Ionicons name="location-sharp" size={18} color="#D4870A" />
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.locationLabelText}>Zone & Ville de récupération :</Text>
+                    <Text style={styles.locationCityText}>
+                      {listing.dropoff_city || listing.arrival_city}
+                    </Text>
+                  </View>
+                </View>
+
+                {/* Adresse exacte si disponible */}
+                {Boolean(listing.dropoff_address) && (
+                  <View style={styles.locationAddressRowAmber}>
+                    <Ionicons name="home" size={14} color="#B45309" />
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.locationAddressLabelAmber}>Adresse exacte de récupération :</Text>
+                      <Text style={styles.locationAddressTextAmber}>
+                        {listing.dropoff_address}
+                      </Text>
+                    </View>
+                  </View>
+                )}
+              </View>
             </View>
 
             {/* Description */}
             {Boolean(listing.description) && (
               <View style={styles.descBox}>
+                <View style={styles.descHeaderRow}>
+                  <Ionicons name="chatbubble-ellipses-outline" size={14} color="#1D6B45" />
+                  <Text style={styles.descHeaderTitle}>Consignes du transporteur :</Text>
+                </View>
                 <Text style={styles.descText}>{listing.description}</Text>
               </View>
             )}
@@ -693,6 +792,34 @@ const styles = StyleSheet.create({
     gap: 14,
   },
 
+  delayAlertBanner: {
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
+  delayAlertTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  delayAlertDate: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#B45309",
+    marginTop: 2,
+  },
+  delayAlertReason: {
+    fontSize: 12,
+    color: "#78350F",
+    marginTop: 4,
+    lineHeight: 16,
+  },
+
   /* Cards Générales */
   sectionCard: {
     backgroundColor: "#FFFFFF",
@@ -805,19 +932,134 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontWeight: "600",
   },
-  infoRowGroup: {
-    gap: 8,
-    marginBottom: 12,
+  routeCardsContainer: {
+    gap: 12,
+    marginBottom: 14,
   },
-  infoRow: {
+  locationCardDeparture: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderLeftWidth: 4,
+    borderLeftColor: "#1D6B45",
+  },
+  locationCardArrival: {
+    backgroundColor: "#FDFBF7",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderLeftWidth: 4,
+    borderLeftColor: "#D4870A",
+  },
+  locationCardTopRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    justifyContent: "space-between",
+    marginBottom: 10,
   },
-  infoRowText: {
+  locationBadgeGreen: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  locationBadgeGreenText: {
+    fontSize: 10.5,
+    fontWeight: "800",
+    color: "#1D6B45",
+    letterSpacing: 0.4,
+  },
+  locationBadgeAmber: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 8,
+  },
+  locationBadgeAmberText: {
+    fontSize: 10.5,
+    fontWeight: "800",
+    color: "#92400E",
+    letterSpacing: 0.4,
+  },
+  locationDateText: {
     fontSize: 12,
+    fontWeight: "600",
     color: "#475569",
-    flex: 1,
+  },
+  locationDateTextAmber: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#78350F",
+  },
+  locationRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    marginBottom: 4,
+  },
+  locationLabelText: {
+    fontSize: 11,
+    color: "#64748B",
+    fontWeight: "600",
+    marginBottom: 2,
+  },
+  locationCityText: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  locationAddressRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#F0FDF4",
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 6,
+  },
+  locationAddressLabel: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#166534",
+    marginBottom: 1,
+  },
+  locationAddressText: {
+    fontSize: 12.5,
+    color: "#166534",
+    fontWeight: "500",
+  },
+  locationAddressRowAmber: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    borderRadius: 10,
+    padding: 8,
+    marginTop: 6,
+  },
+  locationAddressLabelAmber: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    color: "#92400E",
+    marginBottom: 1,
+  },
+  locationAddressTextAmber: {
+    fontSize: 12.5,
+    color: "#92400E",
+    fontWeight: "500",
   },
   descBox: {
     backgroundColor: "#F8FAFC",
@@ -826,9 +1068,20 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
-  descText: {
+  descHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  descHeaderTitle: {
     fontSize: 12,
-    color: "#475569",
+    fontWeight: "700",
+    color: "#1D6B45",
+  },
+  descText: {
+    fontSize: 13,
+    color: "#334155",
     lineHeight: 18,
   },
 

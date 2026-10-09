@@ -143,6 +143,29 @@ export default function TraiteurScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
+          {/* Banner: Rechercher un traiteur pour événement */}
+          <TouchableOpacity
+            style={styles.requestBanner}
+            onPress={() => router.push("/traiteur/demande")}
+            activeOpacity={0.88}
+          >
+            <View style={styles.requestBannerLeft}>
+              <View style={styles.requestBadge}>
+                <Ionicons name="sparkles" size={13} color="#FDE68A" />
+                <Text style={styles.requestBadgeText}>Recherche sur-mesure</Text>
+              </View>
+              <Text style={styles.requestBannerTitle}>
+                Besoin d&apos;un traiteur pour un événement ?
+              </Text>
+              <Text style={styles.requestBannerSubtitle}>
+                Mariage, baptême, fête... Publiez votre annonce et recevez les devis personnalisés de nos traiteurs !
+              </Text>
+            </View>
+            <View style={styles.requestBannerAction}>
+              <Ionicons name="add-circle" size={30} color="#FFFFFF" />
+            </View>
+          </TouchableOpacity>
+
           {loading ? (
             <View style={styles.centerContainer}>
               <ActivityIndicator size="large" color="#1D6B45" />
@@ -548,5 +571,55 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1D6B45",
     flexShrink: 0,
+  },
+
+  /* Request Banner */
+  requestBanner: {
+    backgroundColor: "#1D6B45",
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#1D6B45",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  requestBannerLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  requestBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+    marginBottom: 6,
+    gap: 4,
+  },
+  requestBadgeText: {
+    color: "#FDE68A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  requestBannerTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  requestBannerSubtitle: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  requestBannerAction: {
+    marginLeft: 6,
   },
 });

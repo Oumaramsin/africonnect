@@ -5,6 +5,7 @@ import Link from "next/link";
 import {
   Plane,
   PlaneTakeoff,
+  PlaneLanding,
   Calendar,
   MapPin,
   Package,
@@ -15,11 +16,12 @@ import {
   PenLine,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import cookies from "js-cookie";
 import { getValidToken, removeToken, authFetch } from "@/lib/auth";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "@/components/AddressAutocomplete";
+
+import { GP_COUNTRIES } from "@/lib/types/gp";
 
 interface Gp {
   id: string;
@@ -27,43 +29,22 @@ interface Gp {
   departure_country?: string;
   arrival_city: string;
   arrival_country?: string;
-  departure_date: Date;
+  departure_date: Date | string;
+  arrival_date?: Date | string | null;
   available_kg: number;
   price_per_kg: number;
   flight_type?: "direct" | "escale";
   pickup_address?: string;
   pickup_city?: string;
+  dropoff_address?: string;
+  dropoff_city?: string;
   description?: string;
+  is_delayed?: boolean;
+  delay_reason?: string | null;
   is_active: boolean;
 }
 
-const CITIES_FR = [
-  "Paris",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Toulouse",
-  "Lille",
-  "Bruxelles",
-  "Genève",
-];
-
-const COUNTRIES_FR = ["France", "Belgique", "Suisse", "Canada"];
-
-const COUNTRIES_AF = [
-  "Sénégal",
-  "Côte d'Ivoire",
-  "Cameroun",
-  "Congo",
-  "Mali",
-  "Guinée",
-  "Burkina Faso",
-  "Gabon",
-  "Madagascar",
-  "Maroc",
-  "Algérie",
-  "Tunisie",
-];
+import { COMMON_CITIES } from "@/lib/constants/locations";
 
 export default function GpEspacePage() {
   const [view, setView] = useState<"annonces" | "nouvelle" | "edit">(
@@ -72,52 +53,74 @@ export default function GpEspacePage() {
   const router = useRouter();
   const [gp, setGP] = useState<Gp[] | null>([]);
   const [editGpId, setEditGpId] = useState<string | null>(null);
+  const defaultDepartureDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
+    .toISOString()
+    .split("T")[0];
   const [formData, setFormData] = useState({
     departure_city: "",
     departure_country: "France",
     arrival_city: "",
-    arrival_country: "",
-    departure_date: "",
+    arrival_country: "Sénégal",
+    departure_date: defaultDepartureDate,
+    arrival_date: "",
     available_kg: "",
     price_per_kg: "",
-    flight_type: "direct",
+    flight_type: "direct" as "direct" | "escale",
     pickup_address: "",
     pickup_city: "",
+    dropoff_address: "",
+    dropoff_city: "",
     description: "",
     is_active: true,
   });
   const [deleteGpId, setDeleteGpId] = useState<string | null>(null);
+  const [initialFormData, setInitialFormData] = useState<typeof formData | null>(null);
+
+  useEffect(() => {
+    if (!deleteGpId) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setDeleteGpId(null);
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteGpId]);
 
   function startEdit(annonce: Gp) {
     setEditGpId(annonce.id);
-    setFormData({
+    const initial = {
       departure_city: annonce.departure_city || "",
       departure_country: annonce.departure_country || "France",
       arrival_city: annonce.arrival_city || "",
-      arrival_country: annonce.arrival_country || "",
+      arrival_country: annonce.arrival_country || "Sénégal",
       departure_date: annonce.departure_date
         ? new Date(annonce.departure_date).toISOString().split("T")[0]
         : "",
+      arrival_date: annonce.arrival_date
+        ? new Date(annonce.arrival_date).toISOString().split("T")[0]
+        : "",
       available_kg: (annonce.available_kg ?? "").toString(),
       price_per_kg: (annonce.price_per_kg ?? "").toString(),
-      flight_type: annonce.flight_type || "direct",
+      flight_type: (annonce.flight_type as any) || "direct",
       pickup_address: annonce.pickup_address || "",
       pickup_city: annonce.pickup_city || "",
+      dropoff_address: annonce.dropoff_address || "",
+      dropoff_city: annonce.dropoff_city || "",
       description: annonce.description || "",
       is_active: annonce.is_active ?? true,
-    });
+    };
+    setFormData(initial);
+    setInitialFormData(initial);
   }
 
   async function handleDeleteGp() {
+    if (!deleteGpId) return;
     try {
-      const token = cookies.get("token");
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/gp/${deleteGpId}`,
         {
           method: "DELETE",
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
         },
       );
       if (!response.ok) {
@@ -136,30 +139,45 @@ export default function GpEspacePage() {
   }
 
   async function handleEditGp() {
+    if (!editGpId) return;
     try {
-      const token = cookies.get("token");
+      if (formData.departure_country === formData.arrival_country) {
+        alert("Le pays de départ et le pays d'arrivée doivent être différents.");
+        return;
+      }
+      if (!formData.pickup_address || !formData.pickup_address.trim()) {
+        alert("L'adresse précise de dépôt est obligatoire.");
+        return;
+      }
+      if (!formData.dropoff_address || !formData.dropoff_address.trim()) {
+        alert("L'adresse précise de récupération est obligatoire.");
+        return;
+      }
+
       const payload = {
         departure_city: formData.departure_city,
         departure_country: formData.departure_country,
         arrival_city: formData.arrival_city,
         arrival_country: formData.arrival_country,
         departure_date: formData.departure_date,
+        arrival_date: formData.arrival_date || null,
         available_kg: parseFloat(formData.available_kg),
         price_per_kg: parseFloat(formData.price_per_kg),
         flight_type: formData.flight_type,
         pickup_address: formData.pickup_address,
         pickup_city: formData.pickup_city,
+        dropoff_address: formData.dropoff_address,
+        dropoff_city: formData.dropoff_city,
         description: formData.description,
         is_active: formData.is_active,
       };
 
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/gp/${editGpId}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify(payload),
         },
@@ -170,10 +188,10 @@ export default function GpEspacePage() {
         throw new Error(res.error || "Erreur lors de la mise à jour");
       }
 
-      const updatedGp = res.data.gp;
+      const updatedGp = res.data?.gp || res.data;
       setGP((prev) =>
         prev
-          ? prev.map((item) => (item.id === editGpId ? updatedGp : item))
+          ? prev.map((item) => (item.id === editGpId ? { ...item, ...updatedGp } : item))
           : [],
       );
 
@@ -304,35 +322,78 @@ export default function GpEspacePage() {
                       </p>
                     </div>
                   </div>
-                  <div
-                    className={`px-2 py-1 rounded-md text-xs font-semibold ${
-                      annonce.is_active
-                        ? "bg-[#E8F5E9] text-[#1D6B45]"
-                        : "bg-gray-100 text-gray-500"
-                    }`}
-                  >
-                    {annonce.is_active ? "Actif" : "Terminé"}
+                  <div className="flex items-center gap-1.5">
+                    {annonce.is_delayed && (
+                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200 flex items-center gap-1">
+                        ⚠️ Retardé
+                      </span>
+                    )}
+                    <div
+                      className={`px-2 py-1 rounded-md text-xs font-semibold ${
+                        annonce.is_active
+                          ? "bg-[#E8F5E9] text-[#1D6B45]"
+                          : "bg-gray-100 text-gray-500"
+                      }`}
+                    >
+                      {annonce.is_active ? "Actif" : "Terminé"}
+                    </div>
                   </div>
                 </div>
 
-                <div className="grid grid-cols-3 gap-2 bg-[#F3F4F6] p-3 rounded-xl mb-4">
+                {annonce.is_delayed && (
+                  <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900 flex items-start gap-2">
+                    <span className="text-base leading-none">⚠️</span>
+                    <div>
+                      <p className="font-semibold text-amber-950">Arrivée retardée</p>
+                      {annonce.delay_reason && (
+                        <p className="text-amber-800 mt-0.5">{annonce.delay_reason}</p>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 bg-[#F3F4F6] p-3 rounded-xl mb-4">
                   <div className="flex flex-col items-center justify-center border-r border-gray-200">
                     <Calendar size={14} className="text-gray-400 mb-1" />
-                    <span className="text-xs font-medium text-gray-700">
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">Départ</span>
+                    <span className="text-xs font-semibold text-gray-800">
                       {new Date(annonce.departure_date).toLocaleDateString(
                         "fr-FR",
                         { day: "numeric", month: "short" },
                       )}
                     </span>
+                    {annonce.pickup_city && (
+                      <span className="text-[10px] text-gray-500 truncate max-w-[100px]" title={annonce.pickup_city}>
+                        📍 {annonce.pickup_city}
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex flex-col items-center justify-center sm:border-r border-gray-200">
+                    <Calendar size={14} className="text-gray-400 mb-1" />
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">Arrivée</span>
+                    <span className="text-xs font-semibold text-gray-800">
+                      {annonce.arrival_date
+                        ? new Date(annonce.arrival_date).toLocaleDateString(
+                            "fr-FR",
+                            { day: "numeric", month: "short" },
+                          )
+                        : "N/A"}
+                    </span>
+                    {annonce.dropoff_city && (
+                      <span className="text-[10px] text-gray-500 truncate max-w-[100px]" title={annonce.dropoff_city}>
+                        📍 {annonce.dropoff_city}
+                      </span>
+                    )}
                   </div>
                   <div className="flex flex-col items-center justify-center border-r border-gray-200">
                     <Scale size={14} className="text-gray-400 mb-1" />
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wide">Dispo</span>
                     <span className="text-xs font-medium text-gray-700">
                       {annonce.available_kg} kg
                     </span>
                   </div>
                   <div className="flex flex-col items-center justify-center">
-                    <span className="text-xs text-gray-400 mb-1">Prix/kg</span>
+                    <span className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">Prix/kg</span>
                     <span className="text-xs font-bold text-[#1D6B45]">
                       {annonce.price_per_kg} €
                     </span>
@@ -345,13 +406,13 @@ export default function GpEspacePage() {
                       startEdit(annonce);
                       setView("edit");
                     }}
-                    className="text-xs font-medium text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors"
+                    className="text-xs font-medium text-blue-500 hover:bg-blue-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                   >
                     Modifier
                   </button>
                   <button
                     onClick={() => setDeleteGpId(annonce.id)}
-                    className="text-xs font-medium text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors"
+                    className="text-xs font-medium text-red-500 hover:bg-red-50 px-3 py-1.5 rounded-lg transition-colors cursor-pointer"
                   >
                     Supprimer
                   </button>
@@ -363,9 +424,18 @@ export default function GpEspacePage() {
 
         {/* Modal de suppression */}
         {deleteGpId && (
-          <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-            <div className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl">
-              <h3 className="text-lg font-bold text-gray-800 mb-2">
+          <div
+            className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4"
+            onClick={() => setDeleteGpId(null)}
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-gp-title"
+          >
+            <div
+              className="bg-white rounded-2xl p-6 w-full max-w-sm shadow-xl"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <h3 id="delete-gp-title" className="text-lg font-bold text-gray-800 mb-2">
                 Supprimer ce trajet ?
               </h3>
               <p className="text-sm text-gray-500 mb-6">
@@ -375,16 +445,15 @@ export default function GpEspacePage() {
               <div className="flex gap-3">
                 <button
                   onClick={() => setDeleteGpId(null)}
-                  className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors"
+                  className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 transition-colors cursor-pointer"
                 >
                   Annuler
                 </button>
                 <button
                   onClick={() => {
                     handleDeleteGp();
-                    setDeleteGpId(null);
                   }}
-                  className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30"
+                  className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold text-white bg-red-500 hover:bg-red-600 transition-colors shadow-lg shadow-red-500/30 cursor-pointer"
                 >
                   Oui, supprimer
                 </button>
@@ -408,17 +477,19 @@ export default function GpEspacePage() {
             </div>
 
             {/* Route card */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
               <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-                <PlaneTakeoff size={16} className="inline mr-1" /> Itinéraire
+                <PlaneTakeoff size={18} className="inline mr-2 text-[#1D6B45]" /> Itinéraire
               </h2>
 
               <div className="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Ville de départ
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Ville de départ *
                   </label>
-                  <select
+                  <input
+                    type="text"
+                    list="edit-departure-cities"
                     value={formData.departure_city}
                     onChange={(e) =>
                       setFormData({
@@ -426,31 +497,39 @@ export default function GpEspacePage() {
                         departure_city: e.target.value,
                       })
                     }
+                    placeholder="Ex: Paris, Dakar..."
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                  >
-                    <option value="">Choisir</option>
-                    {CITIES_FR.map((c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
+                  />
+                  <datalist id="edit-departure-cities">
+                    {COMMON_CITIES.map((c) => (
+                      <option key={c} value={c} />
                     ))}
-                  </select>
+                  </datalist>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Pays de départ
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Pays de départ *
                   </label>
                   <select
                     value={formData.departure_country}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        departure_country: e.target.value,
-                      })
-                    }
+                    onChange={(e) => {
+                      const newDep = e.target.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        departure_country: newDep,
+                        arrival_country:
+                          prev.arrival_country === newDep
+                            ? newDep === "France"
+                              ? "Sénégal"
+                              : "France"
+                            : prev.arrival_country,
+                      }));
+                    }}
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   >
-                    {COUNTRIES_FR.map((c) => (
+                    {GP_COUNTRIES.filter(
+                      (c) => c !== formData.arrival_country,
+                    ).map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -465,35 +544,49 @@ export default function GpEspacePage() {
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Ville d'arrivée
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Ville d'arrivée *
                   </label>
                   <input
                     type="text"
+                    list="edit-arrival-cities"
                     value={formData.arrival_city}
                     onChange={(e) =>
                       setFormData({ ...formData, arrival_city: e.target.value })
                     }
-                    placeholder="Ex: Dakar"
-                    className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                    placeholder="Ex: Dakar, Abidjan..."
+                    className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   />
+                  <datalist id="edit-arrival-cities">
+                    {COMMON_CITIES.map((c) => (
+                      <option key={c} value={c} />
+                    ))}
+                  </datalist>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Pays d'arrivée
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Pays d'arrivée *
                   </label>
                   <select
                     value={formData.arrival_country}
-                    onChange={(e) =>
-                      setFormData({
-                        ...formData,
-                        arrival_country: e.target.value,
-                      })
-                    }
+                    onChange={(e) => {
+                      const newArr = e.target.value;
+                      setFormData((prev) => ({
+                        ...prev,
+                        arrival_country: newArr,
+                        departure_country:
+                          prev.departure_country === newArr
+                            ? newArr === "France"
+                              ? "Sénégal"
+                              : "France"
+                            : prev.departure_country,
+                      }));
+                    }}
                     className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   >
-                    <option value="">Choisir</option>
-                    {COUNTRIES_AF.map((c) => (
+                    {GP_COUNTRIES.filter(
+                      (c) => c !== formData.departure_country,
+                    ).map((c) => (
                       <option key={c} value={c}>
                         {c}
                       </option>
@@ -503,19 +596,24 @@ export default function GpEspacePage() {
               </div>
             </div>
 
-            {/* Vol card */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-                <Plane size={16} className="inline mr-1" /> Détails du vol
+            {/* Départ & Dépôt card */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
+              <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
+                <PlaneTakeoff size={18} className="inline mr-2 text-[#1D6B45]" />
+                Départ & Dépôt du colis
               </h2>
+              <p className="text-xs text-gray-500 mb-4">
+                Date de départ et lieu où les expéditeurs déposent le colis
+              </p>
 
-              <div className="grid grid-cols-2 gap-3 mb-4">
+              <div className="space-y-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Date de départ
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Date de départ *
                   </label>
                   <input
                     type="date"
+                    min={defaultDepartureDate}
                     value={formData.departure_date}
                     onChange={(e) =>
                       setFormData({
@@ -523,12 +621,169 @@ export default function GpEspacePage() {
                         departure_date: e.target.value,
                       })
                     }
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Statut
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Zone / quartier de dépôt du colis
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.pickup_city}
+                    onChange={(e) =>
+                      setFormData({ ...formData, pickup_city: e.target.value })
+                    }
+                    placeholder="Ex: Paris 10e, Aubervilliers..."
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Adresse précise de dépôt *
+                    <span className="text-gray-400 ml-1 font-normal">
+                      (obligatoire — partagée après accord)
+                    </span>
+                  </label>
+                  {formData.departure_country === "France" ? (
+                    <AddressAutocomplete
+                      value={formData.pickup_address}
+                      onChange={(val) =>
+                        setFormData({
+                          ...formData,
+                          pickup_address: val,
+                        })
+                      }
+                      onSelectAddress={(item) =>
+                        setFormData({
+                          ...formData,
+                          pickup_address: item.label,
+                          pickup_city: getQuarterOrCityFromAddress(item),
+                        })
+                      }
+                      placeholder="Ex: 18 Rue de Dunkerque, Paris..."
+                      required
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.pickup_address}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          pickup_address: e.target.value,
+                        })
+                      }
+                      placeholder="Ex: Rue 10 angle Boulevard Dial Diop..."
+                      required
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Arrivée & Récupération card */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
+              <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
+                <PlaneLanding size={18} className="inline mr-2 text-[#D4870A]" />
+                Arrivée & Récupération du colis
+              </h2>
+              <p className="text-xs text-gray-500 mb-4">
+                Date d'arrivée et lieu où le colis sera récupéré à destination
+              </p>
+
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Date d'arrivée
+                  </label>
+                  <input
+                    type="date"
+                    min={formData.departure_date}
+                    value={formData.arrival_date}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        arrival_date: e.target.value,
+                      })
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Zone / quartier de récupération du colis
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.dropoff_city}
+                    onChange={(e) =>
+                      setFormData({ ...formData, dropoff_city: e.target.value })
+                    }
+                    placeholder="Ex: Dakar Yoff, Abidjan Cocody, Douala Akwa..."
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Adresse précise de récupération *
+                    <span className="text-gray-400 ml-1 font-normal">
+                      (obligatoire — partagée après accord)
+                    </span>
+                  </label>
+                  {formData.arrival_country === "France" ? (
+                    <AddressAutocomplete
+                      value={formData.dropoff_address}
+                      onChange={(val) =>
+                        setFormData({
+                          ...formData,
+                          dropoff_address: val,
+                        })
+                      }
+                      onSelectAddress={(item) =>
+                        setFormData({
+                          ...formData,
+                          dropoff_address: item.label,
+                          dropoff_city: getQuarterOrCityFromAddress(item),
+                        })
+                      }
+                      placeholder="Ex: 18 Rue de Dunkerque, Paris..."
+                      required
+                    />
+                  ) : (
+                    <input
+                      type="text"
+                      value={formData.dropoff_address}
+                      onChange={(e) =>
+                        setFormData({
+                          ...formData,
+                          dropoff_address: e.target.value,
+                        })
+                      }
+                      placeholder="Ex: Aéroport Blaise Diagne, Rue 12..."
+                      required
+                      className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                    />
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Statut & Vol card */}
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
+              <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
+                <Plane size={18} className="inline mr-2 text-[#1D6B45]" /> Statut & Vol
+              </h2>
+
+              <div className="grid grid-cols-2 gap-3 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Statut de l'annonce
                   </label>
                   <select
                     value={formData.is_active ? "actif" : "termine"}
@@ -544,47 +799,37 @@ export default function GpEspacePage() {
                     <option value="termine">Terminé</option>
                   </select>
                 </div>
-              </div>
-
-              <div>
-                <label className="block text-xs text-gray-500 mb-2">
-                  Type de vol
-                </label>
-                <div className="grid grid-cols-2 gap-3">
-                  {(["direct", "escale"] as const).map((type) => (
-                    <label
-                      key={type}
-                      className="flex items-center gap-2 p-3 rounded-xl border border-gray-200 cursor-pointer hover:border-[#1D6B45] transition-colors"
-                    >
-                      <input
-                        type="radio"
-                        name="flight_type"
-                        value={type}
-                        checked={formData.flight_type === type}
-                        onChange={() =>
-                          setFormData({ ...formData, flight_type: type })
-                        }
-                        className="accent-[#1D6B45]"
-                      />
-                      <span className="text-sm text-gray-700 capitalize">
-                        {type}
-                      </span>
-                    </label>
-                  ))}
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Type de trajet
+                  </label>
+                  <select
+                    value={formData.flight_type}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        flight_type: e.target.value as "direct" | "escale",
+                      })
+                    }
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  >
+                    <option value="direct">Direct</option>
+                    <option value="escale">Avec escale</option>
+                  </select>
                 </div>
               </div>
             </div>
 
             {/* Colis card */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
               <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-                <Package size={16} className="inline mr-1" /> Capacité & tarif
+                <Package size={18} className="inline mr-2 text-[#1D6B45]" /> Capacité & tarif
               </h2>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Kilos disponibles
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Kilos disponibles *
                   </label>
                   <input
                     type="number"
@@ -595,12 +840,12 @@ export default function GpEspacePage() {
                     onChange={(e) =>
                       setFormData({ ...formData, available_kg: e.target.value })
                     }
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Prix par kg (€)
+                  <label className="block text-xs font-medium text-gray-600 mb-1">
+                    Prix par kg (€) *
                   </label>
                   <input
                     type="number"
@@ -610,89 +855,52 @@ export default function GpEspacePage() {
                     onChange={(e) =>
                       setFormData({ ...formData, price_per_kg: e.target.value })
                     }
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Point de remise card */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
-              <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
-                <MapPin size={16} className="inline mr-1" /> Point de remise
-              </h2>
-              <p className="text-xs text-gray-600 mb-4">
-                Où les expéditeurs peuvent déposer leur colis
-              </p>
-
-              <div className="space-y-3">
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Quartier / arrondissement
-                  </label>
-                  <input
-                    type="text"
-                    value={formData.pickup_city}
-                    onChange={(e) =>
-                      setFormData({ ...formData, pickup_city: e.target.value })
-                    }
-                    placeholder="Ex: Paris 10e, Aubervilliers..."
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs text-gray-500 mb-1">
-                    Adresse précise
-                    <span className="text-gray-400 ml-1">
-                      (optionnel — partagée après accord)
-                    </span>
-                  </label>
-                  <AddressAutocomplete
-                    value={formData.pickup_address}
-                    onChange={(val) =>
-                      setFormData({
-                        ...formData,
-                        pickup_address: val,
-                      })
-                    }
-                    onSelectAddress={(item) =>
-                      setFormData({
-                        ...formData,
-                        pickup_address: item.label,
-                        pickup_city: getQuarterOrCityFromAddress(item),
-                      })
-                    }
-                    placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
                   />
                 </div>
               </div>
             </div>
 
             {/* Description card */}
-            <div className="bg-white rounded-2xl border border-gray-100 p-5">
+            <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
               <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
-                <PenLine size={16} className="inline mr-1" /> Présentation
+                <PenLine size={18} className="inline mr-2 text-[#1D6B45]" /> Présentation & Conditions
               </h2>
-              <p className="text-xs text-gray-600 mb-4">
-                Décris-toi et tes conditions pour rassurer les expéditeurs
+              <p className="text-xs text-gray-500 mb-4">
+                Décris-toi et tes consignes pour rassurer les expéditeurs
               </p>
               <textarea
                 value={formData.description}
                 onChange={(e) =>
                   setFormData({ ...formData, description: e.target.value })
                 }
-                placeholder="Ex: Voyageur régulier Paris-Dakar depuis 3 ans. Sérieux et ponctuel. Colis remis en main propre à destination. Pas de liquides ni produits périssables."
+                placeholder="Ex: Voyageur régulier depuis 3 ans. Sérieux et ponctuel. Colis remis en main propre à destination. Pas de liquides ni produits périssables."
                 rows={4}
-                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none"
+                className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none bg-white"
               />
             </div>
 
-            <button
-              onClick={handleEditGp}
-              className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-base hover:bg-[#0F4A30] transition-colors shadow-lg shadow-[#1D6B45]/20"
-            >
-              Mettre à jour le trajet
-            </button>
+            {(() => {
+              const isFormModified =
+                !initialFormData ||
+                JSON.stringify(formData) !== JSON.stringify(initialFormData);
+              return (
+                <button
+                  type="button"
+                  disabled={!isFormModified}
+                  onClick={handleEditGp}
+                  className={`w-full py-4 rounded-2xl font-semibold text-base transition-colors ${
+                    isFormModified
+                      ? "bg-[#1D6B45] text-white hover:bg-[#0F4A30] shadow-lg shadow-[#1D6B45]/20 cursor-pointer"
+                      : "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none"
+                  }`}
+                >
+                  {isFormModified
+                    ? "Mettre à jour le trajet"
+                    : "Aucune modification à enregistrer"}
+                </button>
+              );
+            })()}
           </div>
         )}
       </div>

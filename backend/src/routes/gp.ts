@@ -8,6 +8,7 @@ import {
   getGpByIdController,
   getUserGpListingsController,
   updateGpListingController,
+  updateGpListingDelayController,
 } from "../controllers/gpController";
 
 const gpRouter = Router();
@@ -18,6 +19,7 @@ gpRouter.post("/", AuthMiddleware.authenticate, createNewGpController);
 gpRouter.post("/:id/order", AuthMiddleware.authenticate, createGpOrderController);
 gpRouter.get("/:id", getGpByIdController);
 gpRouter.patch("/:id", AuthMiddleware.authenticate, updateGpListingController);
+gpRouter.patch("/:id/delay", AuthMiddleware.authenticate, updateGpListingDelayController);
 gpRouter.delete("/:id", AuthMiddleware.authenticate, deleteGpListingController);
 
 export default gpRouter;

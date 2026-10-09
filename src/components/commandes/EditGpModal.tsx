@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plane, Scale, Package, X, Minus, Plus, Banknote, AlertCircle } from "lucide-react";
+import { Plane, PlaneTakeoff, PlaneLanding, Scale, Package, X, Minus, Plus, Banknote, AlertCircle } from "lucide-react";
 import { authFetch } from "@/lib/auth";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 type Props = {
   isOpen: boolean;
@@ -57,6 +58,14 @@ export default function EditGpModal({
     }
   }, [request, isOpen]);
 
+  useEscapeKey(() => {
+    if (showConfirmModal) {
+      setShowConfirmModal(false);
+    } else {
+      onClose();
+    }
+  }, isOpen);
+
   // Détection si l'utilisateur a modifié quelque chose
   const hasChanges = useMemo(() => {
     if (!initialData) return false;
@@ -72,6 +81,10 @@ export default function EditGpModal({
   const listing = request.listing || request.gp_listings;
   const depCity = request.departure_city || listing?.departure_city || "Départ";
   const arrCity = request.arrival_city || listing?.arrival_city || "Arrivée";
+  const depDate = request.departure_date || listing?.departure_date;
+  const arrDate = request.arrival_date || listing?.arrival_date;
+  const pickupCity = listing?.pickup_city;
+  const dropoffCity = listing?.dropoff_city;
   const pricePerKg = Number(listing?.price_per_kg || 0);
 
   const parsedWeight = parseFloat(weightKg) || 0;
@@ -144,8 +157,17 @@ export default function EditGpModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-        <div className="relative w-full max-w-lg my-8 bg-white rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-gp-title"
+        onClick={onClose}
+        className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-lg my-8 bg-white rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+        >
           {/* En-tête */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-amber-50/50">
             <div className="flex items-center gap-3">
@@ -153,12 +175,29 @@ export default function EditGpModal({
                 <Plane size={20} />
               </div>
               <div>
-                <h3 className="font-extrabold text-gray-900 text-base">
+                <h3 id="edit-gp-title" className="font-extrabold text-gray-900 text-base">
                   Modifier la réservation GP
                 </h3>
                 <p className="text-xs text-gray-500 font-semibold">
                   {depCity} ➔ {arrCity}
                 </p>
+                {(depDate || arrDate) && (
+                  <p className="text-[11px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                    {depDate && (
+                      <span className="inline-flex items-center gap-1">
+                        <PlaneTakeoff size={11} className="text-[#1D6B45]" />
+                        {new Date(depDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}{pickupCity ? ` (${pickupCity})` : ""}
+                      </span>
+                    )}
+                    {depDate && arrDate && <span>•</span>}
+                    {arrDate && (
+                      <span className="inline-flex items-center gap-1">
+                        <PlaneLanding size={11} className="text-[#D4870A]" />
+                        {new Date(arrDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}{dropoffCity ? ` (${dropoffCity})` : ""}
+                      </span>
+                    )}
+                  </p>
+                )}
               </div>
             </div>
             <button
@@ -291,12 +330,21 @@ export default function EditGpModal({
 
       {/* Pop-up (Modale) de confirmation avant enregistrement */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in zoom-in duration-150">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full mx-auto shadow-2xl text-center">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-gp-title"
+          onClick={() => setShowConfirmModal(false)}
+          className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in zoom-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl p-6 max-w-sm w-full mx-auto shadow-2xl text-center"
+          >
             <div className="w-14 h-14 bg-amber-50 text-[#D4870A] rounded-2xl flex items-center justify-center mx-auto mb-3">
               <Plane size={28} />
             </div>
-            <h3 className="text-lg font-extrabold text-gray-900 mb-2">
+            <h3 id="confirm-gp-title" className="text-lg font-extrabold text-gray-900 mb-2">
               Confirmer les modifications
             </h3>
             <p className="text-gray-600 mb-6 text-xs sm:text-sm leading-relaxed">

@@ -20,8 +20,8 @@ import {
   Check,
 } from "lucide-react";
 import Link from "next/link";
-import cookies from "js-cookie";
-import { decodeToken } from "@/lib/auth";
+import { decodeToken, authFetch, getValidToken } from "@/lib/auth";
+import { useEffect } from "react";
 
 type Profile = {
   id: string;
@@ -57,6 +57,9 @@ type GpListing = {
   arrival_city: string;
   arrival_country: string;
   departure_date: string;
+  arrival_date?: string | null;
+  pickup_city?: string | null;
+  dropoff_city?: string | null;
   available_kg: number;
   price_per_kg: number;
   description: string | null;
@@ -113,7 +116,7 @@ export default function AdminDabariClient({
   const [error, setError] = useState<string | null>(null);
   const [view, setView] = useState<"liste" | "nouveau">("liste");
   const [tempPassword, setTempPassword] = useState<string | null>(null);
-  const token = cookies.get("token");
+  const token = getValidToken();
   const currentUserId = token ? decodeToken(token)?.userId : null;
 
   const [roleModal, setRoleModal] = useState<{
@@ -121,6 +124,35 @@ export default function AdminDabariClient({
     targetIsAdmin: boolean;
   } | null>(null);
   const [roleLoading, setRoleLoading] = useState(false);
+
+  // Modal de suppression personnalisé
+  const [deleteModal, setDeleteModal] = useState<{
+    isOpen: boolean;
+    type: "traiteur" | "gp" | null;
+    id: string | null;
+    name: string;
+  }>({
+    isOpen: false,
+    type: null,
+    id: null,
+    name: "",
+  });
+
+  useEffect(() => {
+    if (!deleteModal.isOpen && !roleModal) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        if (deleteModal.isOpen) {
+          setDeleteModal({ isOpen: false, type: null, id: null, name: "" });
+        }
+        if (roleModal) {
+          setRoleModal(null);
+        }
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [deleteModal.isOpen, roleModal]);
 
   // Formulaire traiteur
   const [traiteurForm, setTraiteurForm] = useState({
@@ -164,13 +196,12 @@ export default function AdminDabariClient({
     setRoleLoading(true);
     setError(null);
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/admin`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             id: roleModal.profile.id,
@@ -288,11 +319,10 @@ export default function AdminDabariClient({
     }
     setLoading(true);
     setError(null);
-    const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/admin`, {
+    const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/admin`, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${token}`,
       },
       body: JSON.stringify({
         user_id: traiteurForm.user_id,
@@ -320,13 +350,12 @@ export default function AdminDabariClient({
   // ── TOGGLE TRAITEUR ──
   const handleToggleTraiteur = async (id: string, current: boolean) => {
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/admin`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             traiteur_id: id,
@@ -353,19 +382,6 @@ export default function AdminDabariClient({
     }
   };
 
-  // Modal de suppression personnalisé
-  const [deleteModal, setDeleteModal] = useState<{
-    isOpen: boolean;
-    type: "traiteur" | "gp" | null;
-    id: string | null;
-    name: string;
-  }>({
-    isOpen: false,
-    type: null,
-    id: null,
-    name: "",
-  });
-
   const openDeleteModal = (
     type: "traiteur" | "gp",
     id: string,
@@ -380,13 +396,12 @@ export default function AdminDabariClient({
     setError(null);
     try {
       if (deleteModal.type === "traiteur") {
-        const response = await fetch(
+        const response = await authFetch(
           `${process.env.NEXT_PUBLIC_API_URL}/admin`,
           {
             method: "DELETE",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ traiteur_id: deleteModal.id }),
           },
@@ -402,13 +417,12 @@ export default function AdminDabariClient({
         setTraiteurs((prev) => prev.filter((t) => t.id !== deleteModal.id));
         showSuccess("Traiteur supprimé avec succès !");
       } else if (deleteModal.type === "gp") {
-        const response = await fetch(
+        const response = await authFetch(
           `${process.env.NEXT_PUBLIC_API_URL}/admin/gp`,
           {
             method: "DELETE",
             headers: {
               "Content-Type": "application/json",
-              Authorization: `Bearer ${token}`,
             },
             body: JSON.stringify({ gp_id: deleteModal.id }),
           },
@@ -447,13 +461,12 @@ export default function AdminDabariClient({
     setError(null);
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/gp`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             user_id: gpForm.gp_id,
@@ -504,13 +517,12 @@ export default function AdminDabariClient({
   // ── TOGGLE GP ──
   const handleToggleGp = async (id: string, current: boolean) => {
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/admin/gp`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             gp_id: id,
@@ -1125,9 +1137,19 @@ export default function AdminDabariClient({
                           <div className="flex items-center gap-2 text-xs text-gray-600">
                             <Calendar size={14} className="text-[#1D6B45]" />
                             <span>
-                              Départ : {formatDate(gp.departure_date)}
+                              <strong>Départ :</strong> {formatDate(gp.departure_date)}
+                              {gp.pickup_city && ` (${gp.pickup_city})`}
                             </span>
                           </div>
+                          {gp.arrival_date && (
+                            <div className="flex items-center gap-2 text-xs text-gray-600">
+                              <Calendar size={14} className="text-[#D4870A]" />
+                              <span>
+                                <strong>Arrivée :</strong> {formatDate(gp.arrival_date)}
+                                {gp.dropoff_city && ` (${gp.dropoff_city})`}
+                              </span>
+                            </div>
+                          )}
                           <div className="flex items-center gap-2 text-xs text-gray-600">
                             <Scale size={14} className="text-[#1D6B45]" />
                             <span>{gp.available_kg} kg disponibles</span>
@@ -1387,13 +1409,29 @@ export default function AdminDabariClient({
 
       {/* Modal de confirmation de suppression sur mesure */}
       {deleteModal.isOpen && (
-        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="delete-admin-modal-title"
+          onClick={() =>
+            setDeleteModal({
+              isOpen: false,
+              type: null,
+              id: null,
+              name: "",
+            })
+          }
+          className="fixed inset-0 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4"
+          >
             <div className="w-12 h-12 rounded-2xl bg-red-50 text-red-500 flex items-center justify-center mx-auto">
               <Trash2 size={24} />
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-bold text-gray-900 mb-1">
+              <h3 id="delete-admin-modal-title" className="text-lg font-bold text-gray-900 mb-1">
                 Confirmer la suppression
               </h3>
               <p className="text-sm text-gray-500">
@@ -1414,7 +1452,7 @@ export default function AdminDabariClient({
                     name: "",
                   })
                 }
-                className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors"
+                className="flex-1 py-3 px-4 rounded-xl text-sm font-semibold bg-gray-100 text-gray-700 hover:bg-gray-200 transition-colors cursor-pointer"
               >
                 Annuler
               </button>
@@ -1432,8 +1470,17 @@ export default function AdminDabariClient({
 
       {/* Modal de confirmation de changement de rôle admin */}
       {roleModal && (
-        <div className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] animate-fadeIn">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="role-admin-modal-title"
+          onClick={() => setRoleModal(null)}
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4 z-[999] animate-fadeIn"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl p-6 max-w-sm w-full shadow-2xl border border-gray-100 space-y-4"
+          >
             <div
               className={`w-12 h-12 rounded-2xl flex items-center justify-center mx-auto ${
                 roleModal.targetIsAdmin
@@ -1448,7 +1495,7 @@ export default function AdminDabariClient({
               )}
             </div>
             <div className="text-center">
-              <h3 className="text-lg font-bold text-gray-900 mb-1">
+              <h3 id="role-admin-modal-title" className="text-lg font-bold text-gray-900 mb-1">
                 {roleModal.targetIsAdmin
                   ? "Nommer administrateur ?"
                   : "Retirer les droits administrateur ?"}

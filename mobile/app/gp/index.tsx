@@ -19,11 +19,21 @@ import { apiFetch } from "../../utils/api";
 
 const destination = [
   { label: "Tout", value: "tout" },
+  { label: "🇫🇷 France", value: "France" },
   { label: "🇸🇳 Sénégal", value: "Sénégal" },
   { label: "🇨🇮 Côte d'Ivoire", value: "Côte d'Ivoire" },
   { label: "🇨🇲 Cameroun", value: "Cameroun" },
-  { label: "🇨🇬 Congo", value: "Congo" },
   { label: "🇲🇱 Mali", value: "Mali" },
+  { label: "🇬🇳 Guinée", value: "Guinée" },
+  { label: "🇨🇬 Congo", value: "Congo" },
+  { label: "🇨🇩 RDC", value: "RDC" },
+  { label: "🇧🇫 Burkina Faso", value: "Burkina Faso" },
+  { label: "🇧🇯 Bénin", value: "Bénin" },
+  { label: "🇹🇬 Togo", value: "Togo" },
+  { label: "🇬🇦 Gabon", value: "Gabon" },
+  { label: "🇲🇦 Maroc", value: "Maroc" },
+  { label: "🇧🇪 Belgique", value: "Belgique" },
+  { label: "🇨🇦 Canada", value: "Canada" },
 ];
 
 export default function GpScreen() {
@@ -84,14 +94,20 @@ export default function GpScreen() {
     if (selectedDestination === "tout") return true;
 
     const destLower = selectedDestination.toLowerCase();
-    const arrivalCountry = (item.arrival_country || "").toLowerCase();
-    const arrivalCity = (item.arrival_city || "").toLowerCase();
+    const arrCountry = (item.arrival_country || "").toLowerCase();
+    const arrCity = (item.arrival_city || "").toLowerCase();
+    const depCountry = (item.departure_country || "").toLowerCase();
+    const depCity = (item.departure_city || "").toLowerCase();
 
     return (
-      arrivalCountry.includes(destLower) ||
-      arrivalCity.includes(destLower) ||
-      destLower.includes(arrivalCountry) ||
-      destLower.includes(arrivalCity)
+      arrCountry.includes(destLower) ||
+      arrCity.includes(destLower) ||
+      depCountry.includes(destLower) ||
+      depCity.includes(destLower) ||
+      destLower.includes(arrCountry) ||
+      destLower.includes(arrCity) ||
+      destLower.includes(depCountry) ||
+      destLower.includes(depCity)
     );
   });
 
@@ -245,28 +261,52 @@ export default function GpScreen() {
                       <Text style={styles.cityName}>{item.arrival_city}</Text>
                     </View>
 
-                    {Boolean(item.flight_type) && (
-                      <View
-                        style={[
-                          styles.flightBadge,
-                          item.flight_type === "direct"
-                            ? styles.flightBadgeDirect
-                            : styles.flightBadgeEscale,
-                        ]}
-                      >
-                        <Text
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      {item.is_delayed && (
+                        <View style={styles.delayBadge}>
+                          <Ionicons name="warning" size={11} color="#92400E" />
+                          <Text style={styles.delayBadgeText}>Retardé</Text>
+                        </View>
+                      )}
+                      {Boolean(item.flight_type) && (
+                        <View
                           style={[
-                            styles.flightBadgeText,
+                            styles.flightBadge,
                             item.flight_type === "direct"
-                              ? styles.flightBadgeTextDirect
-                              : styles.flightBadgeTextEscale,
+                              ? styles.flightBadgeDirect
+                              : styles.flightBadgeEscale,
                           ]}
                         >
-                          {item.flight_type === "direct" ? "Direct" : "Escale"}
-                        </Text>
-                      </View>
-                    )}
+                          <Text
+                            style={[
+                              styles.flightBadgeText,
+                              item.flight_type === "direct"
+                                ? styles.flightBadgeTextDirect
+                                : styles.flightBadgeTextEscale,
+                            ]}
+                          >
+                            {item.flight_type === "direct" ? "Direct" : "Escale"}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
+
+                  {item.is_delayed && (
+                    <View style={styles.delayCardNotice}>
+                      <Ionicons name="alert-circle" size={14} color="#D97706" />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.delayNoticeTitle}>
+                          Arrivée retardée{item.arrival_date ? ` • Est. ${formatDate(item.arrival_date)}` : ""}
+                        </Text>
+                        {item.delay_reason ? (
+                          <Text style={styles.delayNoticeReason} numberOfLines={2}>
+                            {item.delay_reason}
+                          </Text>
+                        ) : null}
+                      </View>
+                    </View>
+                  )}
 
                   <View style={styles.gpProfileRow}>
                     <View style={styles.gpAvatarCircle}>
@@ -305,6 +345,43 @@ export default function GpScreen() {
                         </Text>
                       </View>
                     )}
+                  </View>
+
+                  {/* Paired Trajet : Départ & Arrivée */}
+                  <View style={styles.cardRouteDetailBox}>
+                    <View style={styles.cardRouteStep}>
+                      <Ionicons
+                        name="airplane-outline"
+                        size={14}
+                        color="#1D6B45"
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cardStepTitle}>
+                          Départ : {formatDate(item.departure_date)}
+                        </Text>
+                        <Text style={styles.cardStepSub}>
+                          Dépôt : {item.pickup_city || item.departure_city}
+                          {item.pickup_address ? ` (${item.pickup_address})` : ""}
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cardRouteStep}>
+                      <Ionicons
+                        name="navigate-outline"
+                        size={14}
+                        color="#D4870A"
+                      />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.cardStepTitle}>
+                          Arrivée : {item.arrival_date ? formatDate(item.arrival_date) : "Date à confirmer"}
+                        </Text>
+                        <Text style={styles.cardStepSub}>
+                          Récupération : {item.dropoff_city || item.arrival_city}
+                          {item.dropoff_address ? ` (${item.dropoff_address})` : ""}
+                        </Text>
+                      </View>
+                    </View>
                   </View>
 
                   {/* Métriques */}
@@ -649,6 +726,43 @@ const styles = StyleSheet.create({
   flightBadgeTextEscale: {
     color: "#D4870A",
   },
+  delayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  delayBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  delayCardNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 12,
+  },
+  delayNoticeTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  delayNoticeReason: {
+    fontSize: 11,
+    color: "#B45309",
+    marginTop: 2,
+  },
   gpProfileRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -701,6 +815,32 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#1D6B45",
   },
+  /* Route Details on card */
+  cardRouteDetailBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginBottom: 12,
+    gap: 8,
+  },
+  cardRouteStep: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+  },
+  cardStepTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  cardStepSub: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
+  },
+
   cardFooter: {
     flexDirection: "row",
     alignItems: "center",

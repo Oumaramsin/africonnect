@@ -10,9 +10,11 @@ import {
   ChevronRight,
   LogIn,
   X,
+  Loader2,
 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { getValidToken, authFetch } from "@/lib/auth";
+import { verifyAddressExists } from "@/lib/addressValidation";
 
 type Props = {
   traiteurId: string;
@@ -47,6 +49,7 @@ export default function CommandeForm({
   const [success, setSuccess] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [validatingAddress, setValidatingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>({
     date_evenement: "",
@@ -66,7 +69,7 @@ export default function CommandeForm({
   };
 
   const handlePreSubmit = async () => {
-    if (!form.date_evenement || !form.nb_personnes || !form.adresse) {
+    if (!form.date_evenement || !form.nb_personnes || !form.adresse.trim()) {
       setError("Merci de remplir les champs obligatoires");
       return;
     }
@@ -82,8 +85,29 @@ export default function CommandeForm({
       return;
     }
 
+    setValidatingAddress(true);
     setError(null);
-    setShowConfirmModal(true);
+
+    try {
+      const check = await verifyAddressExists(form.adresse.trim());
+      if (!check.isValid) {
+        setError(
+          check.error ||
+            "L'adresse indiquée n'a pas été reconnue. Veuillez sélectionner une adresse existante dans les suggestions."
+        );
+        setValidatingAddress(false);
+        return;
+      }
+      if (check.normalizedAddress && check.normalizedAddress !== form.adresse.trim()) {
+        updateField("adresse", check.normalizedAddress);
+      }
+      setShowConfirmModal(true);
+    } catch (err: any) {
+      console.warn("Erreur validation adresse:", err);
+      setShowConfirmModal(true);
+    } finally {
+      setValidatingAddress(false);
+    }
   };
 
   const confirmOrder = async () => {
@@ -295,13 +319,23 @@ export default function CommandeForm({
               onClick={handlePreSubmit}
               disabled={
                 loading ||
+                validatingAddress ||
                 !form.date_evenement ||
                 !form.nb_personnes ||
                 !form.adresse
               }
-              className="w-full bg-[#1D6B45] text-white py-3.5 rounded-2xl font-bold text-sm hover:bg-[#0F4A30] transition-colors shadow-sm disabled:opacity-60"
+              className="w-full bg-[#1D6B45] text-white py-3.5 rounded-2xl font-bold text-sm hover:bg-[#0F4A30] transition-colors shadow-sm disabled:opacity-60 flex items-center justify-center gap-2"
             >
-              {loading ? "Envoi en cours..." : "Envoyer ma demande de devis"}
+              {validatingAddress ? (
+                <>
+                  <Loader2 size={16} className="animate-spin" />
+                  Vérification de l'adresse...
+                </>
+              ) : loading ? (
+                "Envoi en cours..."
+              ) : (
+                "Envoyer ma demande de devis"
+              )}
             </button>
 
             {whatsapp && (

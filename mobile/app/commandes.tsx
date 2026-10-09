@@ -17,6 +17,7 @@ import { useRouter, useFocusEffect } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
 import { apiFetch } from "../utils/api";
+import { TraiteurRequest, TraiteurProposal, formatWhatsAppUrl } from "../utils/types/traiteur";
 
 type CommandeTraiteur = {
   id: string;
@@ -74,6 +75,9 @@ type GpRequest = {
   arrival_city?: string | null;
   arrival_country?: string | null;
   departure_date?: string | null;
+  arrival_date?: string | null;
+  is_delayed?: boolean | null;
+  delay_reason?: string | null;
   created_at: string;
   listing?: {
     departure_city: string;
@@ -81,8 +85,13 @@ type GpRequest = {
     departure_country: string;
     arrival_country: string;
     departure_date: string;
+    arrival_date?: string | null;
+    pickup_city?: string | null;
+    dropoff_city?: string | null;
     gp_id: string;
     is_active?: boolean | null;
+    is_delayed?: boolean | null;
+    delay_reason?: string | null;
   } | null;
   gp_listings?: {
     departure_city: string;
@@ -90,14 +99,19 @@ type GpRequest = {
     departure_country: string;
     arrival_country: string;
     departure_date: string;
+    arrival_date?: string | null;
+    pickup_city?: string | null;
+    dropoff_city?: string | null;
     gp_id: string;
     is_active?: boolean | null;
+    is_delayed?: boolean | null;
+    delay_reason?: string | null;
   } | null;
   sender?: { full_name: string; phone: string | null } | null;
   profiles?: { full_name: string; phone: string | null } | null;
 };
 
-type Tab = "envoyees" | "recues";
+type Tab = "envoyees" | "receptions" | "recues";
 type ServiceFilter = "tout" | "traiteur" | "gp";
 
 export default function CommandeScreen() {
@@ -127,6 +141,11 @@ export default function CommandeScreen() {
   const [ordersEnvoyees, setOrdersEnvoyees] = useState<OrderPlat[]>([]);
   const [gpEnvoyees, setGpEnvoyees] = useState<GpRequest[]>([]);
 
+  // Mes recherches de traiteur & propositions reçues
+  const [myTraiteurRequests, setMyTraiteurRequests] = useState<TraiteurRequest[]>([]);
+  const [proposalLoading, setProposalLoading] = useState<string | null>(null);
+  const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
+
   const [commandesRecues, setCommandesRecues] = useState<CommandeTraiteur[]>(
     [],
   );
@@ -152,6 +171,13 @@ export default function CommandeScreen() {
     router.push({
       pathname: "/commande/edit-gp",
       params: { id: gp.id },
+    });
+  };
+
+  const openEditTraiteurRequest = (req: TraiteurRequest) => {
+    router.push({
+      pathname: "/commande/edit-traiteur-request",
+      params: { id: req.id },
     });
   };
 
@@ -261,7 +287,9 @@ export default function CommandeScreen() {
       setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
       setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
       setGpEnvoyees(sortOrdersByPendingFirst(profile.gp_requests || []));
-      // ── 2. Statut & Commandes reçues (Traiteur) ──
+      // ── 2. Recherches de traiteur (Client) & Devis reçus ──
+      setMyTraiteurRequests(profile.traiteur_requests || []);
+      // ── 3. Statut & Commandes reçues (Traiteur) ──
       const allTraiteurs = profile.traiteurs || [];
       if (profile.role === "traiteur" || allTraiteurs.length > 0) {
         setIsTraiteur(true);
@@ -272,7 +300,7 @@ export default function CommandeScreen() {
         setCommandesRecues(sortOrdersByPendingFirst(allCommandes));
         setOrdersRecues(sortOrdersByPendingFirst(allOrders));
       }
-      // ── 3. Statut & Demandes reçues (GP Voyageur) ──
+      // ── 4. Statut & Demandes reçues (GP Voyageur) ──
       const gpListings = profile.gp_listings || [];
       if (gpListings.length > 0) {
         setIsGp(true);
@@ -288,6 +316,84 @@ export default function CommandeScreen() {
       setLoading(false);
     }
   }
+
+  const handleAcceptProposal = async (prop: TraiteurProposal) => {
+    setProposalLoading(prop.id);
+    try {
+      const res = await apiFetch(`/traiteur/proposals/${prop.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "acceptee" }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erreur acceptation proposition");
+      }
+      Alert.alert(
+        "Offre acceptée ! 🎉",
+        "Vous avez retenu cette offre. Vous pouvez contacter le traiteur par WhatsApp pour organiser votre événement.",
+      );
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Erreur", e.message || "Erreur");
+    } finally {
+      setProposalLoading(null);
+    }
+  };
+
+  const handleRejectProposal = async (prop: TraiteurProposal) => {
+    setProposalLoading(prop.id);
+    try {
+      const res = await apiFetch(`/traiteur/proposals/${prop.id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "refusee" }),
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.message || "Erreur refus proposition");
+      }
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Erreur", e.message || "Erreur");
+    } finally {
+      setProposalLoading(null);
+    }
+  };
+
+  const handleCancelTraiteurRequest = (requestId: string) => {
+    Alert.alert(
+      "Annuler l'annonce",
+      "Voulez-vous vraiment annuler cette recherche de traiteur ?",
+      [
+        { text: "Non", style: "cancel" },
+        {
+          text: "Oui, annuler",
+          style: "destructive",
+          onPress: async () => {
+            setCancellingRequestId(requestId);
+            try {
+              const res = await apiFetch(
+                `/traiteur/requests/${requestId}/cancel`,
+                {
+                  method: "DELETE",
+                },
+              );
+              if (!res.ok) {
+                const err = await res.json();
+                throw new Error(err.message || "Erreur");
+              }
+              await loadAll();
+            } catch (e: any) {
+              Alert.alert("Erreur", e.message || "Erreur");
+            } finally {
+              setCancellingRequestId(null);
+            }
+          },
+        },
+      ],
+    );
+  };
 
   const renderStatusBadge = (status: string) => {
     switch (status) {
@@ -445,6 +551,11 @@ export default function CommandeScreen() {
     ).length +
     gpRecues.filter((r) => r.status === "pending" || r.status === "en_attente")
       .length;
+  const totalPendingProposals = myTraiteurRequests.reduce(
+    (acc, r) =>
+      acc + (r.proposals?.filter((p) => p.status === "pending").length || 0),
+    0,
+  );
 
   if (loading) {
     return (
@@ -464,10 +575,10 @@ export default function CommandeScreen() {
         <View style={styles.headerCard}>
           <View style={styles.headerTitleRow}>
             <Ionicons name="cube-outline" size={24} color="#FFFFFF" />
-            <Text style={styles.headerTitle}>Commandes</Text>
+            <Text style={styles.headerTitle}>Commandes & Réceptions</Text>
           </View>
 
-          {/* Onglets Principaux (Mes envois / Reçues) */}
+          {/* Onglets Principaux (Mes commandes / Devis & Annonces / Espace Pro) */}
           <View style={styles.tabsRow}>
             <TouchableOpacity
               style={[
@@ -492,8 +603,43 @@ export default function CommandeScreen() {
                     : styles.tabBtnTextInactive,
                 ]}
               >
-                Mes envois
+                Mes commandes
               </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.tabBtn,
+                tab === "receptions"
+                  ? styles.tabBtnActive
+                  : styles.tabBtnInactive,
+              ]}
+              onPress={() => setTab("receptions")}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name="sparkles-outline"
+                size={16}
+                color={tab === "receptions" ? "#1D6B45" : "#FFFFFF"}
+              />
+              <Text
+                style={[
+                  styles.tabBtnText,
+                  tab === "receptions"
+                    ? styles.tabBtnTextActive
+                    : styles.tabBtnTextInactive,
+                ]}
+              >
+                Devis & Annonces
+              </Text>
+
+              {totalPendingProposals > 0 && (
+                <View style={styles.tabBadgeAmber}>
+                  <Text style={styles.tabBadgeAmberText}>
+                    {totalPendingProposals}
+                  </Text>
+                </View>
+              )}
             </TouchableOpacity>
 
             {(isTraiteur || isGp) && (
@@ -508,7 +654,7 @@ export default function CommandeScreen() {
                 activeOpacity={0.8}
               >
                 <Ionicons
-                  name="archive-outline"
+                  name="briefcase-outline"
                   size={16}
                   color={tab === "recues" ? "#1D6B45" : "#FFFFFF"}
                 />
@@ -520,7 +666,7 @@ export default function CommandeScreen() {
                       : styles.tabBtnTextInactive,
                   ]}
                 >
-                  Reçues
+                  Espace Pro
                 </Text>
 
                 {pendingRecues > 0 && (
@@ -532,12 +678,13 @@ export default function CommandeScreen() {
             )}
           </View>
 
-          {/* Sous-filtres Traiteur / GP */}
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.serviceFiltersRow}
-          >
+          {/* Sous-filtres Traiteur / GP (masqués sur l'onglet Devis & Annonces) */}
+          {tab !== "receptions" && (
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.serviceFiltersRow}
+            >
             {[
               { id: "tout", label: "Tout voir" },
               { id: "traiteur", label: "Traiteur & Plats" },
@@ -566,7 +713,8 @@ export default function CommandeScreen() {
                 </Text>
               </TouchableOpacity>
             ))}
-          </ScrollView>
+            </ScrollView>
+          )}
         </View>
 
         {/* Corps Principal de la Liste des Commandes */}
@@ -741,6 +889,19 @@ export default function CommandeScreen() {
                                 <TouchableOpacity
                                   style={styles.whatsAppBtn}
                                   activeOpacity={0.85}
+                                  onPress={() => {
+                                    const traiteurInfo = cmd.traiteur || cmd.traiteurs;
+                                    const phone = traiteurInfo?.whatsapp;
+                                    const url = formatWhatsAppUrl(
+                                      phone,
+                                      `Bonjour ${traiteurInfo?.name || ""}, je fais suite à mon devis accepté sur Dabari.`
+                                    );
+                                    if (url) {
+                                      Linking.openURL(url);
+                                    } else {
+                                      Alert.alert("Contact WhatsApp", "Le numéro WhatsApp de ce traiteur n'est pas renseigné.");
+                                    }
+                                  }}
                                 >
                                   <Ionicons
                                     name="logo-whatsapp"
@@ -883,6 +1044,42 @@ export default function CommandeScreen() {
                                   </TouchableOpacity>
                                 </View>
                               )}
+
+                              {(ord.status === "accepted" ||
+                                ord.status === "acceptee" ||
+                                ord.status === "en_cours" ||
+                                ord.status === "livraison") && (
+                                <TouchableOpacity
+                                  style={styles.whatsAppBtn}
+                                  activeOpacity={0.85}
+                                  onPress={() => {
+                                    const traiteurInfo =
+                                      ord.traiteur || ord.traiteurs;
+                                    const phone = traiteurInfo?.whatsapp;
+                                    const url = formatWhatsAppUrl(
+                                      phone,
+                                      `Bonjour ${traiteurInfo?.name || ""}, je vous contacte concernant ma commande de plats sur Dabari.`
+                                    );
+                                    if (url) {
+                                      Linking.openURL(url);
+                                    } else {
+                                      Alert.alert(
+                                        "Contact WhatsApp",
+                                        "Le numéro WhatsApp de ce traiteur n'est pas renseigné."
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Ionicons
+                                    name="logo-whatsapp"
+                                    size={16}
+                                    color="#FFFFFF"
+                                  />
+                                  <Text style={styles.whatsAppBtnText}>
+                                    Contacter le traiteur
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
                             </View>
                           );
                         })}
@@ -910,6 +1107,10 @@ export default function CommandeScreen() {
                             gp.departure_city || listing?.departure_city;
                           const arrCity =
                             gp.arrival_city || listing?.arrival_city;
+                          const isDelayed = Boolean(gp.is_delayed || listing?.is_delayed);
+                          const delayReason = gp.delay_reason || listing?.delay_reason;
+                          const arrivalDate = gp.arrival_date || listing?.arrival_date;
+
                           return (
                             <View key={gp.id} style={styles.gpCard}>
                               <View style={styles.orderCardHeader}>
@@ -923,10 +1124,33 @@ export default function CommandeScreen() {
                                     Demandé le {formatDate(gp.created_at)}
                                   </Text>
                                 </View>
-                                {renderStatusBadge(gp.status)}
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                  {isDelayed && (
+                                    <View style={styles.delayBadge}>
+                                      <Ionicons name="warning" size={11} color="#92400E" />
+                                      <Text style={styles.delayBadgeText}>Retardé</Text>
+                                    </View>
+                                  )}
+                                  {renderStatusBadge(gp.status)}
+                                </View>
                               </View>
 
                               <View style={styles.orderDetailsBox}>
+                                {isDelayed && (
+                                  <View style={styles.delayCardNotice}>
+                                    <Ionicons name="alert-circle" size={15} color="#D97706" />
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.delayNoticeTitle}>
+                                        Arrivée retardée{arrivalDate ? ` • Est. ${formatDate(arrivalDate)}` : ""}
+                                      </Text>
+                                      {delayReason ? (
+                                        <Text style={styles.delayNoticeReason} numberOfLines={2}>
+                                          {delayReason}
+                                        </Text>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                )}
                                 <View style={styles.detailRow}>
                                   <Ionicons
                                     name="scale-outline"
@@ -948,6 +1172,34 @@ export default function CommandeScreen() {
                                     {gp.content_desc}
                                   </Text>
                                 </View>
+
+                                {Boolean(gp.departure_date || listing?.departure_date) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="airplane-outline"
+                                      size={15}
+                                      color="#D4870A"
+                                    />
+                                    <Text style={[styles.detailText, { flex: 1 }]}>
+                                      Départ : {formatDate(gp.departure_date || listing?.departure_date)}
+                                      {listing?.pickup_city ? ` (Dépôt : ${listing.pickup_city})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
+
+                                {Boolean(gp.arrival_date || listing?.arrival_date) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="navigate-outline"
+                                      size={15}
+                                      color="#D4870A"
+                                    />
+                                    <Text style={[styles.detailText, { flex: 1 }]}>
+                                      Arrivée : {formatDate(gp.arrival_date || listing?.arrival_date)}
+                                      {listing?.dropoff_city ? ` (Récup : ${listing.dropoff_city})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
 
                                 {gp.status === "pending" && (
                                   <View style={styles.clientActionRow}>
@@ -1007,6 +1259,383 @@ export default function CommandeScreen() {
             </>
           )}
 
+          {/* SECTION DEVIS & ANNONCES (RÉCEPTIONS) */}
+          {tab === "receptions" && (
+            <View style={{ gap: 14 }}>
+              {/* CTA Publier une recherche */}
+              <TouchableOpacity
+                style={styles.receptionCtaBanner}
+                onPress={() => router.push("/traiteur/demande")}
+                activeOpacity={0.88}
+              >
+                <View style={{ flex: 1, marginRight: 10 }}>
+                  <View style={styles.receptionCtaBadge}>
+                    <Ionicons name="sparkles" size={13} color="#FDE68A" />
+                    <Text style={styles.receptionCtaBadgeText}>
+                      Service sur-mesure
+                    </Text>
+                  </View>
+                  <Text style={styles.receptionCtaTitle}>
+                    Vous cherchez un traiteur ?
+                  </Text>
+                  <Text style={styles.receptionCtaDesc}>
+                    Publiez votre événement. Les traiteurs partenaires vous
+                    enverront directement leurs devis personnalisés !
+                  </Text>
+                </View>
+                <Ionicons name="add-circle" size={32} color="#FFFFFF" />
+              </TouchableOpacity>
+
+              {myTraiteurRequests.length === 0 ? (
+                <View style={styles.emptyCard}>
+                  <View
+                    style={[
+                      styles.emptyIconContainer,
+                      { backgroundColor: "#E8F5E9" },
+                    ]}
+                  >
+                    <Ionicons
+                      name="sparkles-outline"
+                      size={32}
+                      color="#1D6B45"
+                    />
+                  </View>
+                  <Text style={styles.emptyTitle}>Aucune annonce publiée</Text>
+                  <Text style={styles.emptySubtitle}>
+                    Vous n&apos;avez pas encore publié de recherche de traiteur.
+                    Décrivez vos envies culinaires pour recevoir des devis !
+                  </Text>
+                  <TouchableOpacity
+                    style={styles.emptyButton}
+                    onPress={() => router.push("/traiteur/demande")}
+                    activeOpacity={0.85}
+                  >
+                    <Ionicons name="add" size={16} color="#FFFFFF" />
+                    <Text style={styles.emptyButtonText}>
+                      Publier une annonce
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              ) : (
+                myTraiteurRequests.map((req) => {
+                  const proposals = req.proposals || [];
+                  const isOpen = req.status === "open";
+                  const isFulfilled = req.status === "fulfilled";
+                  const isCancelled = req.status === "cancelled";
+
+                  return (
+                    <View key={req.id} style={styles.orderCard}>
+                      {/* Top Header */}
+                      <View style={styles.orderCardHeader}>
+                        <View style={{ flex: 1 }}>
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 6,
+                              marginBottom: 4,
+                            }}
+                          >
+                            <View style={styles.eventTypeBadge}>
+                              <Text style={styles.eventTypeBadgeText}>
+                                {req.event_type}
+                              </Text>
+                            </View>
+                            {isOpen && (
+                              <View style={styles.badgeSuccessSm}>
+                                <Text style={styles.badgeSuccessSmText}>
+                                  🟢 Active
+                                </Text>
+                              </View>
+                            )}
+                            {isFulfilled && (
+                              <View style={styles.badgeBlueSm}>
+                                <Text style={styles.badgeBlueSmText}>
+                                  🎉 Pourvue
+                                </Text>
+                              </View>
+                            )}
+                            {isCancelled && (
+                              <View style={styles.badgeGraySm}>
+                                <Text style={styles.badgeGraySmText}>
+                                  Annulée
+                                </Text>
+                              </View>
+                            )}
+                          </View>
+                          <Text style={styles.providerName}>
+                            {req.title ||
+                              `Recherche de traiteur - ${req.event_type}`}
+                          </Text>
+                          <Text style={styles.orderDate}>
+                            Publié le {formatDate(req.created_at)}
+                          </Text>
+                        </View>
+
+                        {isOpen && (
+                          <View
+                            style={{
+                              flexDirection: "row",
+                              gap: 6,
+                              alignItems: "center",
+                            }}
+                          >
+                            <TouchableOpacity
+                              onPress={() => openEditTraiteurRequest(req)}
+                              style={styles.editRequestBtn}
+                              activeOpacity={0.7}
+                            >
+                              <Ionicons
+                                name="create-outline"
+                                size={13}
+                                color="#1D6B45"
+                              />
+                              <Text style={styles.editRequestBtnText}>
+                                Modifier
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              onPress={() =>
+                                handleCancelTraiteurRequest(req.id)
+                              }
+                              style={styles.cancelRequestBtn}
+                              activeOpacity={0.7}
+                            >
+                              <Text style={styles.cancelRequestBtnText}>
+                                {cancellingRequestId === req.id
+                                  ? "..."
+                                  : "Annuler"}
+                              </Text>
+                            </TouchableOpacity>
+                          </View>
+                        )}
+                      </View>
+
+                      {/* Details Box */}
+                      <View style={styles.orderDetailsBox}>
+                        <View style={styles.detailRow}>
+                          <Ionicons
+                            name="calendar-outline"
+                            size={15}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.detailText}>
+                            Date : {formatDate(req.event_date)}
+                          </Text>
+                        </View>
+                        <View style={styles.detailRow}>
+                          <Ionicons
+                            name="people-outline"
+                            size={15}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.detailText}>
+                            Invités :{" "}
+                            {req.guest_count
+                              ? `${req.guest_count} pers.`
+                              : "Non précisé"}
+                          </Text>
+                        </View>
+                        <View style={styles.detailRow}>
+                          <Ionicons
+                            name="location-outline"
+                            size={15}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.detailText} numberOfLines={1}>
+                            Lieu : {req.location}
+                          </Text>
+                        </View>
+                        {req.budget && (
+                          <View style={styles.detailRow}>
+                            <Ionicons
+                              name="cash-outline"
+                              size={15}
+                              color="#1D6B45"
+                            />
+                            <Text style={styles.detailText}>
+                              Budget estimé : {req.budget} €
+                            </Text>
+                          </View>
+                        )}
+
+                        <View style={styles.foodPrefBox}>
+                          <Text style={styles.foodPrefLabel}>
+                            Nourriture souhaitée :
+                          </Text>
+                          <Text style={styles.foodPrefText}>
+                            {req.food_preferences}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {/* Proposals Section */}
+                      <View style={styles.proposalsContainer}>
+                        <View style={styles.proposalsHeaderRow}>
+                          <Ionicons
+                            name="chatbubbles-outline"
+                            size={16}
+                            color="#1D6B45"
+                          />
+                          <Text style={styles.proposalsHeaderTitle}>
+                            Offres des traiteurs ({proposals.length})
+                          </Text>
+                        </View>
+
+                        {proposals.length === 0 ? (
+                          <View style={styles.emptyProposalsBox}>
+                            <Ionicons
+                              name="time-outline"
+                              size={18}
+                              color="#D97706"
+                            />
+                            <Text style={styles.emptyProposalsText}>
+                              En attente des premières propositions des
+                              traiteurs...
+                            </Text>
+                          </View>
+                        ) : (
+                          proposals.map((prop) => {
+                            const traiteur = prop.traiteur;
+                            const isPending = prop.status === "pending";
+                            const isAccepted = prop.status === "accepted";
+                            const isRejected = prop.status === "rejected";
+                            const whatsappNum =
+                              traiteur?.whatsapp ||
+                              traiteur?.profile?.phone;
+                            const waUrl = formatWhatsAppUrl(
+                              whatsappNum,
+                              `Bonjour ${traiteur?.name || ""}, je fais suite à votre offre sur Dabari pour mon événement (${req.event_type}) à ${prop.proposed_price}€.`
+                            );
+
+                            return (
+                              <View
+                                key={prop.id}
+                                style={[
+                                  styles.proposalCard,
+                                  isAccepted && styles.proposalCardAccepted,
+                                  isRejected && styles.proposalCardRejected,
+                                ]}
+                              >
+                                <View style={styles.proposalTopRow}>
+                                  <View style={{ flex: 1 }}>
+                                    <Text style={styles.proposalTraiteurName}>
+                                      {traiteur?.name || "Traiteur"}
+                                    </Text>
+                                    <Text style={styles.proposalDate}>
+                                      Reçu le {formatDate(prop.created_at)}
+                                    </Text>
+                                  </View>
+                                  <View style={{ alignItems: "flex-end" }}>
+                                    <Text style={styles.proposalPrice}>
+                                      {prop.proposed_price} €
+                                    </Text>
+                                    {isAccepted && (
+                                      <Text
+                                        style={styles.proposalBadgeAccepted}
+                                      >
+                                        Retenue
+                                      </Text>
+                                    )}
+                                    {isRejected && (
+                                      <Text
+                                        style={styles.proposalBadgeRejected}
+                                      >
+                                        Déclinée
+                                      </Text>
+                                    )}
+                                  </View>
+                                </View>
+
+                                <View style={styles.proposalMessageBox}>
+                                  <Text style={styles.proposalMessageText}>
+                                    {prop.message}
+                                  </Text>
+                                </View>
+
+                                {/* Actions */}
+                                <View style={styles.proposalActionsRow}>
+                                  {waUrl && (
+                                    <TouchableOpacity
+                                      style={styles.proposalWaBtn}
+                                      onPress={() => Linking.openURL(waUrl)}
+                                      activeOpacity={0.8}
+                                    >
+                                      <Ionicons
+                                        name="logo-whatsapp"
+                                        size={15}
+                                        color="#1D6B45"
+                                      />
+                                      <Text style={styles.proposalWaBtnText}>
+                                        WhatsApp
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )}
+
+                                  {isPending && isOpen && (
+                                    <View
+                                      style={{
+                                        flexDirection: "row",
+                                        gap: 8,
+                                        marginLeft: "auto",
+                                      }}
+                                    >
+                                      <TouchableOpacity
+                                        style={styles.proposalRejectBtn}
+                                        disabled={proposalLoading === prop.id}
+                                        onPress={() =>
+                                          handleRejectProposal(prop)
+                                        }
+                                        activeOpacity={0.8}
+                                      >
+                                        <Text
+                                          style={
+                                            styles.proposalRejectBtnText
+                                          }
+                                        >
+                                          Décliner
+                                        </Text>
+                                      </TouchableOpacity>
+
+                                      <TouchableOpacity
+                                        style={styles.proposalAcceptBtn}
+                                        disabled={proposalLoading === prop.id}
+                                        onPress={() =>
+                                          handleAcceptProposal(prop)
+                                        }
+                                        activeOpacity={0.85}
+                                      >
+                                        <Ionicons
+                                          name="checkmark"
+                                          size={14}
+                                          color="#FFFFFF"
+                                        />
+                                        <Text
+                                          style={
+                                            styles.proposalAcceptBtnText
+                                          }
+                                        >
+                                          {proposalLoading === prop.id
+                                            ? "..."
+                                            : "Accepter"}
+                                        </Text>
+                                      </TouchableOpacity>
+                                    </View>
+                                  )}
+                                </View>
+                              </View>
+                            );
+                          })
+                        )}
+                      </View>
+                    </View>
+                  );
+                })
+              )}
+            </View>
+          )}
+
           {/* SECTION REÇUES */}
           {tab === "recues" && (
             <>
@@ -1054,10 +1683,10 @@ export default function CommandeScreen() {
                         {commandesRecues.map((cmd) => {
                           const clientInfo = cmd.client || cmd.profiles;
                           const clientPhone = clientInfo?.phone || "";
-                          const waNumber = clientPhone
-                            .replace(/\+/g, "")
-                            .replace(/\s/g, "");
-                          const waUrl = `https://wa.me/${waNumber}?text=Bonjour%2C%20je%20fais%20suite%20%C3%A0%20votre%20demande%20de%20devis%20sur%20Dabari.`;
+                          const waUrl = formatWhatsAppUrl(
+                            clientPhone,
+                            "Bonjour, je fais suite à votre demande de devis sur Dabari."
+                          );
 
                           return (
                             <View key={cmd.id} style={styles.orderCard}>
@@ -1170,10 +1799,10 @@ export default function CommandeScreen() {
 
                               {(cmd.statut === "acceptee" ||
                                 cmd.statut === "accepted") &&
-                                waNumber !== "" && (
+                                Boolean(waUrl) && (
                                   <TouchableOpacity
                                     style={styles.whatsAppBtn}
-                                    onPress={() => Linking.openURL(waUrl)}
+                                    onPress={() => Linking.openURL(waUrl!)}
                                     activeOpacity={0.85}
                                   >
                                     <Ionicons
@@ -1307,6 +1936,40 @@ export default function CommandeScreen() {
                                   </TouchableOpacity>
                                 </View>
                               )}
+
+                              {(ord.status === "acceptee" ||
+                                ord.status === "accepted") && (
+                                <TouchableOpacity
+                                  style={styles.whatsAppBtn}
+                                  activeOpacity={0.85}
+                                  onPress={() => {
+                                    const clientInfo =
+                                      ord.client || ord.profiles;
+                                    const phone = clientInfo?.phone;
+                                    const url = formatWhatsAppUrl(
+                                      phone,
+                                      `Bonjour ${clientInfo?.full_name || ""}, je prépare votre commande de plats sur Dabari.`
+                                    );
+                                    if (url) {
+                                      Linking.openURL(url);
+                                    } else {
+                                      Alert.alert(
+                                        "Contact WhatsApp",
+                                        "Le numéro WhatsApp de ce client n'est pas renseigné."
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Ionicons
+                                    name="logo-whatsapp"
+                                    size={16}
+                                    color="#FFFFFF"
+                                  />
+                                  <Text style={styles.whatsAppBtnText}>
+                                    Contacter le client sur WhatsApp
+                                  </Text>
+                                </TouchableOpacity>
+                              )}
                             </View>
                           );
                         })}
@@ -1335,6 +1998,11 @@ export default function CommandeScreen() {
                             gp.departure_city || listing?.departure_city;
                           const arrCity =
                             gp.arrival_city || listing?.arrival_city;
+                          const isDelayed = Boolean(gp.is_delayed || listing?.is_delayed);
+                          const delayReason = gp.delay_reason || listing?.delay_reason;
+                          const arrivalDate = gp.arrival_date || listing?.arrival_date;
+                          const senderInfo = gp.sender || gp.profiles;
+
                           return (
                             <View key={gp.id} style={styles.gpCard}>
                               <View style={styles.orderCardHeader}>
@@ -1346,12 +2014,36 @@ export default function CommandeScreen() {
                                   </Text>
                                   <Text style={styles.orderDate}>
                                     Demandé le {formatDate(gp.created_at)}
+                                    {senderInfo?.full_name ? ` par ${senderInfo.full_name}` : ""}
                                   </Text>
                                 </View>
-                                {renderStatusBadge(gp.status)}
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                                  {isDelayed && (
+                                    <View style={styles.delayBadge}>
+                                      <Ionicons name="warning" size={11} color="#92400E" />
+                                      <Text style={styles.delayBadgeText}>Retardé</Text>
+                                    </View>
+                                  )}
+                                  {renderStatusBadge(gp.status)}
+                                </View>
                               </View>
 
                               <View style={styles.orderDetailsBox}>
+                                {isDelayed && (
+                                  <View style={styles.delayCardNotice}>
+                                    <Ionicons name="alert-circle" size={15} color="#D97706" />
+                                    <View style={{ flex: 1 }}>
+                                      <Text style={styles.delayNoticeTitle}>
+                                        Arrivée retardée{arrivalDate ? ` • Est. ${formatDate(arrivalDate)}` : ""}
+                                      </Text>
+                                      {delayReason ? (
+                                        <Text style={styles.delayNoticeReason} numberOfLines={2}>
+                                          {delayReason}
+                                        </Text>
+                                      ) : null}
+                                    </View>
+                                  </View>
+                                )}
                                 <View style={styles.detailRow}>
                                   <Ionicons
                                     name="scale-outline"
@@ -1373,6 +2065,34 @@ export default function CommandeScreen() {
                                     {gp.content_desc}
                                   </Text>
                                 </View>
+
+                                {Boolean(gp.departure_date || listing?.departure_date) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="airplane-outline"
+                                      size={15}
+                                      color="#D4870A"
+                                    />
+                                    <Text style={[styles.detailText, { flex: 1 }]}>
+                                      Départ : {formatDate(gp.departure_date || listing?.departure_date)}
+                                      {listing?.pickup_city ? ` (Dépôt : ${listing.pickup_city})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
+
+                                {Boolean(gp.arrival_date || listing?.arrival_date) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="navigate-outline"
+                                      size={15}
+                                      color="#D4870A"
+                                    />
+                                    <Text style={[styles.detailText, { flex: 1 }]}>
+                                      Arrivée : {formatDate(gp.arrival_date || listing?.arrival_date)}
+                                      {listing?.dropoff_city ? ` (Récup : ${listing.dropoff_city})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
 
                               {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
@@ -1413,6 +2133,38 @@ export default function CommandeScreen() {
                                     </Text>
                                   </TouchableOpacity>
                                 </View>
+                              )}
+
+                              {(gp.status === "acceptee" ||
+                                gp.status === "accepted") && (
+                                <TouchableOpacity
+                                  style={styles.whatsAppBtn}
+                                  activeOpacity={0.85}
+                                  onPress={() => {
+                                    const senderPhone = senderInfo?.phone;
+                                    const url = formatWhatsAppUrl(
+                                      senderPhone,
+                                      `Bonjour ${senderInfo?.full_name || ""}, je vous contacte concernant votre colis GP (${gp.weight_kg} kg) sur Dabari.`
+                                    );
+                                    if (url) {
+                                      Linking.openURL(url);
+                                    } else {
+                                      Alert.alert(
+                                        "Contact WhatsApp",
+                                        "Le numéro WhatsApp de cet expéditeur n'est pas renseigné."
+                                      );
+                                    }
+                                  }}
+                                >
+                                  <Ionicons
+                                    name="logo-whatsapp"
+                                    size={16}
+                                    color="#FFFFFF"
+                                  />
+                                  <Text style={styles.whatsAppBtnText}>
+                                    Contacter l'expéditeur sur WhatsApp
+                                  </Text>
+                                </TouchableOpacity>
                               )}
                             </View>
                           );
@@ -1641,6 +2393,24 @@ const styles = StyleSheet.create({
   },
   tabBadgeRedText: {
     color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  tabBadgeAmber: {
+    position: "absolute",
+    top: -4,
+    right: 8,
+    backgroundColor: "#F59E0B",
+    borderRadius: 10,
+    minWidth: 18,
+    height: 18,
+    justifyContent: "center",
+    alignItems: "center",
+    borderWidth: 1.5,
+    borderColor: "#165034",
+  },
+  tabBadgeAmberText: {
+    color: "#0F172A",
     fontSize: 10,
     fontWeight: "900",
   },
@@ -2215,6 +2985,337 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
+  },
+
+  /* Reception / Devis & Annonces styles */
+  receptionCtaBanner: {
+    backgroundColor: "#1D6B45",
+    borderRadius: 20,
+    padding: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#1D6B45",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  receptionCtaBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+    marginBottom: 6,
+    gap: 4,
+  },
+  receptionCtaBadgeText: {
+    color: "#FDE68A",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  receptionCtaTitle: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 4,
+  },
+  receptionCtaDesc: {
+    color: "#E2E8F0",
+    fontSize: 12,
+    lineHeight: 16,
+  },
+  eventTypeBadge: {
+    backgroundColor: "#E8F5E9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  eventTypeBadgeText: {
+    color: "#1D6B45",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  badgeSuccessSm: {
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  badgeSuccessSmText: {
+    color: "#065F46",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  badgeBlueSm: {
+    backgroundColor: "#EFF6FF",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+  },
+  badgeBlueSmText: {
+    color: "#1E40AF",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  badgeGraySm: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  badgeGraySmText: {
+    color: "#64748B",
+    fontSize: 10,
+    fontWeight: "600",
+  },
+  editRequestBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    backgroundColor: "#ECFDF5",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+  },
+  editRequestBtnText: {
+    color: "#1D6B45",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  cancelRequestBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    backgroundColor: "#FEF2F2",
+  },
+  cancelRequestBtnText: {
+    color: "#DC2626",
+    fontSize: 11,
+    fontWeight: "600",
+  },
+  foodPrefBox: {
+    backgroundColor: "#F0FDF4",
+    padding: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
+    marginTop: 6,
+  },
+  foodPrefLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#166534",
+    marginBottom: 2,
+  },
+  foodPrefText: {
+    fontSize: 12,
+    color: "#1E293B",
+    lineHeight: 16,
+  },
+  proposalsContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  proposalsHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 10,
+  },
+  proposalsHeaderTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  emptyProposalsBox: {
+    backgroundColor: "#FFFBEB",
+    borderRadius: 12,
+    padding: 12,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  emptyProposalsText: {
+    fontSize: 12,
+    color: "#92400E",
+    flex: 1,
+    lineHeight: 16,
+  },
+  proposalCard: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  proposalCardAccepted: {
+    backgroundColor: "#F0FDF4",
+    borderColor: "#86EFAC",
+  },
+  proposalCardRejected: {
+    backgroundColor: "#F1F5F9",
+    borderColor: "#CBD5E1",
+    opacity: 0.6,
+  },
+  proposalTopRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+  },
+  proposalTraiteurName: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  proposalDate: {
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 1,
+  },
+  proposalPrice: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#1D6B45",
+  },
+  proposalBadgeAccepted: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#166534",
+    backgroundColor: "#DCFCE7",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 2,
+  },
+  proposalBadgeRejected: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748B",
+    backgroundColor: "#E2E8F0",
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 2,
+  },
+  proposalMessageBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 10,
+    padding: 8,
+    marginVertical: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  proposalMessageText: {
+    fontSize: 12,
+    color: "#334155",
+    lineHeight: 16,
+  },
+  proposalActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 4,
+  },
+  proposalWaBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  proposalWaBtnText: {
+    color: "#1D6B45",
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  proposalRejectBtn: {
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#FFFFFF",
+  },
+  proposalRejectBtnText: {
+    fontSize: 11.5,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  proposalAcceptBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#1D6B45",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 10,
+  },
+  proposalAcceptBtnText: {
+    fontSize: 11.5,
+    color: "#FFFFFF",
+    fontWeight: "700",
+  },
+
+  /* Retard Vol GP */
+  delayBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 3,
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  delayBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  delayCardNotice: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 8,
+    backgroundColor: "#FFFBEB",
+    borderWidth: 1,
+    borderColor: "#FCD34D",
+    borderRadius: 12,
+    padding: 10,
+    marginBottom: 10,
+  },
+  delayNoticeTitle: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#92400E",
+  },
+  delayNoticeReason: {
+    fontSize: 11,
+    color: "#B45309",
+    marginTop: 2,
   },
 });
 

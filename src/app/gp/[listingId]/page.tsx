@@ -10,12 +10,17 @@ import {
   MapPin,
   Lock,
   Plane,
-  Smartphone,
+  PlaneTakeoff,
+  PlaneLanding,
   Package,
   Home,
+  Calendar,
+  AlertTriangle,
+  Phone,
 } from "lucide-react";
 import { getFlag } from "@/lib/types/gp";
-import cookies from "js-cookie";
+import { getValidToken, authFetch } from "@/lib/auth";
+import { formatWhatsAppUrl } from "@/lib/types/traiteur";
 
 type GpListing = {
   id: string;
@@ -25,12 +30,17 @@ type GpListing = {
   arrival_city: string;
   arrival_country: string;
   departure_date: string;
+  arrival_date: string | null;
   available_kg: number;
   price_per_kg: number;
   description: string | null;
   flight_type: string | null;
   pickup_city: string | null;
   pickup_address: string | null;
+  dropoff_city: string | null;
+  dropoff_address: string | null;
+  is_delayed?: boolean | null;
+  delay_reason?: string | null;
   is_active: boolean;
   rating: number;
   review_count: number;
@@ -79,27 +89,31 @@ export default function GpDetailPage() {
 
   useEffect(() => {
     const load = async () => {
-      const token = cookies.get("token");
+      const token = getValidToken();
       if (token) {
         setIsLoggedIn(true);
       }
 
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/gp/${listingId}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
+      try {
+        const response = await fetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/gp/${listingId}`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
           },
-        },
-      );
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || "Erreur de lors du chargement du GP");
+        );
+        const data = await response.json();
+        if (!response.ok) {
+          setError(data.message || "Erreur lors du chargement du GP");
+          return;
+        }
+        setListing(data.data?.gp || null);
+      } catch (e: any) {
+        setError(e.message || "Erreur de connexion au serveur");
+      } finally {
         setLoading(false);
-        return;
       }
-      setListing(data.data.gp);
-      setLoading(false);
     };
     load();
   }, [listingId]);
@@ -157,7 +171,7 @@ export default function GpDetailPage() {
   };
   const confirmOrder = async () => {
     setSubmitting(true);
-    const token = cookies.get("token");
+    const token = getValidToken();
     if (!token) {
       router.push("/login");
       setSubmitting(false);
@@ -169,32 +183,36 @@ export default function GpDetailPage() {
         ? declaredValNum
         : 0;
 
-    const response = await fetch(
-      `${process.env.NEXT_PUBLIC_API_URL}/gp/${listingId}/order`,
-      {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+    try {
+      const response = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/gp/${listingId}/order`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            weight_kg: weightNum,
+            content_desc: form.content_desc,
+            declared_value: safeDeclaredValue,
+            total_amount: total,
+            notes: form.notes || null,
+            status: "pending",
+          }),
         },
-        body: JSON.stringify({
-          weight_kg: weightNum,
-          content_desc: form.content_desc,
-          declared_value: safeDeclaredValue,
-          total_amount: total,
-          notes: form.notes || null,
-          status: "pending",
-        }),
-      },
-    );
-    const data = await response.json();
-    if (!response.ok) {
-      setError(data.message || "Erreur lors de l'envois de la commande");
+      );
+      const data = await response.json();
+      if (!response.ok) {
+        setError(data.message || data.error || "Erreur lors de l'envoi de la commande");
+        setSubmitting(false);
+        return;
+      }
+      setSuccess(true);
+    } catch (e: any) {
+      setError(e.message || "Erreur réseau");
+    } finally {
       setSubmitting(false);
-      return;
     }
-    setSuccess(true);
-    setSubmitting(false);
   };
 
   const formatDate = (d: string) =>
@@ -235,15 +253,13 @@ export default function GpDetailPage() {
           {(listing.gp?.whatsapp || listing.profiles?.whatsapp) && (
             <button
               onClick={() => {
-                const whatsappNum = (listing.gp?.whatsapp ||
-                  listing.profiles?.whatsapp)!;
-                const num = whatsappNum.replace(/\+/g, "").replace(/\s/g, "");
-                const msg = encodeURIComponent(
-                  `Bonjour, je viens d'envoyer une demande de colis sur Dabari. ${form.weight_kg}kg — ${form.content_desc}`,
+                const waUrl = formatWhatsAppUrl(
+                  listing.gp?.whatsapp || listing.profiles?.whatsapp,
+                  `Bonjour, je viens d'envoyer une demande de colis sur Dabari. ${form.weight_kg}kg — ${form.content_desc}`
                 );
-                window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
+                if (waUrl) window.open(waUrl, "_blank");
               }}
-              className="w-full bg-[#25D366] text-white py-3 rounded-2xl font-semibold text-sm hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2 mb-4"
+              className="w-full bg-[#25D366] text-white py-3 rounded-2xl font-semibold text-sm hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2 mb-4 cursor-pointer"
             >
               <MessageSquare size={16} className="inline mr-2" /> Contacter le
               GP sur WhatsApp
@@ -275,10 +291,18 @@ export default function GpDetailPage() {
               {getFlag(listing.departure_country)} {listing.departure_city} →{" "}
               {getFlag(listing.arrival_country)} {listing.arrival_city}
             </h1>
-            <p className="text-white/70 text-sm mt-1 flex items-center">
-              <Plane size={16} className="inline mr-1" /> Départ le{" "}
-              {formatDate(listing.departure_date)}
-            </p>
+            <div className="flex flex-wrap items-center gap-3 mt-2 text-white/80 text-xs">
+              <span className="flex items-center">
+                <PlaneTakeoff size={14} className="inline mr-1" /> Départ :{" "}
+                {formatDate(listing.departure_date)}
+              </span>
+              {listing.arrival_date && (
+                <span className="flex items-center">
+                  <PlaneLanding size={14} className="inline mr-1" /> Arrivée :{" "}
+                  {formatDate(listing.arrival_date)}
+                </span>
+              )}
+            </div>
           </div>
           {listing.flight_type && (
             <span
@@ -288,13 +312,32 @@ export default function GpDetailPage() {
                   : "bg-[#D4870A]/30 text-yellow-200"
               }`}
             >
-              {listing.flight_type === "direct" ? "Direct" : "Escale"}
+              {listing.flight_type === "direct" ? "Vol Direct" : "Avec Escale"}
             </span>
           )}
         </div>
       </div>
 
       <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
+        {/* Alerte si le vol a été décalé */}
+        {listing.is_delayed && (
+          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-start gap-3">
+            <AlertTriangle size={20} className="text-[#D4870A] shrink-0 mt-0.5" />
+            <div>
+              <p className="text-sm font-bold text-amber-950">Arrivée retardée par le voyageur</p>
+              <p className="text-xs text-amber-800 mt-0.5">
+                Nouvelle date d&apos;arrivée estimée :{" "}
+                <strong>{listing.arrival_date ? formatDate(listing.arrival_date) : "Non précisée"}</strong>
+              </p>
+              {listing.delay_reason && (
+                <p className="text-xs text-amber-700 mt-1 italic leading-relaxed">
+                  Motif : {listing.delay_reason}
+                </p>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* Infos GP */}
         {(() => {
           const gpProfile = listing.gp || listing.profiles;
@@ -314,7 +357,7 @@ export default function GpDetailPage() {
                   </p>
                   {gpProfile?.phone && (
                     <p className="text-sm text-gray-500 mt-0.5 flex items-center">
-                      <Smartphone size={16} className="inline mr-1" />{" "}
+                      <Phone size={13} className="mr-1.5 text-[#1D6B45] shrink-0" />{" "}
                       {gpProfile.phone}
                     </p>
                   )}
@@ -327,15 +370,13 @@ export default function GpDetailPage() {
                 {gpProfile?.whatsapp && (
                   <button
                     onClick={() => {
-                      const num = gpProfile
-                        .whatsapp!.replace(/\+/g, "")
-                        .replace(/\s/g, "");
-                      const msg = encodeURIComponent(
-                        `Bonjour, j'ai vu votre annonce GP sur Dabari pour ${listing.departure_city} → ${listing.arrival_city}`,
+                      const waUrl = formatWhatsAppUrl(
+                        gpProfile.whatsapp,
+                        `Bonjour, j'ai vu votre annonce GP sur Dabari pour ${listing.departure_city} → ${listing.arrival_city}`
                       );
-                      window.open(`https://wa.me/${num}?text=${msg}`, "_blank");
+                      if (waUrl) window.open(waUrl, "_blank");
                     }}
-                    className="bg-[#25D366] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#1da851] transition-colors flex items-center gap-2"
+                    className="bg-[#25D366] text-white px-4 py-2 rounded-xl text-sm font-medium hover:bg-[#1da851] transition-colors flex items-center gap-2 cursor-pointer"
                   >
                     💬 WhatsApp
                   </button>
@@ -346,9 +387,9 @@ export default function GpDetailPage() {
         })()}
 
         {/* Détails annonce */}
-        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5">
-          <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-            <Package size={16} className="inline mr-1" /> Détails de
+        <div className="bg-white rounded-2xl border border-gray-100 shadow-sm p-5 space-y-4">
+          <h2 className="font-semibold text-gray-800 flex items-center">
+            <Package size={16} className="inline mr-1 text-[#1D6B45]" /> Détails de
             l&apos;annonce
           </h2>
           <div className="grid grid-cols-2 gap-4">
@@ -368,20 +409,57 @@ export default function GpDetailPage() {
             </div>
           </div>
 
-          {listing.pickup_city && (
-            <div className="mt-4 flex items-center gap-2 text-sm text-gray-600">
-              <MapPin size={16} className="text-[#1D6B45] inline mr-1" />
-              <span>Remise des colis à {listing.pickup_city}</span>
+          {/* Dépôt & Récupération cards */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+            {/* Dépôt */}
+            <div className="p-3.5 bg-[#F9FAFB] rounded-xl border border-gray-100">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#1D6B45] uppercase tracking-wider mb-2">
+                <PlaneTakeoff size={14} />
+                <span>Départ & Dépôt</span>
+              </div>
+              <p className="text-xs text-gray-700 mb-1">
+                <strong>Date de départ :</strong> {formatDate(listing.departure_date)}
+              </p>
+              {listing.pickup_city && (
+                <p className="text-xs text-gray-600 mb-1 flex items-start gap-1">
+                  <MapPin size={13} className="text-[#1D6B45] shrink-0 mt-0.5" />
+                  <span><strong>Zone :</strong> {listing.pickup_city}</span>
+                </p>
+              )}
+              {listing.pickup_address && (
+                <p className="text-xs text-gray-500 flex items-start gap-1">
+                  <Home size={13} className="text-gray-400 shrink-0 mt-0.5" />
+                  <span><strong>Adresse :</strong> {listing.pickup_address}</span>
+                </p>
+              )}
             </div>
-          )}
-          {listing.pickup_address && (
-            <div className="mt-1 flex items-center gap-2 text-sm text-gray-500">
-              <Home size={16} className="text-[#1D6B45]" />
-              <span>{listing.pickup_address}</span>
+
+            {/* Récupération */}
+            <div className="p-3.5 bg-[#F9FAFB] rounded-xl border border-gray-100">
+              <div className="flex items-center gap-1.5 text-xs font-bold text-[#D4870A] uppercase tracking-wider mb-2">
+                <PlaneLanding size={14} />
+                <span>Arrivée & Récupération</span>
+              </div>
+              <p className="text-xs text-gray-700 mb-1">
+                <strong>Date d'arrivée :</strong> {listing.arrival_date ? formatDate(listing.arrival_date) : "Non précisée"}
+              </p>
+              {listing.dropoff_city && (
+                <p className="text-xs text-gray-600 mb-1 flex items-start gap-1">
+                  <MapPin size={13} className="text-[#D4870A] shrink-0 mt-0.5" />
+                  <span><strong>Zone :</strong> {listing.dropoff_city}</span>
+                </p>
+              )}
+              {listing.dropoff_address && (
+                <p className="text-xs text-gray-500 flex items-start gap-1">
+                  <Home size={13} className="text-gray-400 shrink-0 mt-0.5" />
+                  <span><strong>Adresse :</strong> {listing.dropoff_address}</span>
+                </p>
+              )}
             </div>
-          )}
+          </div>
+
           {listing.description && (
-            <div className="mt-4 p-3 bg-gray-50 rounded-xl">
+            <div className="p-3 bg-gray-50 rounded-xl">
               <p className="text-sm text-gray-600">{listing.description}</p>
             </div>
           )}
@@ -515,14 +593,21 @@ export default function GpDetailPage() {
       </div>
       {/* Pop-up (Modale) de confirmation */}
       {showConfirmModal && (
-        <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full mx-auto shadow-xl">
-            <h3 className="text-lg font-bold text-gray-800 mb-2">
-              Confirmer l'envoi
+        <div
+          role="dialog"
+          aria-modal="true"
+          onClick={(e) => {
+            if (e.target === e.currentTarget && !submitting) setShowConfirmModal(false);
+          }}
+          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150"
+        >
+          <div className="bg-white rounded-3xl p-6 max-w-sm w-full mx-auto shadow-2xl text-center">
+            <h3 className="text-lg font-bold text-gray-900 mb-2">
+              Confirmer l&apos;envoi
             </h3>
-            <p className="text-gray-600 mb-6 text-sm">
-              Es-tu sûr(e) de vouloir envoyer cette demande pour{" "}
-              <span className="font-bold">{form.weight_kg} kg</span> d'un
+            <p className="text-gray-600 mb-6 text-sm leading-relaxed">
+              Voulez-vous envoyer cette demande pour{" "}
+              <span className="font-bold text-gray-900">{form.weight_kg} kg</span> d&apos;un
               montant estimé à{" "}
               <span className="font-bold text-[#1D6B45]">
                 {total.toFixed(2)} €
@@ -535,7 +620,7 @@ export default function GpDetailPage() {
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
                 disabled={submitting}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-600 font-medium text-sm hover:bg-gray-50 transition-colors"
+                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors"
               >
                 Annuler
               </button>
@@ -543,7 +628,7 @@ export default function GpDetailPage() {
                 type="button"
                 onClick={confirmOrder}
                 disabled={submitting}
-                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-medium text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center"
+                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center disabled:opacity-50"
               >
                 {submitting ? "Envoi..." : "Oui, envoyer"}
               </button>

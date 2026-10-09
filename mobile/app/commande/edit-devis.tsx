@@ -18,6 +18,7 @@ import OrderEditModal, {
   DetailRowItem,
 } from "../../components/OrderEditModal";
 import { showErrorAlert } from "../../utils/alerts";
+import { verifyAddressExists } from "../../utils/addressValidation";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -178,7 +179,7 @@ export default function EditDevisScreen() {
     return false;
   }, [initialData, dateEvenement, nbPersonnes, typeEvenement, adresse, notes]);
 
-  const handleSaveClick = () => {
+  const handleSaveClick = async () => {
     const parsedNb = parseInt(nbPersonnes, 10);
     if (!parsedNb || parsedNb <= 0) {
       showErrorAlert("Erreur", "Le nombre de personnes doit être supérieur à 0.");
@@ -212,6 +213,19 @@ export default function EditDevisScreen() {
         "Veuillez renseigner l'adresse de l'événement.",
       );
       return;
+    }
+
+    const check = await verifyAddressExists(adresse.trim());
+    if (!check.isValid) {
+      showErrorAlert(
+        "Adresse non reconnue",
+        check.error ||
+          "L'adresse indiquée n'a pas été trouvée. Veuillez sélectionner une adresse existante dans les suggestions."
+      );
+      return;
+    }
+    if (check.normalizedAddress && check.normalizedAddress !== adresse.trim()) {
+      setAdresse(check.normalizedAddress);
     }
 
     setShowConfirmModal(true);

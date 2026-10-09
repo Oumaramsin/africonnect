@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Calendar, Users, X, MapPin, StickyNote, AlertCircle } from "lucide-react";
+import { Calendar, Users, X, MapPin, StickyNote, AlertCircle, Loader2 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { authFetch } from "@/lib/auth";
+import { verifyAddressExists } from "@/lib/addressValidation";
+import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 type Props = {
   isOpen: boolean;
@@ -28,6 +30,7 @@ export default function EditDevisModal({
   commande,
 }: Props) {
   const [loading, setLoading] = useState(false);
+  const [validatingAddress, setValidatingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
 
@@ -63,6 +66,7 @@ export default function EditDevisModal({
       setNotes(initNotes);
       setError(null);
       setShowConfirmModal(false);
+      setValidatingAddress(false);
 
       setInitialData({
         dateEvenement: initDate,
@@ -73,6 +77,14 @@ export default function EditDevisModal({
       });
     }
   }, [commande, isOpen]);
+
+  useEscapeKey(() => {
+    if (showConfirmModal) {
+      setShowConfirmModal(false);
+    } else {
+      onClose();
+    }
+  }, isOpen);
 
   // Détection si l'utilisateur a modifié quelque chose
   const hasChanges = useMemo(() => {
@@ -89,12 +101,12 @@ export default function EditDevisModal({
 
   const todayStr = new Date().toISOString().split("T")[0];
 
-  const handlePreSubmit = (e: React.FormEvent) => {
+  const handlePreSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!hasChanges) return;
+    if (!hasChanges || validatingAddress || loading) return;
 
-    if (!dateEvenement || !nbPersonnes || !adresse) {
+    if (!dateEvenement || !nbPersonnes || !adresse.trim()) {
       setError("Veuillez renseigner tous les champs obligatoires (*)");
       return;
     }
@@ -109,8 +121,29 @@ export default function EditDevisModal({
       return;
     }
 
+    setValidatingAddress(true);
     setError(null);
-    setShowConfirmModal(true);
+
+    try {
+      const check = await verifyAddressExists(adresse.trim());
+      if (!check.isValid) {
+        setError(
+          check.error ||
+            "L'adresse indiquée n'a pas été reconnue. Veuillez sélectionner une adresse existante dans les suggestions."
+        );
+        setValidatingAddress(false);
+        return;
+      }
+      if (check.normalizedAddress && check.normalizedAddress !== adresse.trim()) {
+        setAdresse(check.normalizedAddress);
+      }
+      setShowConfirmModal(true);
+    } catch (err: any) {
+      console.warn("Erreur validation adresse:", err);
+      setShowConfirmModal(true);
+    } finally {
+      setValidatingAddress(false);
+    }
   };
 
   const performSave = async () => {
@@ -158,8 +191,17 @@ export default function EditDevisModal({
 
   return (
     <>
-      <div className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto">
-        <div className="relative w-full max-w-lg my-8 bg-white rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200">
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-devis-title"
+        onClick={onClose}
+        className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
+      >
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="relative w-full max-w-lg my-8 bg-white rounded-3xl shadow-2xl overflow-hidden animate-in fade-in zoom-in duration-200"
+        >
           {/* En-tête */}
           <div className="flex items-center justify-between px-6 py-5 border-b border-gray-100 bg-gray-50/50">
             <div className="flex items-center gap-3">
@@ -167,7 +209,7 @@ export default function EditDevisModal({
                 <Calendar size={20} />
               </div>
               <div>
-                <h3 className="font-extrabold text-gray-900 text-base">
+                <h3 id="edit-devis-title" className="font-extrabold text-gray-900 text-base">
                   Modifier le devis
                 </h3>
                 <p className="text-xs text-gray-500">Chez {traiteurName}</p>
@@ -279,18 +321,25 @@ export default function EditDevisModal({
               </button>
               <button
                 type="submit"
-                disabled={loading || !hasChanges}
+                disabled={loading || validatingAddress || !hasChanges}
                 className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 ${
-                  !hasChanges || loading
+                  !hasChanges || loading || validatingAddress
                     ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none border border-gray-200"
                     : "bg-[#1D6B45] hover:bg-[#0F4A30] text-white active:scale-[0.98]"
                 }`}
               >
-                {loading
-                  ? "Enregistrement..."
-                  : !hasChanges
-                  ? "Aucune modification"
-                  : "Enregistrer"}
+                {validatingAddress ? (
+                  <>
+                    <Loader2 size={16} className="animate-spin" />
+                    Vérification...
+                  </>
+                ) : loading ? (
+                  "Enregistrement..."
+                ) : !hasChanges ? (
+                  "Aucune modification"
+                ) : (
+                  "Enregistrer"
+                )}
               </button>
             </div>
           </form>
@@ -299,12 +348,21 @@ export default function EditDevisModal({
 
       {/* Pop-up (Modale) de confirmation avant enregistrement */}
       {showConfirmModal && (
-        <div className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in zoom-in duration-150">
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full mx-auto shadow-2xl text-center">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirm-devis-title"
+          onClick={() => setShowConfirmModal(false)}
+          className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in zoom-in duration-150"
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            className="bg-white rounded-3xl p-6 max-w-sm w-full mx-auto shadow-2xl text-center"
+          >
             <div className="w-14 h-14 bg-emerald-50 text-[#1D6B45] rounded-2xl flex items-center justify-center mx-auto mb-3">
               <Calendar size={28} />
             </div>
-            <h3 className="text-lg font-extrabold text-gray-900 mb-2">
+            <h3 id="confirm-devis-title" className="text-lg font-extrabold text-gray-900 mb-2">
               Confirmer les modifications
             </h3>
             <p className="text-gray-600 mb-6 text-xs sm:text-sm leading-relaxed">

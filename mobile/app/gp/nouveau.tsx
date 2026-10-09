@@ -19,54 +19,16 @@ import { apiFetch } from "../../utils/api";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "../../components/AddressAutocomplete";
+import { GP_COUNTRIES } from "../../utils/types/gp";
+import { verifyAddressExists } from "../../utils/addressValidation";
 
-const CITIES_DEPARTURE = [
-  "Paris",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Toulouse",
-  "Lille",
-  "Bruxelles",
-  "Genève",
-  "Autre (Saisie libre)",
-];
+import { COMMON_CITIES_WITH_OTHER as COMMON_CITIES } from "../../utils/constants/locations";
 
-const COUNTRIES_DEPARTURE = [
-  "France",
-  "Belgique",
-  "Suisse",
-  "Canada",
-  "Autre (Saisie libre)",
-];
+const CITIES_DEPARTURE = COMMON_CITIES;
+const COUNTRIES_DEPARTURE = [...GP_COUNTRIES];
 
-const CITIES_ARRIVAL = [
-  "Dakar",
-  "Abidjan",
-  "Douala",
-  "Yaoundé",
-  "Brazzaville",
-  "Bamako",
-  "Conakry",
-  "Ouagadougou",
-  "Autre (Saisie libre)",
-];
-
-const COUNTRIES_ARRIVAL = [
-  "Sénégal",
-  "Côte d'Ivoire",
-  "Cameroun",
-  "Congo",
-  "Mali",
-  "Guinée",
-  "Burkina Faso",
-  "Gabon",
-  "Madagascar",
-  "Maroc",
-  "Algérie",
-  "Tunisie",
-  "Autre (Saisie libre)",
-];
+const CITIES_ARRIVAL = COMMON_CITIES;
+const COUNTRIES_ARRIVAL = [...GP_COUNTRIES];
 
 export default function NouveauGpScreen() {
   const router = useRouter();
@@ -88,11 +50,14 @@ export default function NouveauGpScreen() {
   const [isCustomArrivalCountry, setIsCustomArrivalCountry] = useState(false);
 
   const [departureDate, setDepartureDate] = useState(minDateStr);
+  const [arrivalDate, setArrivalDate] = useState("");
   const [flightType, setFlightType] = useState<"direct" | "escale">("direct");
   const [availableKg, setAvailableKg] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
   const [pickupCity, setPickupCity] = useState("");
   const [pickupAddress, setPickupAddress] = useState("");
+  const [dropoffCity, setDropoffCity] = useState("");
+  const [dropoffAddress, setDropoffAddress] = useState("");
   const [description, setDescription] = useState("");
 
   const [error, setError] = useState<string | null>(null);
@@ -134,11 +99,14 @@ export default function NouveauGpScreen() {
           arrival_city: arrivalCity,
           arrival_country: arrivalCountry,
           departure_date: departureDate,
+          arrival_date: arrivalDate || null,
           available_kg: parseFloat(availableKg.replace(",", ".")),
           price_per_kg: parseFloat(pricePerKg.replace(",", ".")),
           flight_type: flightType,
-          pickup_address: pickupAddress,
-          pickup_city: pickupCity,
+          pickup_address: pickupAddress || null,
+          pickup_city: pickupCity || null,
+          dropoff_address: dropoffAddress || null,
+          dropoff_city: dropoffCity || null,
           description: description,
         }),
       });
@@ -223,9 +191,16 @@ export default function NouveauGpScreen() {
     !departureCity.trim() ||
     !departureCountry.trim() ||
     !arrivalCity.trim() ||
-    !arrivalCountry.trim();
+    !arrivalCountry.trim() ||
+    !departureDate.trim() ||
+    !pickupAddress.trim() ||
+    !dropoffAddress.trim() ||
+    !description.trim() ||
+    description.trim().length < 10 ||
+    departureCountry.trim().toLowerCase() ===
+      arrivalCountry.trim().toLowerCase();
 
-  const handlePreSubmit = () => {
+  const handlePreSubmit = async () => {
     if (!departureCity.trim() || !departureCountry.trim()) {
       setError("Veuillez indiquer la ville et le pays de départ.");
       return;
@@ -233,6 +208,29 @@ export default function NouveauGpScreen() {
 
     if (!arrivalCity.trim() || !arrivalCountry.trim()) {
       setError("Veuillez indiquer la ville et le pays d'arrivée.");
+      return;
+    }
+
+    if (
+      departureCountry.trim().toLowerCase() ===
+      arrivalCountry.trim().toLowerCase()
+    ) {
+      setError("Le pays de départ et le pays d'arrivée doivent être différents.");
+      return;
+    }
+
+    if (!pickupAddress.trim()) {
+      setError("L'adresse précise de dépôt est obligatoire.");
+      return;
+    }
+
+    if (!dropoffAddress.trim()) {
+      setError("L'adresse précise de récupération est obligatoire.");
+      return;
+    }
+
+    if (!description.trim() || description.trim().length < 10) {
+      setError("La description est obligatoire (au moins 10 caractères).");
       return;
     }
 
@@ -253,6 +251,42 @@ export default function NouveauGpScreen() {
     if (isNaN(selectedDate.getTime()) || selectedDate < minAllowedDate) {
       setError("La date de départ doit être ultérieure à aujourd'hui.");
       return;
+    }
+
+    if (arrivalDate) {
+      const selectedArrivalDate = new Date(arrivalDate);
+      if (
+        isNaN(selectedArrivalDate.getTime()) ||
+        selectedArrivalDate < selectedDate
+      ) {
+        setError(
+          "La date d'arrivée doit être égale ou postérieure à la date de départ.",
+        );
+        return;
+      }
+    }
+
+    // Validation des adresses françaises
+    if (departureCountry.trim().toLowerCase() === "france") {
+      const checkPickup = await verifyAddressExists(pickupAddress.trim(), "France");
+      if (!checkPickup.isValid) {
+        setError(
+          checkPickup.error ||
+            "L'adresse de dépôt n'a pas été trouvée en France. Veuillez sélectionner une adresse existante dans les suggestions."
+        );
+        return;
+      }
+    }
+
+    if (arrivalCountry.trim().toLowerCase() === "france") {
+      const checkDropoff = await verifyAddressExists(dropoffAddress.trim(), "France");
+      if (!checkDropoff.isValid) {
+        setError(
+          checkDropoff.error ||
+            "L'adresse de récupération n'a pas été trouvée en France. Veuillez sélectionner une adresse existante dans les suggestions."
+        );
+        return;
+      }
     }
 
     setError(null);
@@ -348,15 +382,24 @@ export default function NouveauGpScreen() {
                   style={styles.selectBtn}
                   activeOpacity={0.8}
                   onPress={() =>
-                    openPicker("Pays de départ", COUNTRIES_DEPARTURE, (val) => {
-                      if (val.includes("Autre")) {
-                        setIsCustomDepartureCountry(true);
-                        setDepartureCountry("");
-                      } else {
-                        setIsCustomDepartureCountry(false);
-                        setDepartureCountry(val);
-                      }
-                    })
+                    openPicker(
+                      "Pays de départ",
+                      COUNTRIES_DEPARTURE.filter((c) => c !== arrivalCountry),
+                      (val) => {
+                        if (val.includes("Autre")) {
+                          setIsCustomDepartureCountry(true);
+                          setDepartureCountry("");
+                        } else {
+                          setIsCustomDepartureCountry(false);
+                          setDepartureCountry(val);
+                          if (arrivalCountry === val) {
+                            setArrivalCountry(
+                              val === "France" ? "Sénégal" : "France",
+                            );
+                          }
+                        }
+                      },
+                    )
                   }
                 >
                   <Text
@@ -440,15 +483,24 @@ export default function NouveauGpScreen() {
                   style={styles.selectBtn}
                   activeOpacity={0.8}
                   onPress={() =>
-                    openPicker("Pays d'arrivée", COUNTRIES_ARRIVAL, (val) => {
-                      if (val.includes("Autre")) {
-                        setIsCustomArrivalCountry(true);
-                        setArrivalCountry("");
-                      } else {
-                        setIsCustomArrivalCountry(false);
-                        setArrivalCountry(val);
-                      }
-                    })
+                    openPicker(
+                      "Pays d'arrivée",
+                      COUNTRIES_ARRIVAL.filter((c) => c !== departureCountry),
+                      (val) => {
+                        if (val.includes("Autre")) {
+                          setIsCustomArrivalCountry(true);
+                          setArrivalCountry("");
+                        } else {
+                          setIsCustomArrivalCountry(false);
+                          setArrivalCountry(val);
+                          if (departureCountry === val) {
+                            setDepartureCountry(
+                              val === "France" ? "Sénégal" : "France",
+                            );
+                          }
+                        }
+                      },
+                    )
                   }
                 >
                   <Text
@@ -478,29 +530,56 @@ export default function NouveauGpScreen() {
             </View>
           </View>
 
-          {/* DÉTAILS DU VOL */}
+          {/* DÉTAILS DU VOL & DATES */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
               <Ionicons name="calendar-outline" size={16} color="#1D6B45" />{" "}
-              Détails du vol
+              Détails des dates & vol
             </Text>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                DATE DE DÉPART * (DÈS DEMAIN)
-              </Text>
-              <View style={styles.dateInputWrapper}>
-                <Ionicons name="calendar" size={18} color="#1D6B45" />
-                <TextInput
-                  style={styles.dateInput}
-                  value={departureDate}
-                  onChangeText={setDepartureDate}
-                  placeholder="AAAA-MM-JJ"
-                  placeholderTextColor="#94A3B8"
-                  {...(Platform.OS === "web"
-                    ? ({ type: "date", min: minDateStr } as any)
-                    : {})}
-                />
+            <View style={styles.inputGridRow}>
+              <View style={styles.flexField}>
+                <Text style={styles.fieldLabel}>
+                  DATE DE DÉPART *
+                </Text>
+                <View style={styles.dateInputWrapper}>
+                  <Ionicons name="calendar" size={18} color="#1D6B45" />
+                  <TextInput
+                    style={styles.dateInput}
+                    value={departureDate}
+                    onChangeText={setDepartureDate}
+                    onChange={(e: any) => {
+                      if (e?.target?.value) setDepartureDate(e.target.value);
+                    }}
+                    placeholder="AAAA-MM-JJ"
+                    placeholderTextColor="#94A3B8"
+                    {...(Platform.OS === "web"
+                      ? ({ type: "date", min: minDateStr } as any)
+                      : {})}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.flexField}>
+                <Text style={styles.fieldLabel}>
+                  DATE D'ARRIVÉE
+                </Text>
+                <View style={styles.dateInputWrapper}>
+                  <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
+                  <TextInput
+                    style={styles.dateInput}
+                    value={arrivalDate}
+                    onChangeText={setArrivalDate}
+                    onChange={(e: any) => {
+                      if (e?.target?.value) setArrivalDate(e.target.value);
+                    }}
+                    placeholder="AAAA-MM-JJ"
+                    placeholderTextColor="#94A3B8"
+                    {...(Platform.OS === "web"
+                      ? ({ type: "date", min: departureDate || minDateStr } as any)
+                      : {})}
+                  />
+                </View>
               </View>
             </View>
 
@@ -588,39 +667,99 @@ export default function NouveauGpScreen() {
             </View>
           </View>
 
-          {/* POINT DE REMISE */}
+          {/* POINT DE DÉPÔT (DÉPART) */}
           <View style={styles.sectionCard}>
             <Text style={styles.cardSectionTitle}>
               <Ionicons name="location-outline" size={16} color="#1D6B45" />{" "}
-              Point de remise
+              Point de dépôt du colis (Départ)
             </Text>
             <Text style={styles.cardSectionSub}>
-              Où les expéditeurs peuvent déposer leur colis avant le départ
+              Où l'expéditeur dépose le colis avant le départ
             </Text>
 
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>QUARTIER / ARRONDISSEMENT</Text>
+              <Text style={styles.fieldLabel}>QUARTIER / ZONE DE DÉPÔT</Text>
               <TextInput
                 style={styles.input}
                 value={pickupCity}
                 onChangeText={setPickupCity}
-                placeholder="Ex: Paris 10e, Aubervilliers..."
+                placeholder="Ex: Paris 10e, Dakar Plateau..."
                 placeholderTextColor="#94A3B8"
               />
             </View>
 
             <View style={[styles.fieldGroup, { zIndex: 50 }]}>
-              <Text style={styles.fieldLabel}>ADRESSE PRÉCISE (OPTIONNEL)</Text>
-              <AddressAutocomplete
-                value={pickupAddress}
-                onChangeText={setPickupAddress}
-                onSelectAddress={(item) => {
-                  setPickupAddress(item.label);
-                  const cleanQuarter = getQuarterOrCityFromAddress(item);
-                  setPickupCity(cleanQuarter);
-                }}
-                placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
+              <Text style={styles.fieldLabel}>
+                ADRESSE PRÉCISE DE DÉPÔT * (OBLIGATOIRE)
+              </Text>
+              {departureCountry === "France" ? (
+                <AddressAutocomplete
+                  value={pickupAddress}
+                  onChangeText={setPickupAddress}
+                  onSelectAddress={(item) => {
+                    setPickupAddress(item.label);
+                    const cleanQuarter = getQuarterOrCityFromAddress(item);
+                    setPickupCity(cleanQuarter);
+                  }}
+                  placeholder="Ex: Gare du Nord, 18 Rue de Dunkerque..."
+                />
+              ) : (
+                <TextInput
+                  style={styles.input}
+                  value={pickupAddress}
+                  onChangeText={setPickupAddress}
+                  placeholder="Ex: Rue 10 angle Boulevard Dial Diop..."
+                  placeholderTextColor="#94A3B8"
+                />
+              )}
+            </View>
+          </View>
+
+          {/* POINT DE RÉCUPÉRATION (ARRIVÉE) */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.cardSectionTitle}>
+              <Ionicons name="navigate-outline" size={16} color="#1D6B45" />{" "}
+              Point de récupération du colis (Arrivée)
+            </Text>
+            <Text style={styles.cardSectionSub}>
+              Où le destinataire récupère le colis à l'arrivée
+            </Text>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>QUARTIER / ZONE DE RÉCUPÉRATION</Text>
+              <TextInput
+                style={styles.input}
+                value={dropoffCity}
+                onChangeText={setDropoffCity}
+                placeholder="Ex: Almadies, Akwa, Cocody..."
+                placeholderTextColor="#94A3B8"
               />
+            </View>
+
+            <View style={[styles.fieldGroup, { zIndex: 40 }]}>
+              <Text style={styles.fieldLabel}>
+                ADRESSE PRÉCISE DE RÉCUPÉRATION * (OBLIGATOIRE)
+              </Text>
+              {arrivalCountry === "France" ? (
+                <AddressAutocomplete
+                  value={dropoffAddress}
+                  onChangeText={setDropoffAddress}
+                  onSelectAddress={(item) => {
+                    setDropoffAddress(item.label);
+                    const cleanQuarter = getQuarterOrCityFromAddress(item);
+                    setDropoffCity(cleanQuarter);
+                  }}
+                  placeholder="Ex: 18 Rue de Dunkerque, Paris..."
+                />
+              ) : (
+                <TextInput
+                  style={styles.input}
+                  value={dropoffAddress}
+                  onChangeText={setDropoffAddress}
+                  placeholder="Ex: Près de la pharmacie, aéroport, rond-point..."
+                  placeholderTextColor="#94A3B8"
+                />
+              )}
             </View>
           </View>
 
@@ -758,18 +897,68 @@ export default function NouveauGpScreen() {
               <Text style={styles.modalSub}>
                 Es-tu sûr(e) de vouloir publier cette annonce pour ton trajet de{" "}
                 <Text style={{ fontWeight: "800", color: "#0F172A" }}>
-                  {departureCity || "Paris"}
+                  {departureCity || "Paris"} ({departureCountry})
                 </Text>{" "}
                 vers{" "}
                 <Text style={{ fontWeight: "800", color: "#1D6B45" }}>
-                  {arrivalCity || "Dakar"}
-                </Text>{" "}
-                le{" "}
-                <Text style={{ fontWeight: "800", color: "#0F172A" }}>
-                  {departureDate}
-                </Text>{" "}
-                ?
+                  {arrivalCity || "Dakar"} ({arrivalCountry})
+                </Text>
               </Text>
+
+              <View
+                style={{
+                  width: "100%",
+                  backgroundColor: "#F8FAFC",
+                  borderRadius: 12,
+                  padding: 12,
+                  marginVertical: 12,
+                  gap: 8,
+                }}
+              >
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="airplane" size={15} color="#1D6B45" />
+                  <Text style={{ fontSize: 13, color: "#334155", flex: 1 }}>
+                    <Text style={{ fontWeight: "700" }}>Départ :</Text>{" "}
+                    {departureDate}
+                    {pickupCity ? ` · Dépôt : ${pickupCity}` : ""}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 8,
+                  }}
+                >
+                  <Ionicons name="navigate" size={15} color="#D4870A" />
+                  <Text style={{ fontSize: 13, color: "#334155", flex: 1 }}>
+                    <Text style={{ fontWeight: "700" }}>Arrivée :</Text>{" "}
+                    {arrivalDate || "Non renseignée"}
+                    {dropoffCity ? ` · Récupération : ${dropoffCity}` : ""}
+                  </Text>
+                </View>
+                <View
+                  style={{
+                    borderTopWidth: 1,
+                    borderTopColor: "#E2E8F0",
+                    paddingTop: 8,
+                  }}
+                >
+                  <Text style={{ fontSize: 12, color: "#64748B" }}>
+                    Tarif :{" "}
+                    <Text style={{ fontWeight: "700", color: "#0F172A" }}>
+                      {pricePerKg} €/kg
+                    </Text>{" "}
+                    · {availableKg} kg disponibles
+                  </Text>
+                </View>
+              </View>
 
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity

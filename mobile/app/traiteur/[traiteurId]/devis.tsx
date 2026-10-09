@@ -14,10 +14,11 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 
-import { Traiteur } from "../../../utils/types/traiteur";
+import { Traiteur, formatWhatsAppUrl } from "../../../utils/types/traiteur";
 import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 import AddressAutocomplete from "../../../components/AddressAutocomplete";
+import { verifyAddressExists } from "../../../utils/addressValidation";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -151,6 +152,18 @@ export default function DevisScreen() {
       return;
     }
 
+    const check = await verifyAddressExists(adresse.trim());
+    if (!check.isValid) {
+      setError(
+        check.error ||
+          "L'adresse indiquée n'a pas été reconnue. Veuillez sélectionner une adresse existante dans les suggestions."
+      );
+      return;
+    }
+    if (check.normalizedAddress && check.normalizedAddress !== adresse.trim()) {
+      setAdresse(check.normalizedAddress);
+    }
+
     setError("");
     setShowConfirmModal(true);
   };
@@ -193,8 +206,10 @@ export default function DevisScreen() {
 
   if (success) {
     const rawWhatsapp = traiteur?.whatsapp || (traiteur as any)?.phone || "";
-    const waNumber = rawWhatsapp.replace(/\+/g, "").replace(/\s/g, "");
-    const waUrl = `https://wa.me/${waNumber}?text=Bonjour%2C%20je%20viens%20de%20demander%20un%20devis%20sur%20Dabari.`;
+    const waUrl = formatWhatsAppUrl(
+      rawWhatsapp,
+      "Bonjour, je viens de demander un devis sur Dabari."
+    );
 
     return (
       <SafeAreaView style={styles.container}>
@@ -208,10 +223,10 @@ export default function DevisScreen() {
             recontactera très rapidement.
           </Text>
 
-          {waNumber !== "" && (
+          {Boolean(waUrl) && (
             <TouchableOpacity
               style={styles.whatsAppBtn}
-              onPress={() => Linking.openURL(waUrl)}
+              onPress={() => Linking.openURL(waUrl!)}
               activeOpacity={0.85}
             >
               <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />

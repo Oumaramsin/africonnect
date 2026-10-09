@@ -13,6 +13,7 @@ import {
   getSingleOrderPlatController,
   getSingleCommandeTraiteurController,
   getSingleGpRequestController,
+  updateGpDelayController,
 } from "../controllers/commandeController";
 
 const commandeRouter = Router();
@@ -57,6 +58,11 @@ commandeRouter.patch(
   "/gp/:id/status",
   AuthMiddleware.authenticate,
   updateGpRequestStatusController,
+);
+commandeRouter.patch(
+  "/gp/:id/delay",
+  AuthMiddleware.authenticate,
+  updateGpDelayController,
 );
 
 // Routes de modification client (autorisées UNIQUEMENT avant confirmation)
