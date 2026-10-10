@@ -1,28 +1,15 @@
 @import "tailwindcss";
 
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  --background: #f8fafc;
+  --foreground: #0f172a;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
-
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-  }
-}
-
+html,
 body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  background-color: #f8fafc;
+  color: #0f172a;
+  overflow-x: clip;
 }
 @supports (padding-bottom: env(safe-area-inset-bottom)) {
   .pb-safe {
@@ -78,4 +65,26 @@ select option {
 * {
   scrollbar-width: thin;
   scrollbar-color: #1D6B45 rgba(0, 0, 0, 0.03);
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── SMOOTH MICRO-INTERACTIONS & LUXURY HOVER STATES ── */
+.hover-lift {
+  transition: transform 0.2s cubic-bezier(0.16, 1, 0.3, 1), box-shadow 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.hover-lift:hover {
+  transform: translateY(-2px);
+}
+
+.hover-glow {
+  transition: box-shadow 0.2s ease, border-color 0.2s ease;
+}
+.hover-glow:hover {
+  box-shadow: 0 10px 25px -5px rgba(29, 107, 69, 0.15);
+}
+
+/* ── ACCESSIBLE FOCUS-VISIBLE ── */
+button:focus-visible, a:focus-visible, input:focus-visible {
+  outline: 2px solid #1D6B45;
+  outline-offset: 2px;
 }

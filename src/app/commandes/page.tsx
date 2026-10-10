@@ -49,6 +49,7 @@ import GpTrackingTimeline, {
 } from "@/components/gp/GpTrackingTimeline";
 import SignalGpDelayModal from "@/components/gp/SignalGpDelayModal";
 import { ChevronDown, ChevronUp, Truck, CheckCheck } from "lucide-react";
+import CountryFlag from "@/components/ui/CountryFlag";
 
 type CommandeTraiteur = {
   id: string;
@@ -663,37 +664,51 @@ export default function CommandesPage() {
     );
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] pb-24">
-      {/* Header */}
-      <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
-        <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-          <Package size={24} /> Commandes & Réceptions
-        </h1>
+    <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 space-y-8">
+      {/* ── 1. HERO BANNER COMMANDES & RÉCEPTIONS ── */}
+      <section className="relative overflow-hidden rounded-3xl md:rounded-[36px] bg-gradient-to-br from-[#153e2a] via-[#1D6B45] to-[#9E6508] text-white shadow-xl shadow-[#1D6B45]/10 p-6 sm:p-8 md:p-10 space-y-6">
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 bg-[#D4870A]/20 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+          <div>
+            <div className="inline-flex items-center gap-2 bg-white/15 backdrop-blur-md text-white text-xs font-bold px-3 py-1 rounded-full border border-white/20 mb-2">
+              <Package size={13} /> Suivi Centralisé des Services
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-black text-white">
+              Commandes & Réceptions
+            </h1>
+            <p className="text-white/80 text-xs sm:text-sm mt-1">
+              Gérez vos devis traiteur, commandes de plats, annonces d&apos;événements et colis GP.
+            </p>
+          </div>
+        </div>
 
         {/* Onglets */}
-        <div className="flex gap-2 mt-4">
+        <div className="relative z-10 flex flex-wrap gap-2.5 pt-2 border-t border-white/15">
           <button
             onClick={() => setTab("envoyees")}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all ${
+            className={`px-4 sm:px-6 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all flex items-center gap-2 ${
               tab === "envoyees"
-                ? "bg-white text-[#1D6B45] shadow-sm"
-                : "bg-white/20 text-white hover:bg-white/30"
+                ? "bg-white text-[#1D6B45] shadow-md"
+                : "bg-white/15 text-white hover:bg-white/25"
             }`}
           >
-            <ShoppingCart size={18} className="inline mr-1.5" /> Mes commandes
+            <ShoppingCart size={16} />
+            <span>Mes commandes</span>
           </button>
 
           <button
             onClick={() => setTab("receptions")}
-            className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all relative ${
+            className={`px-4 sm:px-6 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all relative flex items-center gap-2 ${
               tab === "receptions"
-                ? "bg-white text-[#1D6B45] shadow-sm"
-                : "bg-white/20 text-white hover:bg-white/30"
+                ? "bg-white text-[#1D6B45] shadow-md"
+                : "bg-white/15 text-white hover:bg-white/25"
             }`}
           >
-            <PartyPopper size={18} className="inline mr-1.5" /> Devis & Annonces
+            <PartyPopper size={16} />
+            <span>Devis & Annonces</span>
             {totalPendingProposals > 0 && (
-              <span className="absolute -top-1 -right-1 w-5 h-5 bg-amber-400 text-gray-900 rounded-full text-xs flex items-center justify-center font-bold shadow">
+              <span className="w-5 h-5 bg-[#D4870A] text-white rounded-full text-[11px] font-black flex items-center justify-center shadow-xs">
                 {totalPendingProposals}
               </span>
             )}
@@ -702,15 +717,16 @@ export default function CommandesPage() {
           {(isTraiteur || isGp) && (
             <button
               onClick={() => setTab("recues")}
-              className={`flex-1 py-2.5 rounded-xl text-sm font-medium transition-all relative ${
+              className={`px-4 sm:px-6 py-2.5 rounded-2xl text-xs sm:text-sm font-bold transition-all relative flex items-center gap-2 ${
                 tab === "recues"
-                  ? "bg-white text-[#1D6B45] shadow-sm"
-                  : "bg-white/20 text-white hover:bg-white/30"
+                  ? "bg-white text-[#1D6B45] shadow-md"
+                  : "bg-white/15 text-white hover:bg-white/25"
               }`}
             >
-              <Inbox size={18} className="inline mr-1.5" /> Espace Pro
+              <Inbox size={16} />
+              <span>Espace Pro</span>
               {pendingRecues > 0 && (
-                <span className="absolute -top-1 -right-1 w-5 h-5 bg-red-500 rounded-full text-xs text-white flex items-center justify-center font-bold">
+                <span className="w-5 h-5 bg-rose-500 text-white rounded-full text-[11px] font-black flex items-center justify-center shadow-xs">
                   {pendingRecues}
                 </span>
               )}
@@ -718,31 +734,62 @@ export default function CommandesPage() {
           )}
         </div>
 
-        {/* Sous-filtres Traiteur / GP (visible sur Mes commandes et Espace Pro) */}
+        {/* Sous-filtres Traiteur / GP */}
         {tab !== "receptions" && (
-          <div className="flex gap-2 mt-4 overflow-x-auto no-scrollbar pb-1">
-            {(["tout", "traiteur", "gp"] as const).map((f) => (
-              <button
-                key={f}
-                onClick={() => setServiceFilter(f)}
-                className={`px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all border border-transparent ${
-                  serviceFilter === f
-                    ? "bg-white text-[#1D6B45]"
-                    : "bg-white/20 text-white hover:bg-white/30 border-white/10"
-                }`}
-              >
-                {f === "tout"
-                  ? "Tout voir"
-                  : f === "traiteur"
-                    ? "Traiteur & Plats"
-                    : "GP Colis"}
-              </button>
-            ))}
+          <div className="relative z-10 flex gap-2 flex-wrap pt-1">
+            {(["tout", "traiteur", "gp"] as const).map((f) => {
+              const count =
+                tab === "envoyees"
+                  ? f === "tout"
+                    ? commandesEnvoyees.length +
+                      ordersEnvoyees.length +
+                      gpEnvoyees.length
+                    : f === "traiteur"
+                      ? commandesEnvoyees.length + ordersEnvoyees.length
+                      : gpEnvoyees.length
+                  : f === "tout"
+                    ? commandesRecues.length +
+                      ordersRecues.length +
+                      gpRecues.length
+                    : f === "traiteur"
+                      ? commandesRecues.length + ordersRecues.length
+                      : gpRecues.length;
+
+              return (
+                <button
+                  key={f}
+                  onClick={() => setServiceFilter(f)}
+                  className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shrink-0 ${
+                    serviceFilter === f
+                      ? "bg-[#D4870A] text-white shadow-xs"
+                      : "bg-black/20 text-white/85 hover:bg-black/30"
+                  }`}
+                >
+                  <span>
+                    {f === "tout"
+                      ? "Tout voir"
+                      : f === "traiteur"
+                        ? "Traiteur & Plats"
+                        : "GP Colis"}
+                  </span>
+                  <span
+                    className={`text-[10px] px-1.5 py-0.2 rounded-full font-extrabold ${
+                      serviceFilter === f
+                        ? "bg-white/25 text-white"
+                        : "bg-white/10 text-white/80"
+                    }`}
+                  >
+                    {count}
+                  </span>
+                </button>
+              );
+            })}
           </div>
         )}
-      </div>
+      </section>
 
-      <div className="px-4 py-6 max-w-2xl mx-auto space-y-6">
+      {/* ── 2. CONTENU DES COMMANDES RESPONSIVE ── */}
+      <div className="space-y-6">
         {/* ── ONGLET ENVOYÉES ── */}
         {tab === "envoyees" && (
           <>
@@ -754,7 +801,7 @@ export default function CommandesPage() {
                     <ChefHat size={18} className="inline mr-1" /> Commandes
                     traiteur
                   </h2>
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
                     {commandesEnvoyees.map((commande) => {
                       const traiteurInfo =
                         commande.traiteur || commande.traiteurs;
@@ -889,7 +936,7 @@ export default function CommandesPage() {
                     <ShoppingCart size={18} className="inline mr-1" /> Commandes
                     plats
                   </h2>
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
                     {ordersEnvoyees.map((order) => {
                       const traiteurInfo = order.traiteur || order.traiteurs;
                       return (
@@ -1022,7 +1069,7 @@ export default function CommandesPage() {
                     <Plane size={18} className="inline mr-1" /> Demandes GP
                     colis
                   </h2>
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
                     {gpEnvoyees.map((request) => {
                       const listing = request.listing || request.gp_listings;
                       const depCity =
@@ -1054,11 +1101,33 @@ export default function CommandesPage() {
                                   size={16}
                                   className="inline mr-1 text-[#1D6B45]"
                                 />{" "}
-                                <span>
-                                  {depCity && arrCity
-                                    ? `${depCity} (${depCountry || ""}) → ${arrCity} (${arrCountry || ""})`
-                                    : "Annonce retirée"}
-                                </span>
+                                {depCity && arrCity ? (
+                                  <span className="flex items-center gap-1.5 flex-wrap">
+                                    <span className="inline-flex items-center gap-1 font-bold text-slate-900">
+                                      {depCountry && (
+                                        <CountryFlag
+                                          country={depCountry}
+                                          size={15}
+                                        />
+                                      )}
+                                      <span>{depCity}</span>
+                                    </span>
+                                    <span className="text-amber-500 font-bold">
+                                      ➔
+                                    </span>
+                                    <span className="inline-flex items-center gap-1 font-bold text-slate-900">
+                                      {arrCountry && (
+                                        <CountryFlag
+                                          country={arrCountry}
+                                          size={15}
+                                        />
+                                      )}
+                                      <span>{arrCity}</span>
+                                    </span>
+                                  </span>
+                                ) : (
+                                  <span>Annonce retirée</span>
+                                )}
                                 {isListingDeleted && (
                                   <span className="text-[11px] bg-red-50 text-red-600 px-2 py-0.5 rounded-md font-medium border border-red-100">
                                     Annonce supprimée
@@ -1514,7 +1583,7 @@ export default function CommandesPage() {
                     <ChefHat size={18} className="inline mr-1" /> Commandes
                     traiteur reçues
                   </h2>
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
                     {commandesRecues.map((commande) => {
                       const clientInfo = commande.client || commande.profiles;
                       return (
@@ -1797,7 +1866,7 @@ export default function CommandesPage() {
                     <Plane size={18} className="inline mr-1" /> Demandes GP
                     reçues
                   </h2>
-                  <div className="space-y-3">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start">
                     {gpRecues.map((request) => {
                       const senderInfo = request.sender || request.profiles;
                       const listing = request.listing || request.gp_listings;
@@ -1845,11 +1914,33 @@ export default function CommandesPage() {
                                 size={16}
                                 className="text-[#1D6B45] inline mr-1"
                               />
-                              <span>
-                                {depCity && arrCity
-                                  ? `${depCity} (${depCountry || ""}) → ${arrCity} (${arrCountry || ""})`
-                                  : "Annonce retirée"}
-                              </span>
+                              {depCity && arrCity ? (
+                                <span className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="inline-flex items-center gap-1 font-bold text-slate-900">
+                                    {depCountry && (
+                                      <CountryFlag
+                                        country={depCountry}
+                                        size={15}
+                                      />
+                                    )}
+                                    <span>{depCity}</span>
+                                  </span>
+                                  <span className="text-amber-500 font-bold">
+                                    ➔
+                                  </span>
+                                  <span className="inline-flex items-center gap-1 font-bold text-slate-900">
+                                    {arrCountry && (
+                                      <CountryFlag
+                                        country={arrCountry}
+                                        size={15}
+                                      />
+                                    )}
+                                    <span>{arrCity}</span>
+                                  </span>
+                                </span>
+                              ) : (
+                                <span>Annonce retirée</span>
+                              )}
                               {isListingDeleted && (
                                 <span className="text-[11px] bg-red-50 text-red-600 px-2 py-0.5 rounded-md font-medium border border-red-100">
                                   Annonce supprimée
@@ -2011,8 +2102,10 @@ export default function CommandesPage() {
                   ordersRecues.length === 0) ||
                 (serviceFilter === "gp" && gpRecues.length === 0)) && (
                 <div className="text-center py-16">
-                  <div className="text-5xl mb-3">📥</div>
-                  <p className="text-gray-500">
+                  <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#1D6B45] flex items-center justify-center mx-auto mb-3 shadow-xs">
+                    <Inbox size={32} />
+                  </div>
+                  <p className="text-gray-500 font-medium">
                     Aucune demande reçue pour le moment
                   </p>
                 </div>
@@ -2020,8 +2113,10 @@ export default function CommandesPage() {
 
             {!isTraiteur && !isGp && (
               <div className="text-center py-16">
-                <div className="text-5xl mb-3">📥</div>
-                <p className="text-gray-500">
+                <div className="w-16 h-16 rounded-2xl bg-emerald-50 text-[#1D6B45] flex items-center justify-center mx-auto mb-3 shadow-xs">
+                  <Inbox size={32} />
+                </div>
+                <p className="text-gray-500 font-medium">
                   {"Vous n'êtes pas encore prestataire"}
                 </p>
               </div>

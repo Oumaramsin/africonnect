@@ -15,6 +15,7 @@ import {
   Quote,
 } from "lucide-react";
 import { TraiteurProposal, formatWhatsAppUrl } from "@/lib/types/traiteur";
+import Image from "next/image";
 
 type Props = {
   proposal: TraiteurProposal;
@@ -106,9 +107,11 @@ export default function ProposalCard({
           <div className="flex items-center gap-3 min-w-0">
             <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center text-[#1D6B45] shrink-0 overflow-hidden border border-emerald-200">
               {traiteur?.image_url && !imgError ? (
-                <img
+                <Image
                   src={traiteur.image_url}
-                  alt={traiteur.name}
+                  alt={traiteur.name || "Traiteur"}
+                  width={48}
+                  height={48}
                   className="w-full h-full object-cover"
                   onError={() => setImgError(true)}
                 />

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,6 +15,17 @@ import {
   Lock,
   PenLine,
   Calendar,
+  ArrowLeft,
+  ShieldCheck,
+  CheckCircle2,
+  Sparkles,
+  Coins,
+  ChevronRight,
+  AlertTriangle,
+  FileCheck2,
+  Luggage,
+  Clock,
+  Info,
 } from "lucide-react";
 import { getValidToken, authFetch } from "@/lib/auth";
 import AddressAutocomplete, {
@@ -22,6 +33,8 @@ import AddressAutocomplete, {
 } from "@/components/AddressAutocomplete";
 import { GP_COUNTRIES } from "@/lib/types/gp";
 import { verifyAddressExists } from "@/lib/addressValidation";
+import { COMMON_CITIES } from "@/lib/constants/locations";
+import CountryFlag from "@/components/ui/CountryFlag";
 
 const schema = z
   .object({
@@ -31,8 +44,11 @@ const schema = z
     arrival_country: z.string().min(2, "Pays requis"),
     departure_date: z.string().min(1, "Date de départ requise"),
     arrival_date: z.string().optional(),
-    available_kg: z.number().min(0.5, "Minimum 0.5 kg").max(50, "Maximum 50 kg"),
-    price_per_kg: z.number().min(1, "Tarif requis"),
+    available_kg: z
+      .number()
+      .min(0.5, "Minimum 0.5 kg")
+      .max(50, "Maximum 50 kg"),
+    price_per_kg: z.number().min(1, "Tarif requis (minimum 1 €/kg)"),
     flight_type: z.enum(["direct", "escale"]),
     pickup_address: z
       .string()
@@ -58,8 +74,6 @@ const schema = z
 
 type FormData = z.infer<typeof schema>;
 
-import { COMMON_CITIES } from "@/lib/constants/locations";
-
 export default function NouvelleAnnoncePage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -68,6 +82,7 @@ export default function NouvelleAnnoncePage() {
   const [pendingData, setPendingData] = useState<FormData>();
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [success, setSuccess] = useState(false);
+  const [acceptCharter, setAcceptCharter] = useState(true);
 
   useEffect(() => {
     const token = getValidToken();
@@ -78,6 +93,65 @@ export default function NouvelleAnnoncePage() {
     setIsLoggedIn(true);
   }, [router]);
 
+  const defaultDepartureDate = useMemo(() => {
+    return new Date(Date.now() + 24 * 60 * 60 * 1000)
+      .toISOString()
+      .split("T")[0];
+  }, []);
+
+  const {
+    register,
+    handleSubmit,
+    setValue,
+    watch,
+    formState: { errors },
+  } = useForm<FormData>({
+    resolver: zodResolver(schema),
+    defaultValues: {
+      departure_country: "France",
+      arrival_country: "Sénégal",
+      flight_type: "direct",
+      available_kg: 15,
+      price_per_kg: 12,
+      departure_date: defaultDepartureDate,
+      pickup_address: "",
+      dropoff_address: "",
+      pickup_city: "",
+      dropoff_city: "",
+      description: "",
+    },
+  });
+
+  const departureCountryWatch = watch("departure_country");
+  const arrivalCountryWatch = watch("arrival_country");
+  const departureCityWatch = watch("departure_city");
+  const arrivalCityWatch = watch("arrival_city");
+  const departureDateWatch = watch("departure_date");
+  const pickupAddressWatch = watch("pickup_address");
+  const dropoffAddressWatch = watch("dropoff_address");
+  const descriptionWatch = watch("description");
+  const availableKgWatch = watch("available_kg") || 0;
+  const pricePerKgWatch = watch("price_per_kg") || 0;
+
+  // Calcul du revenu potentiel estimé
+  const estimatedRevenue = availableKgWatch * pricePerKgWatch;
+
+  const isFormValid =
+    Boolean(departureCityWatch) &&
+    departureCityWatch.trim().length >= 2 &&
+    Boolean(arrivalCityWatch) &&
+    arrivalCityWatch.trim().length >= 2 &&
+    Boolean(departureDateWatch) &&
+    Boolean(pickupAddressWatch) &&
+    pickupAddressWatch.trim().length >= 3 &&
+    Boolean(dropoffAddressWatch) &&
+    dropoffAddressWatch.trim().length >= 3 &&
+    Boolean(descriptionWatch) &&
+    descriptionWatch.trim().length >= 10 &&
+    departureCountryWatch.trim().toLowerCase() !==
+      arrivalCountryWatch.trim().toLowerCase() &&
+    acceptCharter;
+
   const handlePreSubmit = async (data: FormData) => {
     setError(null);
     setLoading(true);
@@ -85,11 +159,14 @@ export default function NouvelleAnnoncePage() {
     try {
       // Si le pays de départ est la France, vérifier que l'adresse de dépôt existe bien
       if (data.departure_country === "France") {
-        const checkPickup = await verifyAddressExists(data.pickup_address, "France");
+        const checkPickup = await verifyAddressExists(
+          data.pickup_address,
+          "France",
+        );
         if (!checkPickup.isValid) {
           setError(
             checkPickup.error ||
-              "L'adresse de dépôt n'est pas reconnue en France. Veuillez sélectionner une adresse existante dans les suggestions."
+              "L'adresse de dépôt n'est pas reconnue en France. Veuillez sélectionner une adresse existante dans les suggestions BAN.",
           );
           setLoading(false);
           return;
@@ -98,11 +175,14 @@ export default function NouvelleAnnoncePage() {
 
       // Si le pays d'arrivée est la France, vérifier que l'adresse de récupération existe bien
       if (data.arrival_country === "France") {
-        const checkDropoff = await verifyAddressExists(data.dropoff_address, "France");
+        const checkDropoff = await verifyAddressExists(
+          data.dropoff_address,
+          "France",
+        );
         if (!checkDropoff.isValid) {
           setError(
             checkDropoff.error ||
-              "L'adresse de récupération n'est pas reconnue en France. Veuillez sélectionner une adresse existante dans les suggestions."
+              "L'adresse de récupération n'est pas reconnue en France. Veuillez sélectionner une adresse existante dans les suggestions BAN.",
           );
           setLoading(false);
           return;
@@ -111,172 +191,235 @@ export default function NouvelleAnnoncePage() {
 
       setPendingData(data);
       setShowConfirmModal(true);
-    } catch (err: any) {
-      console.warn("Erreur vérification adresse:", err);
-      setPendingData(data);
-      setShowConfirmModal(true);
+    } catch (e: unknown) {
+      const err = e as { message?: string };
+      setError(err.message || "Erreur de validation");
     } finally {
       setLoading(false);
     }
   };
-
-  const defaultDepartureDate = new Date(Date.now() + 24 * 60 * 60 * 1000)
-    .toISOString()
-    .split("T")[0];
-
-  const {
-    register,
-    handleSubmit,
-    watch,
-    setValue,
-    formState: { errors },
-  } = useForm<FormData>({
-    resolver: zodResolver(schema),
-    mode: "onChange",
-    defaultValues: {
-      departure_city: "",
-      departure_country: "France",
-      arrival_city: "",
-      arrival_country: "Sénégal",
-      departure_date: defaultDepartureDate,
-      flight_type: "direct",
-      available_kg: 5,
-      price_per_kg: 8,
-      pickup_address: "",
-      dropoff_address: "",
-      description: "",
-    },
-  });
-
-  const formValues = watch();
-  const departureDateWatch = formValues.departure_date;
-  const departureCountryWatch = formValues.departure_country;
-  const arrivalCountryWatch = formValues.arrival_country;
-
-  const isFormValid = Boolean(
-    formValues.departure_city?.trim() &&
-      formValues.departure_country?.trim() &&
-      formValues.arrival_city?.trim() &&
-      formValues.arrival_country?.trim() &&
-      formValues.departure_country?.trim().toLowerCase() !==
-        formValues.arrival_country?.trim().toLowerCase() &&
-      formValues.departure_date &&
-      formValues.available_kg &&
-      formValues.available_kg > 0 &&
-      formValues.price_per_kg &&
-      formValues.price_per_kg > 0 &&
-      formValues.pickup_address?.trim() &&
-      formValues.dropoff_address?.trim() &&
-      formValues.description?.trim() &&
-      formValues.description.trim().length >= 10,
-  );
 
   const onSubmit = async (data: FormData) => {
     setLoading(true);
     setError(null);
+
     try {
-      const response = await authFetch(`${process.env.NEXT_PUBLIC_API_URL}/gp`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
+      const response = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/gp`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            departure_city: data.departure_city,
+            departure_country: data.departure_country,
+            arrival_city: data.arrival_city,
+            arrival_country: data.arrival_country,
+            departure_date: data.departure_date,
+            arrival_date: data.arrival_date || null,
+            available_kg: data.available_kg,
+            price_per_kg: data.price_per_kg,
+            flight_type: data.flight_type,
+            pickup_address: data.pickup_address,
+            pickup_city: data.pickup_city || null,
+            dropoff_address: data.dropoff_address,
+            dropoff_city: data.dropoff_city || null,
+            description: data.description,
+          }),
         },
-        body: JSON.stringify({
-          ...data,
-          is_active: true,
-        }),
-      });
-      const dataR = await response.json().catch(() => ({}));
+      );
+
+      const resData = await response.json();
+
       if (!response.ok) {
-        setError(dataR.message || dataR.error || "Erreur lors de la création de l'annonce");
-        setLoading(false);
-        return;
+        throw new Error(
+          resData.message || "Erreur lors de la création de l'annonce",
+        );
       }
+
+      setShowConfirmModal(false);
       setSuccess(true);
-    } catch (e: any) {
-      setError(e.message || "Erreur réseau");
+    } catch (err: unknown) {
+      const e = err as { message?: string };
+      setError(e.message || "Une erreur est survenue");
+      setShowConfirmModal(false);
     } finally {
       setLoading(false);
     }
   };
 
-  if (success)
+  if (success) {
     return (
-      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center px-4">
-        <div className="text-center max-w-sm">
-          <div className="flex justify-center mb-4">
-            <Plane size={64} className="text-[#1D6B45]" />
-          </div>
-          <h2 className="text-2xl font-bold text-[#1D6B45] mb-2">
-            Annonce publiée !
+      <div className="w-full max-w-2xl mx-auto px-4 py-20 text-center space-y-6">
+        <div className="w-20 h-20 bg-emerald-100 text-[#1D6B45] rounded-3xl flex items-center justify-center mx-auto shadow-md">
+          <CheckCircle2 size={44} />
+        </div>
+        <div className="space-y-2">
+          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-[#E8F5E9] text-[#1D6B45]">
+            Annonce en ligne
+          </span>
+          <h2 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
+            Votre annonce de vol est publiée !
           </h2>
-          <p className="text-gray-500 mb-8">
-            Ton annonce est en ligne. Les expéditeurs peuvent maintenant te
-            contacter.
+          <p className="text-slate-600 text-sm max-w-md mx-auto leading-relaxed">
+            Votre trajet est visible par les expéditeurs de la communauté. Vous
+            recevrez une notification instantanée à chaque nouvelle demande de
+            réservation.
           </p>
-          <div className="flex flex-col gap-3">
-            <Link
-              href="/gp"
-              className="bg-[#1D6B45] text-white px-8 py-3 rounded-xl font-medium hover:bg-[#0F4A30] transition-colors"
-            >
-              Voir les annonces
-            </Link>
-            <Link
-              href="/dashboard"
-              className="text-[#1D6B45] font-medium text-sm hover:underline"
-            >
-              Retour à l'accueil
-            </Link>
-          </div>
+        </div>
+        <div className="flex items-center justify-center gap-4 pt-4">
+          <Link
+            href="/gp"
+            className="px-6 py-3.5 bg-[#1D6B45] hover:bg-[#154d31] text-white font-bold rounded-2xl text-xs sm:text-sm transition-all shadow-md"
+          >
+            Voir les annonces GP
+          </Link>
+          <Link
+            href="/commandes"
+            className="px-6 py-3.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-2xl text-xs sm:text-sm transition-colors"
+          >
+            Mes annonces & réservations
+          </Link>
         </div>
       </div>
     );
+  }
 
   if (!isLoggedIn) {
     return (
-      <div className="min-h-screen bg-[#F3F4F6] flex items-center justify-center">
-        <div className="text-[#1D6B45] text-lg font-medium">Chargement...</div>
+      <div className="w-full max-w-4xl mx-auto px-4 py-20 text-center">
+        <div className="inline-block w-10 h-10 border-4 border-[#1D6B45] border-t-transparent rounded-full animate-spin" />
+        <p className="text-slate-600 text-sm mt-4 font-semibold">
+          Connexion en cours...
+        </p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#F3F4F6] pb-36">
-      {/* Header */}
-      <div className="bg-[#1D6B45] px-4 pt-12 pb-6">
-        <Link href="/gp" className="text-white/70 text-sm mb-4 inline-block">
-          ← Retour
+    <div className="w-full max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 space-y-8 pb-28">
+      {/* ── BREADCRUMB NAVIGATION ── */}
+      <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
+        <Link
+          href="/gp"
+          className="hover:text-[#1D6B45] transition-colors flex items-center gap-1"
+        >
+          <ArrowLeft size={13} /> Tous les trajets GP
         </Link>
-        <h1 className="text-2xl font-bold text-white">Publier une annonce</h1>
-        <p className="text-white/70 text-sm mt-1">
-          Tu voyages ? Propose tes kilos disponibles
-        </p>
+        <ChevronRight size={12} className="text-slate-300" />
+        <span className="text-slate-900 font-bold">Publier un vol</span>
       </div>
 
-      <div className="px-4 py-6 max-w-2xl mx-auto space-y-4">
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-xl px-4 py-3 text-sm">
-            {error}
+      {/* ── HERO BANNER PUBLICATION ── */}
+      <section className="relative overflow-hidden rounded-3xl md:rounded-[36px] bg-gradient-to-br from-[#123825] via-[#1D6B45] to-[#8C5806] text-white shadow-xl shadow-[#1D6B45]/10 p-6 sm:p-10">
+        <div className="absolute top-0 right-0 -mr-16 -mt-16 w-80 h-80 bg-[#D4870A]/20 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="relative z-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <span className="bg-white/20 backdrop-blur-md text-white text-xs font-bold px-3.5 py-1 rounded-full border border-white/25 inline-block">
+              Espace Voyageurs Certifiés
+            </span>
+            <h1 className="text-2xl sm:text-3xl md:text-4xl font-black text-white tracking-tight">
+              Rentabilisez vos kilos disponibles
+            </h1>
+            <p className="text-white/85 text-xs sm:text-sm leading-relaxed">
+              Transportez des colis en toute légalité et sécurité. Votre paiement
+              est consigné sous séquestre par Dabari et débloqué à la remise.
+            </p>
           </div>
-        )}
 
-        <form onSubmit={handleSubmit(handlePreSubmit)} className="space-y-4">
-          {/* Route */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
-            <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-              <PlaneTakeoff size={18} className="inline mr-2 text-[#1D6B45]" /> Itinéraire
-            </h2>
+          {/* Simulateur de gains instantané */}
+          <div className="bg-white/15 backdrop-blur-md border border-white/25 rounded-3xl p-5 text-center shrink-0 self-stretch md:self-auto space-y-1">
+            <span className="text-[11px] font-bold text-white/75 uppercase tracking-wider block flex items-center justify-center gap-1">
+              <Coins size={14} className="text-amber-300" /> Gains estimés
+            </span>
+            <div className="text-3xl font-black text-amber-300">
+              {estimatedRevenue.toFixed(0)} €
+            </div>
+            <span className="text-[11px] text-white/80 block">
+              {availableKgWatch} kg × {pricePerKgWatch} €/kg
+            </span>
+          </div>
+        </div>
+      </section>
 
-            <div className="grid grid-cols-2 gap-3 mb-3">
+      {error && (
+        <div className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-4 text-xs font-semibold flex items-center gap-2">
+          <AlertTriangle size={16} className="shrink-0 text-rose-600" />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {/* ── FORMULAIRE ADAPTÉ PC & MOBILE ── */}
+      <form
+        id="publish-gp-form"
+        onSubmit={handleSubmit(handlePreSubmit)}
+        className="space-y-6"
+      >
+        {/* 1. ITINÉRAIRE */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-xs space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#1D6B45] flex items-center justify-center font-bold text-xs">
+              1
+            </div>
+            <div>
+              <h2 className="font-extrabold text-slate-900 text-base">
+                Itinéraire du vol
+              </h2>
+              <p className="text-xs text-slate-500">
+                Pays et villes reliés lors de votre voyage
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Départ */}
+            <div className="space-y-3.5 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <PlaneTakeoff size={16} className="text-[#1D6B45]" />
+                <span>Point de départ</span>
+              </div>
+
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Pays de départ *
+                </label>
+                <div className="relative">
+                  <select
+                    {...register("departure_country", {
+                      onChange: (e) => {
+                        if (e.target.value === arrivalCountryWatch) {
+                          const fallback = GP_COUNTRIES.find(
+                            (c) => c !== e.target.value,
+                          );
+                          if (fallback) setValue("arrival_country", fallback);
+                        }
+                      },
+                    })}
+                    className="w-full pl-4 pr-10 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium text-slate-800 cursor-pointer"
+                  >
+                    {GP_COUNTRIES.filter((c) => c !== arrivalCountryWatch).map(
+                      (c) => (
+                        <option key={c} value={c}>
+                          {c}
+                        </option>
+                      ),
+                    )}
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
                   Ville de départ *
                 </label>
                 <input
                   {...register("departure_city")}
                   type="text"
                   list="departure-cities"
-                  placeholder="Ex: Paris, Dakar..."
-                  className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  placeholder="Ex: Paris, Lyon, Dakar..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium"
                 />
                 <datalist id="departure-cities">
                   {COMMON_CITIES.map((c) => (
@@ -284,73 +427,22 @@ export default function NouvelleAnnoncePage() {
                   ))}
                 </datalist>
                 {errors.departure_city && (
-                  <p className="text-red-500 text-xs mt-1">
+                  <p className="text-rose-500 text-xs mt-1">
                     {errors.departure_city.message}
                   </p>
                 )}
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Pays de départ *
-                </label>
-                <select
-                  {...register("departure_country", {
-                    onChange: (e) => {
-                      if (e.target.value === arrivalCountryWatch) {
-                        const fallback = GP_COUNTRIES.find(
-                          (c) => c !== e.target.value,
-                        );
-                        if (fallback) setValue("arrival_country", fallback);
-                      }
-                    },
-                  })}
-                  className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                >
-                  {GP_COUNTRIES.filter((c) => c !== arrivalCountryWatch).map(
-                    (c) => (
-                      <option key={c} value={c}>
-                        {c}
-                      </option>
-                    ),
-                  )}
-                </select>
-                {errors.departure_country && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.departure_country.message}
-                  </p>
-                )}
-              </div>
             </div>
 
-            <div className="flex items-center justify-center my-2">
-              <span className="text-[#1D6B45] text-xl font-bold">↓</span>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Ville d'arrivée *
-                </label>
-                <input
-                  {...register("arrival_city")}
-                  type="text"
-                  list="arrival-cities"
-                  placeholder="Ex: Dakar, Abidjan, Paris..."
-                  className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                />
-                <datalist id="arrival-cities">
-                  {COMMON_CITIES.map((c) => (
-                    <option key={c} value={c} />
-                  ))}
-                </datalist>
-                {errors.arrival_city && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.arrival_city.message}
-                  </p>
-                )}
+            {/* Arrivée */}
+            <div className="space-y-3.5 bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-100">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-700 uppercase tracking-wider">
+                <PlaneLanding size={16} className="text-[#D4870A]" />
+                <span>Destination finale</span>
               </div>
+
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
+                <label className="block text-xs font-bold text-slate-700 mb-1">
                   Pays d'arrivée *
                 </label>
                 <select
@@ -364,7 +456,7 @@ export default function NouvelleAnnoncePage() {
                       }
                     },
                   })}
-                  className="w-full px-3 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium text-slate-800 cursor-pointer"
                 >
                   {GP_COUNTRIES.filter((c) => c !== departureCountryWatch).map(
                     (c) => (
@@ -374,347 +466,436 @@ export default function NouvelleAnnoncePage() {
                     ),
                   )}
                 </select>
-                {errors.arrival_country && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.arrival_country.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Départ & Dépôt du colis */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
-            <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
-              <PlaneTakeoff size={18} className="inline mr-2 text-[#1D6B45]" />
-              Départ & Dépôt du colis
-            </h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Date du départ et lieu où les expéditeurs déposeront le colis
-            </p>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Date de départ *
-                </label>
-                <input
-                  {...register("departure_date")}
-                  type="date"
-                  min={defaultDepartureDate}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                />
-                {errors.departure_date && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.departure_date.message}
-                  </p>
-                )}
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Zone / quartier de dépôt du colis
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Ville d'arrivée *
                 </label>
                 <input
-                  {...register("pickup_city")}
+                  {...register("arrival_city")}
                   type="text"
-                  placeholder="Ex: Paris 10e, Dakar Plateau, Gare du Nord..."
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  list="arrival-cities"
+                  placeholder="Ex: Dakar, Abidjan, Douala..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Adresse précise de dépôt <span className="text-red-500">*</span>
-                </label>
-                {departureCountryWatch === "France" ? (
-                  <AddressAutocomplete
-                    value={watch("pickup_address") || ""}
-                    onChange={(val) =>
-                      setValue("pickup_address", val, { shouldValidate: true })
-                    }
-                    onSelectAddress={(item) => {
-                      setValue("pickup_address", item.label, {
-                        shouldValidate: true,
-                      });
-                      setValue("pickup_city", getQuarterOrCityFromAddress(item), {
-                        shouldValidate: true,
-                      });
-                    }}
-                    placeholder="Ex: 18 Rue de Dunkerque, 75010 Paris..."
-                    required
-                  />
-                ) : (
-                  <input
-                    {...register("pickup_address")}
-                    type="text"
-                    placeholder="Ex: Rue, quartier ou repère précis de dépôt..."
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                  />
-                )}
-                {errors.pickup_address && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.pickup_address.message}
+                <datalist id="arrival-cities">
+                  {COMMON_CITIES.map((c) => (
+                    <option key={c} value={c} />
+                  ))}
+                </datalist>
+                {errors.arrival_city && (
+                  <p className="text-rose-500 text-xs mt-1">
+                    {errors.arrival_city.message}
                   </p>
                 )}
               </div>
             </div>
           </div>
+        </div>
 
-          {/* Arrivée & Récupération du colis */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
-            <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
-              <PlaneLanding size={18} className="inline mr-2 text-[#D4870A]" />
-              Arrivée & Récupération du colis
-            </h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Date d'arrivée et lieu où le colis sera récupéré à destination
-            </p>
+        {/* 2. DÉPÔT ET RÉCUPÉRATION AVEC BASE ADRESSE NATIONALE */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+          {/* Départ & Dépôt */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-xs space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#1D6B45] flex items-center justify-center font-bold text-xs">
+                2
+              </div>
+              <h2 className="font-extrabold text-slate-900 text-base">
+                Collecte & Dépôt
+              </h2>
+            </div>
 
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Date d'arrivée
-                </label>
-                <input
-                  {...register("arrival_date")}
-                  type="date"
-                  min={
-                    departureDateWatch ||
-                    new Date(Date.now() + 24 * 60 * 60 * 1000)
-                      .toISOString()
-                      .split("T")[0]
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Date de départ de votre vol *
+              </label>
+              <input
+                {...register("departure_date")}
+                type="date"
+                min={defaultDepartureDate}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium"
+              />
+              {errors.departure_date && (
+                <p className="text-rose-500 text-xs mt-1">
+                  {errors.departure_date.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Quartier / Zone indicative
+              </label>
+              <input
+                {...register("pickup_city")}
+                type="text"
+                placeholder="Ex: Paris 10e Gare du Nord, Dakar Plateau..."
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Adresse précise de rendez-vous *
+              </label>
+              {departureCountryWatch === "France" ? (
+                <AddressAutocomplete
+                  value={watch("pickup_address") || ""}
+                  onChange={(val) =>
+                    setValue("pickup_address", val, { shouldValidate: true })
                   }
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  onSelectAddress={(item) => {
+                    setValue("pickup_address", item.label, {
+                      shouldValidate: true,
+                    });
+                    setValue("pickup_city", getQuarterOrCityFromAddress(item), {
+                      shouldValidate: true,
+                    });
+                  }}
+                  placeholder="Ex: 18 Rue de Dunkerque, 75010 Paris..."
+                  required
                 />
-                {errors.arrival_date && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.arrival_date.message}
-                  </p>
-                )}
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Zone / quartier de récupération du colis
-                </label>
+              ) : (
                 <input
-                  {...register("dropoff_city")}
+                  {...register("pickup_address")}
                   type="text"
-                  placeholder="Ex: Dakar Yoff, Abidjan Cocody, Douala Akwa..."
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
+                  placeholder="Ex: Rue, repère ou quartier de dépôt..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm"
                 />
-              </div>
-
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Adresse précise de récupération <span className="text-red-500">*</span>
-                </label>
-                {arrivalCountryWatch === "France" ? (
-                  <AddressAutocomplete
-                    value={watch("dropoff_address") || ""}
-                    onChange={(val) =>
-                      setValue("dropoff_address", val, { shouldValidate: true })
-                    }
-                    onSelectAddress={(item) => {
-                      setValue("dropoff_address", item.label, {
-                        shouldValidate: true,
-                      });
-                      setValue("dropoff_city", getQuarterOrCityFromAddress(item), {
-                        shouldValidate: true,
-                      });
-                    }}
-                    placeholder="Ex: 18 Rue de Dunkerque, 75010 Paris..."
-                    required
-                  />
-                ) : (
-                  <input
-                    {...register("dropoff_address")}
-                    type="text"
-                    placeholder="Ex: Aéroport, quartier, repère ou rue de retrait..."
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                  />
-                )}
-                {errors.dropoff_address && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.dropoff_address.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Vol & Type */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
-            <h2 className="font-semibold text-gray-800 mb-3 flex items-center">
-              <Plane size={18} className="inline mr-2 text-[#1D6B45]" /> Type de vol
-            </h2>
-
-            <div className="grid grid-cols-2 gap-3">
-              {(["direct", "escale"] as const).map((type) => (
-                <label
-                  key={type}
-                  className="flex items-center gap-2 p-3 rounded-xl border border-gray-200 cursor-pointer hover:border-[#1D6B45] transition-colors bg-white"
-                >
-                  <input
-                    {...register("flight_type")}
-                    type="radio"
-                    value={type}
-                    className="accent-[#1D6B45]"
-                  />
-                  <span className="text-sm font-medium text-gray-700 capitalize">
-                    {type === "direct" ? "Vol direct" : "Avec escale"}
-                  </span>
-                </label>
-              ))}
-            </div>
-          </div>
-
-          {/* Colis */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
-            <h2 className="font-semibold text-gray-800 mb-4 flex items-center">
-              <Package size={18} className="inline mr-2 text-[#1D6B45]" /> Capacité & tarif
-            </h2>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Kilos disponibles *
-                </label>
-                <input
-                  {...register("available_kg", { valueAsNumber: true })}
-                  type="number"
-                  step="0.5"
-                  min="0.5"
-                  max="30"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                />
-                {errors.available_kg && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.available_kg.message}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-600 mb-1">
-                  Prix par kg (€) *
-                </label>
-                <input
-                  {...register("price_per_kg", { valueAsNumber: true })}
-                  type="number"
-                  step="0.5"
-                  min="1"
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white"
-                />
-                {errors.price_per_kg && (
-                  <p className="text-red-500 text-xs mt-1">
-                    {errors.price_per_kg.message}
-                  </p>
-                )}
-              </div>
-            </div>
-          </div>
-
-          {/* Description */}
-          <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-xs">
-            <h2 className="font-semibold text-gray-800 mb-1 flex items-center">
-              <PenLine size={18} className="inline mr-2 text-[#1D6B45]" /> Présentation & Conditions
-            </h2>
-            <p className="text-xs text-gray-500 mb-4">
-              Décris-toi et tes consignes pour rassurer les expéditeurs
-            </p>
-            <textarea
-              {...register("description")}
-              placeholder="Ex: Voyageur régulier depuis 3 ans. Sérieux et ponctuel. Colis remis en main propre à destination. Pas de liquides ni produits interdits."
-              rows={4}
-              className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm resize-none bg-white"
-            />
-            {errors.description && (
-              <p className="text-red-500 text-xs mt-1">
-                {errors.description.message}
+              )}
+              {errors.pickup_address && (
+                <p className="text-rose-500 text-xs mt-1">
+                  {errors.pickup_address.message}
+                </p>
+              )}
+              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                <MapPin size={11} /> Lieu où l'expéditeur vous remettra le colis
               </p>
-            )}
+            </div>
           </div>
 
-          {/* Info sécurité */}
-          <div className="bg-[#FFF8E1] border border-[#D4870A]/20 rounded-2xl p-4">
-            <p className="text-sm font-semibold text-[#D4870A] mb-1">
-              <Lock size={16} className="inline mr-2" /> Paiement sécurisé
-            </p>
-            <p className="text-xs text-gray-600">
-              Le paiement des expéditeurs est bloqué jusqu'à confirmation de
-              livraison. Tu es protégé à chaque trajet.
-            </p>
+          {/* Arrivée & Retrait */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-xs space-y-4">
+            <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+              <div className="w-8 h-8 rounded-xl bg-amber-100 text-[#D4870A] flex items-center justify-center font-bold text-xs">
+                3
+              </div>
+              <h2 className="font-extrabold text-slate-900 text-base">
+                Arrivée & Remise au destinataire
+              </h2>
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Date d'arrivée estimée
+              </label>
+              <input
+                {...register("arrival_date")}
+                type="date"
+                min={departureDateWatch || defaultDepartureDate}
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium"
+              />
+              {errors.arrival_date && (
+                <p className="text-rose-500 text-xs mt-1">
+                  {errors.arrival_date.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Quartier / Zone de remise
+              </label>
+              <input
+                {...register("dropoff_city")}
+                type="text"
+                placeholder="Ex: Dakar Yoff, Abidjan Cocody..."
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm"
+              />
+            </div>
+
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Adresse ou aéroport de retrait *
+              </label>
+              {arrivalCountryWatch === "France" ? (
+                <AddressAutocomplete
+                  value={watch("dropoff_address") || ""}
+                  onChange={(val) =>
+                    setValue("dropoff_address", val, { shouldValidate: true })
+                  }
+                  onSelectAddress={(item) => {
+                    setValue("dropoff_address", item.label, {
+                      shouldValidate: true,
+                    });
+                    setValue("dropoff_city", getQuarterOrCityFromAddress(item), {
+                      shouldValidate: true,
+                    });
+                  }}
+                  placeholder="Ex: Aéroport CDG Terminal 2, Paris..."
+                  required
+                />
+              ) : (
+                <input
+                  {...register("dropoff_address")}
+                  type="text"
+                  placeholder="Ex: Aéroport AIBD, ou quartier de retrait..."
+                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm"
+                />
+              )}
+              {errors.dropoff_address && (
+                <p className="text-rose-500 text-xs mt-1">
+                  {errors.dropoff_address.message}
+                </p>
+              )}
+              <p className="text-[11px] text-slate-400 mt-1 flex items-center gap-1">
+                <MapPin size={11} /> Lieu de remise en mains propres
+              </p>
+            </div>
+          </div>
+        </div>
+
+        {/* 3. CAPACITÉ, TARIF & TYPE DE VOL */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-xs space-y-6">
+          <div className="flex items-center gap-3 border-b border-slate-100 pb-3">
+            <div className="w-8 h-8 rounded-xl bg-emerald-100 text-[#1D6B45] flex items-center justify-center font-bold text-xs">
+              4
+            </div>
+            <div>
+              <h2 className="font-extrabold text-slate-900 text-base">
+                Capacité en kilos & Tarification
+              </h2>
+              <p className="text-xs text-slate-500">
+                Fixez le nombre de kilos et votre prix unitaire
+              </p>
+            </div>
           </div>
 
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Kilos */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Kilos disponibles (max 50 kg) *
+              </label>
+              <input
+                {...register("available_kg", { valueAsNumber: true })}
+                type="number"
+                step="0.5"
+                min="0.5"
+                max="50"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm font-black text-slate-900"
+              />
+              {errors.available_kg && (
+                <p className="text-rose-500 text-xs mt-1">
+                  {errors.available_kg.message}
+                </p>
+              )}
+            </div>
+
+            {/* Prix / kg */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Tarif au kilo (€ TTC) *
+              </label>
+              <input
+                {...register("price_per_kg", { valueAsNumber: true })}
+                type="number"
+                step="0.5"
+                min="1"
+                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm font-black text-[#1D6B45]"
+              />
+              {errors.price_per_kg && (
+                <p className="text-rose-500 text-xs mt-1">
+                  {errors.price_per_kg.message}
+                </p>
+              )}
+            </div>
+
+            {/* Type de vol */}
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1">
+                Type de vol *
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["direct", "escale"] as const).map((type) => (
+                  <label
+                    key={type}
+                    className="flex items-center gap-1.5 p-2.5 rounded-xl border border-slate-200 cursor-pointer hover:border-[#1D6B45] transition-colors bg-slate-50/50 text-xs font-bold text-slate-800"
+                  >
+                    <input
+                      {...register("flight_type")}
+                      type="radio"
+                      value={type}
+                      className="accent-[#1D6B45]"
+                    />
+                    <span className="capitalize">
+                      {type === "direct" ? "Direct" : "Escale"}
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 4. CONSIGNES & CONDITIONS POUR LES EXPÉDITEURS */}
+        <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-8 shadow-xs space-y-4">
+          <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
+            <PenLine size={18} className="text-[#1D6B45]" />
+            <h2 className="font-extrabold text-slate-900 text-base">
+              Consignes & Conditions pour vos expéditeurs
+            </h2>
+          </div>
+          <p className="text-xs text-slate-500">
+            Précisez vos disponibilités, les types de colis acceptés ou refusés
+            (ex: uniquement denrées sèches scellées, pas de liquides...).
+          </p>
+          <textarea
+            {...register("description")}
+            placeholder="Ex: Voyageur sérieux régulier. Colis inspectés ensemble au dépôt pour conformité aérienne IATA. Remise possible à l'aéroport ou à domicile."
+            rows={4}
+            className="w-full px-4 py-3 rounded-2xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-xs leading-relaxed font-medium"
+          />
+          {errors.description && (
+            <p className="text-rose-500 text-xs">{errors.description.message}</p>
+          )}
+
+          {/* Charte sur l'honneur */}
+          <label className="flex items-start gap-3 p-4 rounded-2xl bg-amber-50/70 border border-amber-200/70 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={acceptCharter}
+              onChange={(e) => setAcceptCharter(e.target.checked)}
+              className="accent-[#1D6B45] mt-1 shrink-0 cursor-pointer"
+            />
+            <span className="text-xs text-slate-700 leading-relaxed font-medium">
+              <strong className="text-slate-900 block mb-0.5">
+                Engagement de conformité douanière & IATA :
+              </strong>
+              Je certifie que j'inspecterai le contenu de chaque colis avec
+              l'expéditeur avant d'embarquer et que je refuserai toute marchandise
+              illicite, liquide non autorisé ou produit dangereux.
+            </span>
+          </label>
+        </div>
+
+        {/* 5. SÉCURITÉ & SUBMIT */}
+        <div className="bg-emerald-50 rounded-2xl p-4 sm:p-5 border border-emerald-100 flex items-center gap-3.5">
+          <ShieldCheck size={24} className="text-[#1D6B45] shrink-0" />
+          <p className="text-xs sm:text-sm text-emerald-900/90 leading-relaxed">
+            <strong>Garantie Séquestre Dabari :</strong> Vos gains vous sont
+            transférés dès que le destinataire confirme la remise de son colis.
+          </p>
+        </div>
+
+        <button
+          type="submit"
+          disabled={loading || !isFormValid}
+          className="w-full bg-[#1D6B45] hover:bg-[#154d31] disabled:bg-slate-300 disabled:cursor-not-allowed text-white py-4 px-6 rounded-2xl font-black text-sm sm:text-base shadow-md transition-all hover:scale-101 cursor-pointer flex items-center justify-center gap-2"
+        >
+          {loading ? (
+            <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <>
+              <Plane size={18} />
+              <span>Publier mon vol GP ({estimatedRevenue.toFixed(0)} € potentiels)</span>
+            </>
+          )}
+        </button>
+      </form>
+
+      {/* ── BARRE MOBILE STICKY ── */}
+      <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
+        <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
+          <div>
+            <span className="text-[11px] text-slate-400 block font-medium">
+              Gains estimés ({availableKgWatch} kg)
+            </span>
+            <span className="text-xl font-black text-[#1D6B45]">
+              {estimatedRevenue.toFixed(0)} €
+            </span>
+          </div>
           <button
             type="submit"
+            form="publish-gp-form"
             disabled={loading || !isFormValid}
-            className="w-full bg-[#1D6B45] text-white py-4 rounded-2xl font-semibold text-base hover:bg-[#0F4A30] transition-all disabled:bg-gray-300 disabled:text-gray-400 disabled:cursor-not-allowed disabled:shadow-none shadow-sm cursor-pointer"
+            className="flex-1 max-w-[220px] bg-[#1D6B45] text-white py-3.5 px-4 rounded-2xl font-bold text-xs sm:text-sm hover:bg-[#155235] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md text-center cursor-pointer flex items-center justify-center gap-1.5"
           >
-            {loading ? "Publication..." : "Publier mon annonce"}
+            {loading ? (
+              <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <span>Publier mon vol</span>
+            )}
           </button>
-        </form>
+        </div>
       </div>
 
-      {/* Pop-up (Modale) de confirmation */}
+      {/* ── MODALE DE CONFIRMATION AVANT PUBLICATION ── */}
       {showConfirmModal && pendingData && (
-        <div
-          role="dialog"
-          aria-modal="true"
-          onClick={(e) => {
-            if (e.target === e.currentTarget && !loading) setShowConfirmModal(false);
-          }}
-          className="fixed inset-0 bg-black/60 backdrop-blur-xs z-50 flex items-center justify-center p-4 animate-in fade-in duration-150"
-        >
-          <div className="bg-white rounded-3xl p-6 max-w-sm w-full mx-auto shadow-2xl">
-            <h3 className="text-lg font-bold text-gray-900 mb-2">
-              Publier l&apos;annonce
-            </h3>
-            <div className="text-gray-600 mb-6 text-sm space-y-2">
-              <p>
-                Trajet de{" "}
-                <span className="font-bold text-gray-900">{pendingData.departure_city}</span> ({pendingData.departure_country}) vers{" "}
-                <span className="font-bold text-gray-900">{pendingData.arrival_city}</span> ({pendingData.arrival_country}).
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200">
+          <div className="bg-white rounded-[32px] max-w-md w-full p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95 duration-150">
+            <div className="w-14 h-14 bg-emerald-100 text-[#1D6B45] rounded-2xl flex items-center justify-center shadow-xs">
+              <Plane size={28} />
+            </div>
+
+            <div className="space-y-1">
+              <h3 className="font-extrabold text-slate-900 text-xl">
+                Confirmer la publication du vol
+              </h3>
+              <p className="text-xs text-slate-500">
+                Votre annonce sera visible dès validation
               </p>
-              <div className="p-3 bg-gray-50 rounded-2xl text-xs space-y-1">
-                <p className="flex items-center gap-1.5">
-                  <PlaneTakeoff size={14} className="text-[#1D6B45] shrink-0" />
-                  <span>
-                    <strong>Départ :</strong>{" "}
-                    {new Date(pendingData.departure_date).toLocaleDateString("fr-FR")}
-                    {pendingData.pickup_city && ` (Dépôt : ${pendingData.pickup_city})`}
-                  </span>
-                </p>
-                {pendingData.arrival_date && (
-                  <p className="flex items-center gap-1.5">
-                    <PlaneLanding size={14} className="text-[#D4870A] shrink-0" />
-                    <span>
-                      <strong>Arrivée :</strong>{" "}
-                      {new Date(pendingData.arrival_date).toLocaleDateString("fr-FR")}
-                      {pendingData.dropoff_city && ` (Récupération : ${pendingData.dropoff_city})`}
-                    </span>
-                  </p>
-                )}
+            </div>
+
+            <div className="bg-[#FAF7F2] p-4 sm:p-5 rounded-2xl border border-slate-200/80 text-xs space-y-2.5 text-slate-700">
+              <div className="flex justify-between">
+                <span className="text-slate-500">Trajet :</span>
+                <strong className="text-slate-900">
+                  {pendingData.departure_city} ➔ {pendingData.arrival_city}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Départ :</span>
+                <strong className="text-slate-900">
+                  {new Date(pendingData.departure_date).toLocaleDateString(
+                    "fr-FR",
+                  )}
+                </strong>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500">Capacité :</span>
+                <strong className="text-slate-900">
+                  {pendingData.available_kg} kg à {pendingData.price_per_kg} €/kg
+                </strong>
+              </div>
+              <div className="flex justify-between border-t border-slate-200 pt-2 font-black text-sm">
+                <span className="text-slate-800">Revenu potentiel :</span>
+                <span className="text-[#1D6B45]">
+                  {(
+                    pendingData.available_kg * pendingData.price_per_kg
+                  ).toFixed(0)}{" "}
+                  €
+                </span>
               </div>
             </div>
 
-            <div className="flex gap-3">
+            <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                disabled={loading}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-sm hover:bg-gray-50 transition-colors"
+                className="flex-1 py-3.5 rounded-2xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
               >
-                Annuler
+                Modifier
               </button>
               <button
                 type="button"
                 onClick={() => onSubmit(pendingData)}
                 disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-sm hover:bg-[#0F4A30] transition-colors flex items-center justify-center disabled:opacity-50"
+                className="flex-1 py-3.5 rounded-2xl text-xs font-bold bg-[#1D6B45] text-white hover:bg-[#154d31] transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
               >
-                {loading ? "En cours..." : "Oui, publier"}
+                {loading ? "Publication..." : "Confirmer la publication"}
               </button>
             </div>
           </div>

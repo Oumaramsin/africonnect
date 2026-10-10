@@ -99,35 +99,13 @@ export const GP_COUNTRIES = [
   "Autre",
 ] as const;
 
-const COUNTRY_FLAG: Record<string, string> = {
-  France: "🇫🇷",
-  Sénégal: "🇸🇳",
-  "Côte d'Ivoire": "🇨🇮",
-  Cameroun: "🇨🇲",
-  Congo: "🇨🇬",
-  Mali: "🇲🇱",
-  Guinée: "🇬🇳",
-  "Burkina Faso": "🇧🇫",
-  Bénin: "🇧🇯",
-  Togo: "🇹🇬",
-  Gabon: "🇬🇦",
-  RDC: "🇨🇩",
-  Madagascar: "🇲🇬",
-  Maroc: "🇲🇦",
-  Algérie: "🇩🇿",
-  Tunisie: "🇹🇳",
-  Belgique: "🇧🇪",
-  Suisse: "🇨🇭",
-  Canada: "🇨🇦",
-  Autre: "🌍",
-};
+import CountryFlag from "@/components/ui/CountryFlag";
 
 export function getFlag(country: string): React.ReactNode {
-  if (COUNTRY_FLAG[country]) {
-    return COUNTRY_FLAG[country];
-  }
-  return React.createElement(Globe, {
-    className: "inline-block w-4 h-4 text-[#1D6B45] align-text-bottom mr-1",
+  return React.createElement(CountryFlag, {
+    country,
+    size: 18,
+    className: "mr-1.5 align-middle",
   });
 }
 

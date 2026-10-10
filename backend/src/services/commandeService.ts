@@ -381,22 +381,22 @@ export const updateGpRequestStatus = async (
           "Le GP a accepté votre demande de transport. Vous pouvez convenir du dépôt du colis.";
       } else if (status === GP_REQUEST_STATUS.COLIS_RECU) {
         notifType = "gp_colis_recu";
-        notifTitre = "📦 Colis réceptionné !";
+        notifTitre = "Colis réceptionné !";
         notifMsg =
           "Votre transporteur GP a bien récupéré et vérifié votre colis.";
       } else if (status === GP_REQUEST_STATUS.EN_ACHEMINEMENT) {
         notifType = "gp_acheminement";
-        notifTitre = "✈️ Colis en cours d'acheminement !";
+        notifTitre = "Colis en cours d'acheminement !";
         notifMsg =
           "Votre colis est en transit / en vol vers le pays de destination.";
       } else if (status === GP_REQUEST_STATUS.ARRIVE) {
         notifType = "gp_arrive";
-        notifTitre = "🛬 Colis arrivé à destination !";
+        notifTitre = "Colis arrivé à destination !";
         notifMsg =
           "Votre transporteur est arrivé. Le colis est prêt pour la remise ou le retrait.";
       } else if (status === GP_REQUEST_STATUS.LIVRE) {
         notifType = "gp_livre";
-        notifTitre = "🎉 Colis livré et récupéré !";
+        notifTitre = "Colis livré et récupéré !";
         notifMsg =
           "Votre colis a été remis au destinataire. La mission de transport est terminée.";
       } else if (
@@ -404,7 +404,7 @@ export const updateGpRequestStatus = async (
         status === GP_REQUEST_STATUS.REFUSED
       ) {
         notifType = "gp_refusee";
-        notifTitre = "❌ Demande GP refusée";
+        notifTitre = "Demande GP refusée";
         notifMsg = message
           ? `Le GP a refusé la demande. Motif : ${message}`
           : "Le GP a refusé votre demande de transport.";
@@ -896,7 +896,7 @@ export const updateGpRequestDelay = async (
           data: {
             user_id: existing.sender_id,
             type: "gp_retard",
-            titre: "⚠️ Retard signalé sur votre colis GP",
+            titre: "Retard signalé sur votre colis GP",
             message: `Le transporteur a signalé un décalage. Nouvelle date d'arrivée estimée : ${dateFormatted}.${
               data.delay_reason ? ` Motif : ${data.delay_reason}` : ""
             }`,
@@ -978,7 +978,7 @@ export const updateGpListingDelay = async (
             data: {
               user_id: req.sender_id,
               type: "gp_retard",
-              titre: "⚠️ Retard signalé sur votre trajet GP",
+              titre: "Retard signalé sur votre trajet GP",
               message: `Le transporteur a signalé un décalage. Nouvelle date d'arrivée estimée : ${dateFormatted}.${
                 data.delay_reason ? ` Motif : ${data.delay_reason}` : ""
               }`,

@@ -101,25 +101,12 @@ export default function BottomNav() {
 
   return (
     <nav
+      className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/90 shadow-lg"
       style={{
-        width: "100%",
-        maxWidth: "430px",
-        background: "white",
-        borderTop: "1px solid #e5e7eb",
-        flexShrink: 0,
-        position: "fixed",
-        bottom: 0,
-        zIndex: 30,
+        paddingBottom: "max(env(safe-area-inset-bottom), 4px)",
       }}
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "space-around",
-          padding: "8px 0 12px",
-        }}
-      >
+      <div className="max-w-md mx-auto flex items-center justify-around pt-1.5 pb-2 px-2">
         {items.map((item) => {
           const isActive =
             pathname === item.href ||

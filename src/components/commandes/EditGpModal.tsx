@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plane, PlaneTakeoff, PlaneLanding, Scale, Package, X, Minus, Plus, Banknote, AlertCircle } from "lucide-react";
+import { Plane, PlaneTakeoff, PlaneLanding, Scale, Package, X, Minus, Plus, Banknote, AlertCircle, ArrowRight } from "lucide-react";
 import { authFetch } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
@@ -178,8 +178,10 @@ export default function EditGpModal({
                 <h3 id="edit-gp-title" className="font-extrabold text-gray-900 text-base">
                   Modifier la réservation GP
                 </h3>
-                <p className="text-xs text-gray-500 font-semibold">
-                  {depCity} ➔ {arrCity}
+                <p className="text-xs text-gray-500 font-semibold inline-flex items-center gap-1.5">
+                  <span>{depCity}</span>
+                  <ArrowRight size={11} className="text-gray-400" />
+                  <span>{arrCity}</span>
                 </p>
                 {(depDate || arrDate) && (
                   <p className="text-[11px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">

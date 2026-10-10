@@ -97,7 +97,7 @@ export const createOrderTraiteur = async (
           data: {
             user_id: traiteur.user_id,
             type: "nouvelle_commande",
-            titre: "🎉 Nouvelle commande !",
+            titre: "Nouvelle commande !",
             message: `Commande pour ${commande.nb_personnes} personnes le ${new Date(
               commande.date_evenement,
             ).toLocaleDateString("fr-FR")} à ${commande.adresse}`,

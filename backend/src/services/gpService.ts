@@ -120,7 +120,7 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
           data: {
             user_id: gpListing.gp_id,
             type: "nouvelle_demande_colis",
-            titre: "📦 Nouvelle demande de colis !",
+            titre: "Nouvelle demande de colis !",
             message: `Demande de transport : ${order.weight_kg} kg — ${order.content_desc}`,
             data: {
               request_id: newOrder.id,

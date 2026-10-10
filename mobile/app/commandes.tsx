@@ -18,6 +18,12 @@ import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
 import { apiFetch } from "../utils/api";
 import { TraiteurRequest, TraiteurProposal, formatWhatsAppUrl } from "../utils/types/traiteur";
+import GpTrackingTimeline, {
+  getGpStatusLabel,
+} from "../components/GpTrackingTimeline";
+import SignalGpDelayModal, {
+  SignalGpDelayTarget,
+} from "../components/SignalGpDelayModal";
 
 type CommandeTraiteur = {
   id: string;
@@ -80,32 +86,40 @@ type GpRequest = {
   delay_reason?: string | null;
   created_at: string;
   listing?: {
+    id?: string;
     departure_city: string;
     arrival_city: string;
     departure_country: string;
     arrival_country: string;
     departure_date: string;
     arrival_date?: string | null;
+    pickup_address?: string | null;
     pickup_city?: string | null;
+    dropoff_address?: string | null;
     dropoff_city?: string | null;
     gp_id: string;
     is_active?: boolean | null;
     is_delayed?: boolean | null;
     delay_reason?: string | null;
+    gp?: { full_name?: string | null; phone?: string | null } | null;
   } | null;
   gp_listings?: {
+    id?: string;
     departure_city: string;
     arrival_city: string;
     departure_country: string;
     arrival_country: string;
     departure_date: string;
     arrival_date?: string | null;
+    pickup_address?: string | null;
     pickup_city?: string | null;
+    dropoff_address?: string | null;
     dropoff_city?: string | null;
     gp_id: string;
     is_active?: boolean | null;
     is_delayed?: boolean | null;
     delay_reason?: string | null;
+    gp?: { full_name?: string | null; phone?: string | null } | null;
   } | null;
   sender?: { full_name: string; phone: string | null } | null;
   profiles?: { full_name: string; phone: string | null } | null;
@@ -179,6 +193,42 @@ export default function CommandeScreen() {
       pathname: "/commande/edit-traiteur-request",
       params: { id: req.id },
     });
+  };
+
+  // ── État Retard & Suivi GP ──
+  const [delayTargetGp, setDelayTargetGp] = useState<SignalGpDelayTarget | null>(null);
+  const [updatingGpStatusId, setUpdatingGpStatusId] = useState<string | null>(null);
+  const [gpStatusConfirm, setGpStatusConfirm] = useState<{
+    id: string;
+    newStatus: string;
+    statusLabel: string;
+  } | null>(null);
+
+  const handleConfirmUpdateGpStatus = async () => {
+    if (!gpStatusConfirm) return;
+    const { id, newStatus, statusLabel } = gpStatusConfirm;
+    setUpdatingGpStatusId(id);
+    try {
+      const res = await apiFetch(`/commande/gp/${id}/status`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: newStatus }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || "Erreur lors de la mise à jour du statut GP");
+      }
+      Alert.alert(
+        "Étape validée 🎉",
+        `Le colis est maintenant marqué « ${statusLabel} ». L'expéditeur a été notifié.`
+      );
+      setGpStatusConfirm(null);
+      await loadAll();
+    } catch (e: any) {
+      Alert.alert("Erreur", e.message || "Erreur de mise à jour");
+    } finally {
+      setUpdatingGpStatusId(null);
+    }
   };
 
   // ── État Annulation Commande ──
@@ -1249,6 +1299,33 @@ export default function CommandeScreen() {
                                   </View>
                                 )}
                               </View>
+
+                              {/* Suivi interactif pour les colis acceptés / en cours */}
+                              {gp.status !== "pending" &&
+                                gp.status !== "cancelled" &&
+                                gp.status !== "refusee" && (
+                                  <View style={{ marginTop: 10 }}>
+                                    <GpTrackingTimeline
+                                      status={gp.status}
+                                      departureCity={depCity}
+                                      arrivalCity={arrCity}
+                                      departureDate={gp.departure_date || listing?.departure_date}
+                                      arrivalDate={arrivalDate}
+                                      pickupAddress={listing?.pickup_address}
+                                      pickupCity={listing?.pickup_city}
+                                      dropoffAddress={listing?.dropoff_address}
+                                      dropoffCity={listing?.dropoff_city}
+                                      weightKg={gp.weight_kg}
+                                      contentDesc={gp.content_desc}
+                                      totalAmount={gp.total_amount}
+                                      contactName={listing?.gp?.full_name || "Transporteur GP"}
+                                      contactPhone={listing?.gp?.phone}
+                                      isDelayed={isDelayed}
+                                      delayReason={delayReason}
+                                      isGpMode={false}
+                                    />
+                                  </View>
+                                )}
                             </View>
                           );
                         })}
@@ -2135,36 +2212,87 @@ export default function CommandeScreen() {
                                 </View>
                               )}
 
-                              {(gp.status === "acceptee" ||
-                                gp.status === "accepted") && (
-                                <TouchableOpacity
-                                  style={styles.whatsAppBtn}
-                                  activeOpacity={0.85}
-                                  onPress={() => {
-                                    const senderPhone = senderInfo?.phone;
-                                    const url = formatWhatsAppUrl(
-                                      senderPhone,
-                                      `Bonjour ${senderInfo?.full_name || ""}, je vous contacte concernant votre colis GP (${gp.weight_kg} kg) sur Dabari.`
-                                    );
-                                    if (url) {
-                                      Linking.openURL(url);
-                                    } else {
-                                      Alert.alert(
-                                        "Contact WhatsApp",
-                                        "Le numéro WhatsApp de cet expéditeur n'est pas renseigné."
-                                      );
-                                    }
-                                  }}
-                                >
-                                  <Ionicons
-                                    name="logo-whatsapp"
-                                    size={16}
-                                    color="#FFFFFF"
+                               {/* Si la demande est acceptée ou en cours d'acheminement, afficher le suivi GP transporteur */}
+                              {gp.status !== "en_attente" &&
+                              gp.status !== "pending" &&
+                              gp.status !== "refusee" &&
+                              gp.status !== "refused" &&
+                              gp.status !== "cancelled" ? (
+                                <View style={{ marginTop: 10 }}>
+                                  <GpTrackingTimeline
+                                    status={gp.status}
+                                    departureCity={depCity}
+                                    arrivalCity={arrCity}
+                                    departureDate={gp.departure_date || listing?.departure_date}
+                                    arrivalDate={arrivalDate}
+                                    pickupAddress={listing?.pickup_address}
+                                    pickupCity={listing?.pickup_city}
+                                    dropoffAddress={listing?.dropoff_address}
+                                    dropoffCity={listing?.dropoff_city}
+                                    weightKg={gp.weight_kg}
+                                    contentDesc={gp.content_desc}
+                                    totalAmount={gp.total_amount}
+                                    contactName={senderInfo?.full_name || "Expéditeur"}
+                                    contactPhone={senderInfo?.phone}
+                                    isDelayed={isDelayed}
+                                    delayReason={delayReason}
+                                    isGpMode={true}
+                                    updatingStatus={updatingGpStatusId === gp.id}
+                                    onUpdateStatus={(newStatus) => {
+                                      const labelMap: Record<string, string> = {
+                                        in_transit: "En vol / Transit",
+                                        arrived: "Arrivé à destination",
+                                        delivered: "Remis au destinataire",
+                                      };
+                                      setGpStatusConfirm({
+                                        id: gp.id,
+                                        newStatus,
+                                        statusLabel: labelMap[newStatus] || newStatus,
+                                      });
+                                    }}
+                                    onSignalDelay={() => {
+                                      setDelayTargetGp({
+                                        id: gp.listing_id || (listing?.id ?? gp.id),
+                                        currentArrivalDate: arrivalDate,
+                                        departureDate: gp.departure_date || listing?.departure_date,
+                                        routeLabel: depCity && arrCity ? `${depCity} ➔ ${arrCity}` : undefined,
+                                        delayReason: delayReason || undefined,
+                                        isListing: true,
+                                      });
+                                    }}
                                   />
-                                  <Text style={styles.whatsAppBtnText}>
-                                    Contacter l'expéditeur sur WhatsApp
-                                  </Text>
-                                </TouchableOpacity>
+                                </View>
+                              ) : (
+                                (gp.status === "pending" || gp.status === "en_attente") && (
+                                  <TouchableOpacity
+                                    style={styles.whatsAppBtn}
+                                    activeOpacity={0.85}
+                                    onPress={() => {
+                                      const senderPhone = senderInfo?.phone;
+                                      const url = formatWhatsAppUrl(
+                                        senderPhone,
+                                        `Bonjour ${senderInfo?.full_name || ""}, je vous contacte concernant votre colis GP (${gp.weight_kg} kg) sur Dabari.`
+                                      );
+                                      if (url) {
+                                        Linking.openURL(url);
+                                      } else {
+                                        Alert.alert(
+                                          "Contact WhatsApp",
+                                          "Le numéro WhatsApp de cet expéditeur n'est pas renseigné."
+                                        );
+                                      }
+                                    }}
+                                  >
+                                    <Ionicons
+                                      name="logo-whatsapp"
+                                      size={16}
+                                      color="#FFFFFF"
+                                    />
+                                    <Text style={styles.whatsAppBtnText}>
+                                      Contacter l'expéditeur sur WhatsApp
+                                    </Text>
+                                  </TouchableOpacity>
+                                )
                               )}
                             </View>
                           );
@@ -2304,6 +2432,76 @@ export default function CommandeScreen() {
                       <Text style={styles.confirmExecuteText}>
                         Oui, annuler
                       </Text>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {/* MODALE RETARD DE VOL GP */}
+        {delayTargetGp && (
+          <SignalGpDelayModal
+            visible={!!delayTargetGp}
+            target={delayTargetGp}
+            onClose={() => setDelayTargetGp(null)}
+            onSuccess={() => {
+              setDelayTargetGp(null);
+              loadAll();
+            }}
+          />
+        )}
+
+        {/* MODALE MISE À JOUR STATUT GP TRANSPORTEUR */}
+        {gpStatusConfirm && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={!!gpStatusConfirm}
+            onRequestClose={() => setGpStatusConfirm(null)}
+          >
+            <View style={styles.modalOverlay}>
+              <View style={styles.modalCard}>
+                <View
+                  style={[
+                    styles.modalIconCircle,
+                    { backgroundColor: "#CCFBF1" },
+                  ]}
+                >
+                  <Ionicons name="airplane" size={32} color="#0D9488" />
+                </View>
+
+                <Text style={styles.modalTitle}>Faire progresser le colis</Text>
+
+                <Text style={styles.modalSubtext}>
+                  Voulez-vous passer le statut de ce colis à « {gpStatusConfirm.statusLabel} » ? L'expéditeur sera immédiatement averti.
+                </Text>
+
+                <View style={styles.modalButtonsRow}>
+                  <TouchableOpacity
+                    style={styles.modalCancelBtn}
+                    onPress={() => setGpStatusConfirm(null)}
+                    disabled={updatingGpStatusId === gpStatusConfirm.id}
+                    activeOpacity={0.8}
+                  >
+                    <Text style={styles.modalCancelText}>Annuler</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.modalConfirmBtn,
+                      { backgroundColor: "#0D9488" },
+                      updatingGpStatusId === gpStatusConfirm.id && { opacity: 0.7 },
+                    ]}
+                    activeOpacity={0.85}
+                    onPress={handleConfirmUpdateGpStatus}
+                    disabled={updatingGpStatusId === gpStatusConfirm.id}
+                  >
+                    {updatingGpStatusId === gpStatusConfirm.id ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.modalConfirmText}>Valider l'étape</Text>
                     )}
                   </TouchableOpacity>
                 </View>

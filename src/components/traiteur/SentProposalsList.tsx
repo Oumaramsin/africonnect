@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { authFetch, getValidToken } from "@/lib/auth";
 import { TraiteurProposal, formatWhatsAppUrl } from "@/lib/types/traiteur";
+import Image from "next/image";
 
 type Props = {
   /** Appelé avec les IDs des annonces auxquelles le traiteur a déjà répondu */
@@ -198,9 +199,11 @@ export default function SentProposalsList({ onLoaded }: Props) {
               <div className="flex items-start gap-3">
                 <div className="w-11 h-11 rounded-full bg-[#1D6B45] text-white font-bold text-sm flex items-center justify-center shrink-0 overflow-hidden">
                   {client?.avatar_url ? (
-                    <img
+                    <Image
                       src={client.avatar_url}
-                      alt={client.full_name}
+                      alt={client.full_name || "Client"}
+                      width={44}
+                      height={44}
                       className="w-full h-full object-cover"
                     />
                   ) : (
