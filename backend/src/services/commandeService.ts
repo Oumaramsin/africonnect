@@ -1,10 +1,14 @@
 import { db } from "../db";
 import {
   COMMANDE_TRAITEUR_STATUS,
+  DEVIS_STATUS,
   ORDER_PLAT_STATUS,
   GP_REQUEST_STATUS,
   GpDelayInput,
   UpdateClientGpRequestInput,
+  DevisConditionsMetadata,
+  parseDevisConditionsMeta,
+  serializeDevisConditionsMeta,
 } from "../utils/types";
 import {
   sendOrderNotificationToClientMail,
@@ -46,6 +50,7 @@ export const getAllOrderById = async (id: string) => {
         },
         include: {
           traiteur: true,
+          client: true,
         },
       },
       orders: {
@@ -83,6 +88,7 @@ export const getAllOrderById = async (id: string) => {
             },
             include: {
               client: true,
+              traiteur: true,
             },
           },
           proposals: {
@@ -997,5 +1003,331 @@ export const updateGpListingDelay = async (
     }
 
     return updatedListing;
+  });
+};
+
+export const setupCommandeTraiteurDevis = async (
+  commandeId: string,
+  userId: string,
+  isAdmin: boolean,
+  data: {
+    prix_devis: number;
+    conditions_devis?: string;
+    auto_sign?: boolean;
+    traiteur_signature?: string;
+  }
+) => {
+  return await db.$transaction(async (tx) => {
+    const commande = await tx.commandeTraiteur.findUnique({
+      where: { id: commandeId },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (!commande) {
+      throw new Error("Commande de devis introuvable.");
+    }
+
+    if (!isAdmin && commande.traiteur?.user_id !== userId) {
+      throw new Error("Seul le chef traiteur en charge peut chiffrer ce devis.");
+    }
+
+    if (data.prix_devis <= 0) {
+      throw new Error("Le montant du devis doit être supérieur à 0 €.");
+    }
+
+    const now = new Date();
+    const shouldAutoSign = Boolean(data.auto_sign && data.traiteur_signature?.trim());
+
+    const updated = await tx.commandeTraiteur.update({
+      where: { id: commandeId },
+      data: {
+        prix_devis: data.prix_devis,
+        conditions_devis: data.conditions_devis || commande.conditions_devis,
+        devis_status: shouldAutoSign
+          ? DEVIS_STATUS.SIGNE_TRAITEUR
+          : DEVIS_STATUS.EN_ATTENTE_SIGNATURES,
+        client_signed_at: null,
+        client_signature: null,
+        traiteur_signed_at: shouldAutoSign ? now : null,
+        traiteur_signature: shouldAutoSign ? data.traiteur_signature?.trim() : null,
+      },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (commande.client_id) {
+      try {
+        await tx.notification.create({
+          data: {
+            user_id: commande.client_id,
+            type: "devis_chiffre",
+            titre: "Nouveau devis à examiner !",
+            message: `Le chef ${commande.traiteur?.name || "traiteur"} a fixé son tarif à ${data.prix_devis} € pour votre événement.${shouldAutoSign ? " Le traiteur a d'ores et déjà signé le devis." : ""} Vous pouvez l'examiner et le signer en ligne !`,
+            data: {
+              commande_id: commandeId,
+              prix_devis: data.prix_devis,
+            },
+          },
+        });
+      } catch (err) {
+        console.error("Erreur notification devis:", err);
+      }
+    }
+
+    return updated;
+  });
+};
+
+export const refuseCommandeTraiteurDevis = async (
+  commandeId: string,
+  userId: string,
+  isAdmin: boolean,
+  motif?: string,
+) => {
+  return await db.$transaction(async (tx) => {
+    const commande = await tx.commandeTraiteur.findUnique({
+      where: { id: commandeId },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (!commande) {
+      throw new Error("Commande de devis introuvable.");
+    }
+
+    const isClient = commande.client_id === userId;
+    if (!isClient && !isAdmin) {
+      throw new Error("Seul le client peut décliner cette proposition de devis.");
+    }
+
+    const updated = await tx.commandeTraiteur.update({
+      where: { id: commandeId },
+      data: {
+        statut: "refusee",
+        devis_status: DEVIS_STATUS.REFUSE,
+        message_traiteur: motif
+          ? `Devis décliné par le client : ${motif.trim()}`
+          : "Devis décliné par le client.",
+      },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (commande.traiteur?.user_id) {
+      try {
+        await tx.notification.create({
+          data: {
+            user_id: commande.traiteur.user_id,
+            type: "devis_refuse",
+            titre: "Proposition de devis déclinée",
+            message: `Le client ${commande.client?.full_name || "partenaire"} a décliné votre offre de devis de ${Number(commande.prix_devis || 0)} €.${motif ? ` Motif : ${motif.trim()}` : ""}`,
+            data: {
+              commande_id: commandeId,
+              motif: motif || null,
+            },
+          },
+        });
+      } catch (err) {
+        console.error("Erreur notification refus devis:", err);
+      }
+    }
+
+    return updated;
+  });
+};
+
+export const signCommandeTraiteurDevis = async (
+  commandeId: string,
+  userId: string,
+  isAdmin: boolean,
+  signature: string
+) => {
+  return await db.$transaction(async (tx) => {
+    const commande = await tx.commandeTraiteur.findUnique({
+      where: { id: commandeId },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (!commande) {
+      throw new Error("Commande de devis introuvable.");
+    }
+
+    const isClient = commande.client_id === userId;
+    const isTraiteur = commande.traiteur?.user_id === userId;
+
+    if (!isClient && !isTraiteur && !isAdmin) {
+      throw new Error("Vous n'êtes pas partie prenante à ce devis.");
+    }
+
+    if (!commande.prix_devis || Number(commande.prix_devis) <= 0) {
+      throw new Error("Ce devis n'a pas encore été chiffré par le traiteur.");
+    }
+
+    if (!signature || signature.trim().length === 0) {
+      throw new Error("Une signature valide est requise.");
+    }
+
+    const now = new Date();
+    let newDevisStatus: string = commande.devis_status || DEVIS_STATUS.DRAFT;
+    let newStatut: string | null = commande.statut;
+
+    const updateData: {
+      client_signed_at?: Date;
+      client_signature?: string;
+      traiteur_signed_at?: Date;
+      traiteur_signature?: string;
+      devis_status?: string;
+      statut?: string | null;
+    } = {};
+
+    if (isClient || (isAdmin && !isTraiteur)) {
+      updateData.client_signed_at = now;
+      updateData.client_signature = signature.trim();
+
+      if (commande.traiteur_signed_at) {
+        newDevisStatus = DEVIS_STATUS.SIGNE_PAR_LES_DEUX;
+        newStatut = COMMANDE_TRAITEUR_STATUS.ACCEPTEE;
+      } else {
+        newDevisStatus = DEVIS_STATUS.SIGNE_CLIENT;
+      }
+    } else if (isTraiteur) {
+      updateData.traiteur_signed_at = now;
+      updateData.traiteur_signature = signature.trim();
+
+      if (commande.client_signed_at) {
+        newDevisStatus = DEVIS_STATUS.SIGNE_PAR_LES_DEUX;
+        newStatut = COMMANDE_TRAITEUR_STATUS.ACCEPTEE;
+      } else {
+        newDevisStatus = DEVIS_STATUS.SIGNE_TRAITEUR;
+      }
+    }
+
+    updateData.devis_status = newDevisStatus;
+    updateData.statut = newStatut;
+
+    const updated = await tx.commandeTraiteur.update({
+      where: { id: commandeId },
+      data: updateData,
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    const otherUserId = isClient ? commande.traiteur?.user_id : commande.client_id;
+    if (otherUserId) {
+      try {
+        const isFullySigned = newDevisStatus === DEVIS_STATUS.SIGNE_PAR_LES_DEUX;
+        await tx.notification.create({
+          data: {
+            user_id: otherUserId,
+            type: isFullySigned ? "devis_valide" : "devis_signature_requise",
+            titre: isFullySigned ? "Devis 100% signé et validé !" : "Signature apposée sur le devis",
+            message: isFullySigned
+              ? `Le devis pour l'événement du ${new Date(commande.date_evenement).toLocaleDateString("fr-FR")} a été signé par les deux parties. Prestation confirmée !`
+              : `${isClient ? "Le client" : "Le traiteur"} a signé le devis. Veuillez apposer votre signature pour finaliser l'accord.`,
+            data: {
+              commande_id: commandeId,
+              devis_status: newDevisStatus,
+            },
+          },
+        });
+      } catch (err) {
+        console.error("Erreur notif signature:", err);
+      }
+    }
+
+    return updated;
+  });
+};
+
+export const payerAcompteCommandeTraiteurDevis = async (
+  commandeId: string,
+  userId: string,
+  isAdmin: boolean,
+  action: "verser" | "refuser_acompte",
+  transactionRef?: string,
+) => {
+  return await db.$transaction(async (tx) => {
+    const commande = await tx.commandeTraiteur.findUnique({
+      where: { id: commandeId },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (!commande) {
+      throw new Error("Commande de devis introuvable.");
+    }
+
+    const isClient = commande.client_id === userId;
+    if (!isClient && !isAdmin) {
+      throw new Error("Seul le client peut effectuer cette opération d'acompte.");
+    }
+
+    const meta = parseDevisConditionsMeta(commande.conditions_devis);
+
+    if (action === "verser") {
+      meta.acompte_paye = true;
+      meta.acompte_paye_at = new Date().toISOString();
+      meta.acompte_transaction_ref =
+        transactionRef || `DAB-SEC-${Date.now().toString(36).toUpperCase()}`;
+    } else {
+      meta.acompte_paye = false;
+      meta.acompte_choix_jour_j = true;
+    }
+
+    const updated = await tx.commandeTraiteur.update({
+      where: { id: commandeId },
+      data: {
+        conditions_devis: serializeDevisConditionsMeta(meta),
+      },
+      include: {
+        traiteur: true,
+        client: true,
+      },
+    });
+
+    if (commande.traiteur?.user_id) {
+      try {
+        const montant = meta.acompte_montant || 0;
+        await tx.notification.create({
+          data: {
+            user_id: commande.traiteur.user_id,
+            type: action === "verser" ? "devis_acompte_verse" : "devis_acompte_refuse",
+            titre:
+              action === "verser"
+                ? "Acompte sous séquestre validé !"
+                : "Choix de règlement le jour J",
+            message:
+              action === "verser"
+                ? `Le client a consigné l'acompte de ${montant} € sous séquestre sécurisé Dabari pour votre événement. Prestation confirmée !`
+                : `Le client a choisi de régler le montant total le jour de la prestation selon vos conditions.`,
+            data: {
+              commande_id: commandeId,
+              acompte_montant: montant,
+              action,
+            },
+          },
+        });
+      } catch (notifErr) {
+        console.error("Erreur notification acompte:", notifErr);
+      }
+    }
+
+    return updated;
   });
 };

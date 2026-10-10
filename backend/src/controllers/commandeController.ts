@@ -21,6 +21,10 @@ import {
   getSingleCommandeTraiteur,
   getSingleGpRequest,
   updateGpRequestDelay,
+  setupCommandeTraiteurDevis,
+  signCommandeTraiteurDevis,
+  refuseCommandeTraiteurDevis,
+  payerAcompteCommandeTraiteurDevis,
 } from "../services/commandeService";
 
 export const getRecentOrderByClientIdController = async (
@@ -453,3 +457,212 @@ export const getSingleGpRequestController = async (
     res.status(500).json({ success: false, error: "Erreur serveur lors de la consultation de la demande GP." });
   }
 };
+const mapDevisErrorToStatus = (error: any): number => {
+  const msg = error?.message || "";
+  if (msg.includes("introuvable")) return 404;
+  if (
+    msg.includes("Seul le") ||
+    msg.includes("partie prenante") ||
+    msg.includes("autorisé")
+  ) {
+    return 403;
+  }
+  return 400;
+};
+
+export const setupCommandeTraiteurDevisController = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    const userId = getAuthUserId(req);
+    const isAdmin = isUserAdmin(req);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
+    }
+
+    const { prix_devis, conditions_devis, auto_sign, traiteur_signature } = req.body;
+    const parsedPrix = parseFloat(String(prix_devis).replace(",", "."));
+
+    if (isNaN(parsedPrix) || parsedPrix <= 0 || parsedPrix > 1000000) {
+      return res.status(400).json({
+        success: false,
+        error: "Veuillez indiquer un montant de devis valide compris entre 1 € et 1 000 000 €.",
+      });
+    }
+
+    if (conditions_devis && typeof conditions_devis === "string" && conditions_devis.length > 5000) {
+      return res.status(400).json({
+        success: false,
+        error: "Les conditions du devis ne doivent pas dépasser 5 000 caractères.",
+      });
+    }
+
+    if (traiteur_signature && typeof traiteur_signature === "string" && traiteur_signature.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: "Le nom du signataire ne doit pas dépasser 500 caractères.",
+      });
+    }
+
+    const commande = await setupCommandeTraiteurDevis(id, userId, isAdmin, {
+      prix_devis: parsedPrix,
+      conditions_devis: conditions_devis ? String(conditions_devis).trim() : undefined,
+      auto_sign: Boolean(auto_sign),
+      traiteur_signature: traiteur_signature ? String(traiteur_signature).trim() : undefined,
+    });
+
+    res.json({
+      success: true,
+      data: { commande },
+      message: "Devis chiffré et soumis aux signatures avec succès.",
+    });
+  } catch (error: any) {
+    console.error("Erreur dans setupCommandeTraiteurDevisController:", error);
+    const status = mapDevisErrorToStatus(error);
+    res.status(status).json({ success: false, error: error.message || "Erreur lors de la configuration du devis." });
+  }
+};
+
+export const refuseCommandeTraiteurDevisController = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    const userId = getAuthUserId(req);
+    const isAdmin = isUserAdmin(req);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
+    }
+
+    const { motif } = req.body;
+    if (motif && typeof motif === "string" && motif.length > 1000) {
+      return res.status(400).json({
+        success: false,
+        error: "Le motif du refus ne doit pas dépasser 1 000 caractères.",
+      });
+    }
+
+    const cleanMotif = motif && typeof motif === "string" ? motif.trim() : undefined;
+    const commande = await refuseCommandeTraiteurDevis(id, userId, isAdmin, cleanMotif);
+
+    res.json({
+      success: true,
+      data: { commande },
+      message: "Proposition de devis déclinée. Le traiteur a été prévenu.",
+    });
+  } catch (error: any) {
+    console.error("Erreur dans refuseCommandeTraiteurDevisController:", error);
+    const status = mapDevisErrorToStatus(error);
+    res.status(status).json({ success: false, error: error.message || "Erreur lors du refus du devis." });
+  }
+};
+
+export const signCommandeTraiteurDevisController = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    const userId = getAuthUserId(req);
+    const isAdmin = isUserAdmin(req);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
+    }
+
+    const { signature } = req.body;
+    if (!signature || typeof signature !== "string" || !signature.trim()) {
+      return res.status(400).json({ success: false, error: "La signature est requise." });
+    }
+
+    if (signature.length > 250000) {
+      return res.status(400).json({ success: false, error: "La signature transmise est trop volumineuse." });
+    }
+
+    const commande = await signCommandeTraiteurDevis(id, userId, isAdmin, signature.trim());
+
+    res.json({
+      success: true,
+      data: { commande },
+      message: "Devis signé avec succès.",
+    });
+  } catch (error: any) {
+    console.error("Erreur dans signCommandeTraiteurDevisController:", error);
+    const status = mapDevisErrorToStatus(error);
+    res.status(status).json({ success: false, error: error.message || "Erreur lors de la signature du devis." });
+  }
+};
+
+export const payerAcompteCommandeTraiteurDevisController = async (
+  req: Request,
+  res: Response,
+) => {
+  try {
+    const { id } = req.params;
+    const userId = getAuthUserId(req);
+    const isAdmin = isUserAdmin(req);
+
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
+    }
+
+    const { action, transaction_ref } = req.body;
+    if (action !== "verser" && action !== "refuser_acompte") {
+      return res.status(400).json({
+        success: false,
+        error: "Action d'acompte invalide. Valeurs acceptées : 'verser' ou 'refuser_acompte'.",
+      });
+    }
+
+    const cleanRef =
+      transaction_ref && typeof transaction_ref === "string"
+        ? transaction_ref.slice(0, 100).trim()
+        : undefined;
+
+    const commande = await payerAcompteCommandeTraiteurDevis(
+      id,
+      userId,
+      isAdmin,
+      action,
+      cleanRef,
+    );
+
+    res.json({
+      success: true,
+      data: { commande },
+      message:
+        action === "verser"
+          ? "Acompte consigné sous séquestre Dabari avec succès."
+          : "Choix de règlement sans acompte enregistré.",
+    });
+  } catch (error: any) {
+    console.error("Erreur dans payerAcompteCommandeTraiteurDevisController:", error);
+    const status = mapDevisErrorToStatus(error);
+    res.status(status).json({
+      success: false,
+      error: error.message || "Erreur lors de la gestion de l'acompte.",
+    });
+  }
+};
+

@@ -41,31 +41,66 @@ select option {
   color: #111827 !important;
 }
 
-/* ── SCROLLBAR CUSTOM STYLED FOR DABARI ── */
+/* ── SCROLLBAR HAUT DE GAMME DABARI (STYLE CAPSULE FLOTTANTE) ── */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.03);
-  border-radius: 10px;
+  background: transparent;
+  border-radius: 9999px;
+  margin: 3px;
+}
+
+::-webkit-scrollbar-track:hover {
+  background: rgba(29, 107, 69, 0.04);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #1D6B45;
-  border-radius: 10px;
+  background-color: #1D6B45;
+  background-image: linear-gradient(180deg, #248254 0%, #1D6B45 60%, #154d31 100%);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.15);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #154d31;
+  background-color: #248254;
+  background-image: linear-gradient(180deg, #2ca067 0%, #248254 60%, #1D6B45 100%);
+  border: 1px solid rgba(212, 135, 10, 0.35);
+  box-shadow: 0 0 8px rgba(29, 107, 69, 0.35), inset 0 0 0 1px rgba(255, 255, 255, 0.25);
+}
+
+::-webkit-scrollbar-thumb:active {
+  background-color: #154d31;
+  background-image: linear-gradient(180deg, #1D6B45 0%, #154d31 100%);
+  border: 2px solid transparent;
+}
+
+::-webkit-scrollbar-corner {
+  background: transparent;
 }
 
 /* Firefox Scrollbar */
 * {
   scrollbar-width: thin;
-  scrollbar-color: #1D6B45 rgba(0, 0, 0, 0.03);
+  scrollbar-color: #1D6B45 transparent;
   -webkit-tap-highlight-color: transparent;
+}
+
+/* Scrollbar subtile pour les conteneurs compacts (modales, carrousels, filtres) */
+.scrollbar-subtle::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+
+.scrollbar-subtle::-webkit-scrollbar-thumb {
+  background-color: rgba(29, 107, 69, 0.65);
+  border: 1px solid transparent;
+  background-clip: padding-box;
 }
 
 /* ── SMOOTH MICRO-INTERACTIONS & LUXURY HOVER STATES ── */
@@ -87,4 +122,87 @@ select option {
 button:focus-visible, a:focus-visible, input:focus-visible {
   outline: 2px solid #1D6B45;
   outline-offset: 2px;
+}
+
+/* ── DEVIS OFFICIEL IMPRESSION STRICTEMENT 1 PAGE A4 ── */
+@media print {
+  @page {
+    size: A4 portrait;
+    margin: 6mm 8mm;
+  }
+
+  html,
+  body {
+    background: #ffffff !important;
+    color: #0f172a !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    overflow: visible !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Si la modale devis est ouverte, masquer complètement le reste de l'application (élimine les 7000px de fond) */
+  body.modal-devis-open > *:not(#devis-portal-root) {
+    display: none !important;
+    height: 0 !important;
+    max-height: 0 !important;
+    overflow: hidden !important;
+  }
+
+  body.modal-devis-open #devis-portal-root {
+    display: block !important;
+    position: static !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    background: #ffffff !important;
+    overflow: visible !important;
+  }
+
+  body.modal-devis-open #devis-portal-root .fixed {
+    position: static !important;
+    inset: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  body.modal-devis-open #devis-print-root {
+    box-shadow: none !important;
+    border: none !important;
+    border-radius: 0 !important;
+    max-height: none !important;
+    height: auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+    background: #ffffff !important;
+  }
+
+  body.modal-devis-open #devis-printable-sheet {
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: visible !important;
+    display: block !important;
+  }
+
+  body.modal-devis-open .print\\:hidden,
+  body.modal-devis-open .print-hidden {
+    display: none !important;
+  }
+
+  .print-avoid-break {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
 }

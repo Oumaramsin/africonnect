@@ -443,6 +443,14 @@ export default function TraiteurDetailPage() {
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-2.5">
+              <Link
+                href={`/traiteur/${traiteur.id}/devis`}
+                className="inline-flex items-center gap-2 bg-[#D4870A] hover:bg-[#b87407] text-white text-xs font-black px-4 py-2.5 rounded-xl shadow-md transition-all hover:scale-102"
+              >
+                <Sparkles size={15} />
+                <span>Demander un devis</span>
+              </Link>
+
               {traiteur.whatsapp && (
                 <a
                   href={`https://wa.me/${traiteur.whatsapp.replace(/\D/g, "")}?text=Bonjour%20Chef%20${encodeURIComponent(traiteur.name)}%2C%20je%20vous%20contacte%20via%20Dabari`}

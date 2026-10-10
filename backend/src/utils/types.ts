@@ -59,6 +59,100 @@ export const COMMANDE_TRAITEUR_STATUS = {
   ANNULEE: "annulee",
 } as const;
 
+export const DEVIS_STATUS = {
+  DRAFT: "draft",
+  EN_ATTENTE_SIGNATURES: "en_attente_signatures",
+  SIGNE_CLIENT: "signe_client",
+  SIGNE_TRAITEUR: "signe_traiteur",
+  SIGNE_PAR_LES_DEUX: "signe_par_les_deux",
+  REFUSE: "refuse",
+} as const;
+
+export interface DevisConditionsMetadata {
+  texte?: string;
+  acompte_type?: "aucun" | "obligatoire" | "optionnel";
+  acompte_montant?: number;
+  acompte_pourcentage?: number;
+  acompte_paye?: boolean;
+  acompte_paye_at?: string | null;
+  acompte_transaction_ref?: string | null;
+  acompte_choix_jour_j?: boolean;
+}
+
+export const parseDevisConditionsMeta = (
+  raw?: string | null,
+): DevisConditionsMetadata => {
+  const defaultMeta: DevisConditionsMetadata = {
+    texte:
+      "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation.",
+    acompte_type: "optionnel",
+    acompte_montant: 0,
+    acompte_pourcentage: 30,
+    acompte_paye: false,
+    acompte_paye_at: null,
+    acompte_transaction_ref: null,
+    acompte_choix_jour_j: false,
+  };
+
+  if (!raw) return defaultMeta;
+
+  try {
+    const trimmed = raw.trim();
+    if (trimmed.startsWith("{")) {
+      const parsed = JSON.parse(trimmed);
+      return {
+        texte:
+          typeof parsed.texte === "string"
+            ? parsed.texte
+            : typeof parsed.conditions === "string"
+              ? parsed.conditions
+              : defaultMeta.texte,
+        acompte_type:
+          parsed.acompte_type === "aucun" ||
+          parsed.acompte_type === "obligatoire" ||
+          parsed.acompte_type === "optionnel"
+            ? parsed.acompte_type
+            : "optionnel",
+        acompte_montant:
+          typeof parsed.acompte_montant === "number" && !isNaN(parsed.acompte_montant)
+            ? Math.max(0, parsed.acompte_montant)
+            : 0,
+        acompte_pourcentage:
+          typeof parsed.acompte_pourcentage === "number" &&
+          !isNaN(parsed.acompte_pourcentage)
+            ? Math.min(100, Math.max(0, parsed.acompte_pourcentage))
+            : 30,
+        acompte_paye: Boolean(parsed.acompte_paye),
+        acompte_paye_at: parsed.acompte_paye_at || null,
+        acompte_transaction_ref: parsed.acompte_transaction_ref || null,
+        acompte_choix_jour_j: Boolean(parsed.acompte_choix_jour_j),
+      };
+    }
+  } catch {
+    // Fallback plain string
+  }
+
+  return {
+    ...defaultMeta,
+    texte: raw,
+  };
+};
+
+export const serializeDevisConditionsMeta = (
+  meta: DevisConditionsMetadata,
+): string => {
+  return JSON.stringify({
+    texte: meta.texte || "",
+    acompte_type: meta.acompte_type || "optionnel",
+    acompte_montant: meta.acompte_montant || 0,
+    acompte_pourcentage: meta.acompte_pourcentage || 30,
+    acompte_paye: Boolean(meta.acompte_paye),
+    acompte_paye_at: meta.acompte_paye_at || null,
+    acompte_transaction_ref: meta.acompte_transaction_ref || null,
+    acompte_choix_jour_j: Boolean(meta.acompte_choix_jour_j),
+  });
+};
+
 export const ORDER_PLAT_STATUS = {
   PENDING: "pending",
   ACCEPTED: "accepted",

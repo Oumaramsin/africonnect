@@ -121,8 +121,9 @@ export default function CommandeForm({
       return;
     }
     try {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
       const response = await authFetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/traiteur`,
+        `${apiUrl}/traiteur`,
         {
           method: "POST",
           headers: {
@@ -140,7 +141,7 @@ export default function CommandeForm({
       );
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la demande de devis");
+        setError(data.error || data.message || "Erreur lors de la demande de devis");
         setLoading(false);
         return;
       }
@@ -224,13 +225,22 @@ export default function CommandeForm({
                 <p className="text-xs text-gray-500">Chez {traiteurName}</p>
               </div>
             </div>
-            <button
-              type="button"
-              onClick={() => setOpen(false)}
-              className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center transition-colors"
-            >
-              <X size={16} />
-            </button>
+            <div className="flex items-center gap-2">
+              <Link
+                href={`/traiteur/${traiteurId}/devis`}
+                className="text-[11px] font-bold text-[#1D6B45] hover:underline px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 transition-colors"
+                title="Ouvrir la page de devis complète"
+              >
+                Plein écran
+              </Link>
+              <button
+                type="button"
+                onClick={() => setOpen(false)}
+                className="w-8 h-8 rounded-full bg-gray-100 text-gray-500 hover:bg-gray-200 flex items-center justify-center transition-colors"
+              >
+                <X size={16} />
+              </button>
+            </div>
           </div>
 
           {error && (

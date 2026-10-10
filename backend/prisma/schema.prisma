@@ -231,6 +231,15 @@ model CommandeTraiteur {
   created_at       DateTime? @default(now()) @db.Timestamptz(6)
   message_traiteur String?
 
+  // Devis officiel & Double signature électronique
+  prix_devis         Decimal?  @db.Decimal
+  conditions_devis   String?
+  client_signed_at   DateTime? @db.Timestamptz(6)
+  client_signature   String?
+  traiteur_signed_at DateTime? @db.Timestamptz(6)
+  traiteur_signature String?
+  devis_status       String?   @default("draft")
+
   // Relations
   client   Profile?  @relation(fields: [client_id], references: [id], onDelete: SetNull)
   traiteur Traiteur? @relation(fields: [traiteur_id], references: [id], onDelete: SetNull)
@@ -238,6 +247,7 @@ model CommandeTraiteur {
   @@index([client_id])
   @@index([traiteur_id])
   @@index([statut])
+  @@index([devis_status])
   @@map("commandes_traiteur")
 }
 

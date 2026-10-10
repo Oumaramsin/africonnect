@@ -14,6 +14,10 @@ import {
   getSingleCommandeTraiteurController,
   getSingleGpRequestController,
   updateGpDelayController,
+  setupCommandeTraiteurDevisController,
+  signCommandeTraiteurDevisController,
+  refuseCommandeTraiteurDevisController,
+  payerAcompteCommandeTraiteurDevisController,
 } from "../controllers/commandeController";
 
 const commandeRouter = Router();
@@ -48,6 +52,26 @@ commandeRouter.patch(
   "/traiteur/:id/status",
   AuthMiddleware.authenticate,
   updateCommandeTraiteurStatusController,
+);
+commandeRouter.post(
+  "/traiteur/:id/devis/setup",
+  AuthMiddleware.authenticate,
+  setupCommandeTraiteurDevisController,
+);
+commandeRouter.post(
+  "/traiteur/:id/devis/sign",
+  AuthMiddleware.authenticate,
+  signCommandeTraiteurDevisController,
+);
+commandeRouter.post(
+  "/traiteur/:id/devis/refuse",
+  AuthMiddleware.authenticate,
+  refuseCommandeTraiteurDevisController,
+);
+commandeRouter.post(
+  "/traiteur/:id/devis/acompte",
+  AuthMiddleware.authenticate,
+  payerAcompteCommandeTraiteurDevisController,
 );
 commandeRouter.patch(
   "/order/:id/status",

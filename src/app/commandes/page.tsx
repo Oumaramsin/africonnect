@@ -35,9 +35,11 @@ import {
   Phone,
   AlertCircle,
   Trash2,
+  FileText,
 } from "lucide-react";
 import CancelConfirmModal from "@/components/commandes/CancelConfirmModal";
 import EditDevisModal from "@/components/commandes/EditDevisModal";
+import DevisModal, { CommandeTraiteurDevis } from "@/components/commandes/DevisModal";
 import EditPlatModal from "@/components/commandes/EditPlatModal";
 import EditGpModal from "@/components/commandes/EditGpModal";
 import EditTraiteurRequestModal from "@/components/commandes/EditTraiteurRequestModal";
@@ -58,15 +60,46 @@ type CommandeTraiteur = {
   adresse: string;
   type_evenement: string | null;
   notes: string | null;
-  statut: string;
+  statut: string | null;
   message_traiteur: string | null;
   created_at: string;
-  client_id: string;
-  traiteur_id: string;
-  traiteur?: { name: string; whatsapp: string | null } | null;
-  traiteurs?: { name: string; whatsapp: string | null } | null;
-  client?: { full_name: string; phone: string | null } | null;
-  profiles?: { full_name: string; phone: string | null } | null;
+  client_id: string | null;
+  traiteur_id: string | null;
+  prix_devis?: number | string | null;
+  conditions_devis?: string | null;
+  client_signed_at?: string | null;
+  client_signature?: string | null;
+  traiteur_signed_at?: string | null;
+  traiteur_signature?: string | null;
+  devis_status?: string | null;
+  traiteur?: {
+    id?: string;
+    name: string;
+    whatsapp: string | null;
+    bio?: string | null;
+    image_url?: string | null;
+  } | null;
+  traiteurs?: {
+    id?: string;
+    name: string;
+    whatsapp: string | null;
+    bio?: string | null;
+    image_url?: string | null;
+  } | null;
+  client?: {
+    id?: string;
+    full_name: string | null;
+    phone: string | null;
+    city?: string | null;
+    email?: string | null;
+  } | null;
+  profiles?: {
+    id?: string;
+    full_name: string | null;
+    phone: string | null;
+    city?: string | null;
+    email?: string | null;
+  } | null;
 };
 
 type OrderPlat = {
@@ -209,6 +242,13 @@ export default function CommandesPage() {
     title: string;
   } | null>(null);
 
+  // Devis officiel Dabari avec double signature
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [selectedDevisCommande, setSelectedDevisCommande] =
+    useState<CommandeTraiteur | null>(null);
+  const [isDevisTraiteurView, setIsDevisTraiteurView] =
+    useState<boolean>(false);
+
   // Suivi de commande GP & Retard
   const [expandedGpTracking, setExpandedGpTracking] = useState<Record<string, boolean>>({});
   const [gpStatusConfirm, setGpStatusConfirm] = useState<{
@@ -232,7 +272,11 @@ export default function CommandesPage() {
   }, []);
 
   const sortOrdersByPendingFirst = <
-    T extends { statut?: string; status?: string; created_at?: string },
+    T extends {
+      statut?: string | null;
+      status?: string | null;
+      created_at?: string | null;
+    },
   >(
     items: T[],
   ): T[] => {
@@ -286,6 +330,7 @@ export default function CommandesPage() {
       }
       const profile = res.data.orders;
       if (!profile) return;
+      setCurrentUserId(profile.id || null);
       // ── 1. Commandes envoyées (Client) ──
       setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
       setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
@@ -570,7 +615,7 @@ export default function CommandesPage() {
     }
   }
 
-  const getStatutBadge = (statut: string) => {
+  const getStatutBadge = (statut?: string | null) => {
     switch (statut) {
       case "en_attente":
       case "pending":
@@ -627,10 +672,125 @@ export default function CommandesPage() {
       default:
         return (
           <span className="text-xs bg-gray-100 text-gray-600 px-2.5 py-1 rounded-full font-medium flex items-center w-fit gap-1 border border-gray-200">
-            {statut}
+            {statut || "En attente"}
           </span>
         );
     }
+  };
+
+  const handleDevisUpdated = (updated: CommandeTraiteurDevis) => {
+    setSelectedDevisCommande((prev) =>
+      prev ? ({ ...prev, ...updated } as CommandeTraiteur) : null,
+    );
+    setCommandesEnvoyees((prev) =>
+      prev.map((c) =>
+        c.id === updated.id ? ({ ...c, ...updated } as CommandeTraiteur) : c,
+      ),
+    );
+    setCommandesRecues((prev) =>
+      prev.map((c) =>
+        c.id === updated.id ? ({ ...c, ...updated } as CommandeTraiteur) : c,
+      ),
+    );
+    loadAll();
+  };
+
+  const getDevisStatusBadge = (
+    commande: CommandeTraiteur,
+    isTraiteurBadge: boolean,
+  ) => {
+    let acompteBadge = null;
+    try {
+      if (commande.conditions_devis?.trim().startsWith("{")) {
+        const meta = JSON.parse(commande.conditions_devis);
+        if (meta.acompte_paye) {
+          acompteBadge = (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
+              <CheckCircle2 size={11} className="text-emerald-700" />
+              Acompte consigné ({meta.acompte_montant || 0} €)
+            </span>
+          );
+        } else if (meta.acompte_montant > 0) {
+          acompteBadge = (
+            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-800 border border-blue-200">
+              Acompte prévu : {meta.acompte_montant} €
+            </span>
+          );
+        }
+      }
+    } catch {}
+
+    if (commande.devis_status === "refuse") {
+      return (
+        <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-red-100 text-red-800 border border-red-200">
+          <XCircle size={13} className="text-red-600" />
+          Devis décliné par le client
+        </span>
+      );
+    }
+    if (
+      commande.devis_status === "signe_par_les_deux" ||
+      (commande.client_signed_at && commande.traiteur_signed_at)
+    ) {
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+            <CheckCircle2 size={13} className="text-emerald-600" />
+            Devis 100% signé & validé
+          </span>
+          {acompteBadge}
+        </div>
+      );
+    }
+    if (
+      commande.devis_status === "signe_client" ||
+      (commande.client_signed_at && !commande.traiteur_signed_at)
+    ) {
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-blue-100 text-blue-800 border border-blue-200">
+            <Clock size={13} className="text-blue-600" />
+            {isTraiteurBadge
+              ? "Signé par le client (À votre signature)"
+              : "Signé par vous (En attente du traiteur)"}
+          </span>
+          {acompteBadge}
+        </div>
+      );
+    }
+    if (
+      commande.devis_status === "signe_traiteur" ||
+      (!commande.client_signed_at && commande.traiteur_signed_at)
+    ) {
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+            <Clock size={13} className="text-amber-600" />
+            {isTraiteurBadge
+              ? "Signé par vous (En attente de décision du client)"
+              : "Offre chiffrée & signée par le chef (À examiner)"}
+          </span>
+          {acompteBadge}
+        </div>
+      );
+    }
+    if (commande.prix_devis) {
+      return (
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-200">
+            <FileText size={13} className="text-emerald-600" />
+            Devis chiffré ({Number(commande.prix_devis).toLocaleString("fr-FR")} €) - À examiner
+          </span>
+          {acompteBadge}
+        </div>
+      );
+    }
+    return (
+      <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-800 border border-amber-200">
+        <Clock size={13} className="text-amber-600" />
+        {isTraiteurBadge ? "À chiffrer par vous (Action requise)" : "En attente du tarif par le traiteur"}
+      </span>
+    );
   };
 
   const formatDate = (d: string) =>
@@ -877,6 +1037,58 @@ export default function CommandesPage() {
                                 </p>
                               </div>
                             )}
+                          {/* ── Devis officiel Dabari & Double signature ── */}
+                          <div className={`rounded-xl p-3.5 space-y-2.5 mb-3 border ${
+                            commande.prix_devis && !commande.client_signed_at && commande.devis_status !== "refuse"
+                              ? "bg-emerald-50/70 border-emerald-300 shadow-xs"
+                              : "bg-slate-50 border-slate-200/80"
+                          }`}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <FileText size={14} className="text-[#1D6B45]" />
+                                Contrat Devis Dabari
+                              </span>
+                              {getDevisStatusBadge(commande, false)}
+                            </div>
+
+                            {commande.prix_devis ? (
+                              <div className="flex items-baseline justify-between bg-white border border-emerald-200 px-3 py-2 rounded-lg text-xs">
+                                <span className="text-slate-600 font-medium">Tarif proposé par le traiteur :</span>
+                                <span className="font-extrabold text-[#1D6B45] text-sm">
+                                  {Number(commande.prix_devis).toLocaleString("fr-FR")} € TTC
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="bg-white border border-slate-200 rounded-lg p-2.5 text-xs text-slate-600">
+                                Le traiteur étudie vos critères ({commande.nb_personnes} personnes). Il est le seul à pouvoir fixer le montant de votre devis.
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDevisCommande(commande);
+                                setIsDevisTraiteurView(false);
+                              }}
+                              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                                commande.devis_status === "signe_par_les_deux"
+                                  ? "bg-emerald-600 text-white hover:bg-emerald-700 shadow-xs"
+                                  : commande.prix_devis && !commande.client_signed_at && commande.devis_status !== "refuse"
+                                  ? "bg-[#1D6B45] text-white hover:bg-[#155335] shadow-xs"
+                                  : "bg-white text-slate-800 border border-slate-300 hover:bg-slate-100"
+                              }`}
+                            >
+                              <FileText size={14} />
+                              {commande.devis_status === "signe_par_les_deux"
+                                ? "Consulter le contrat signé officiel"
+                                : commande.devis_status === "refuse"
+                                ? "Consulter le devis décliné"
+                                : commande.prix_devis && !commande.client_signed_at
+                                ? "Examiner l'offre (Signer ou Décliner)"
+                                : "Suivre l'estimation du devis"}
+                            </button>
+                          </div>
+
                           {commande.statut === "acceptee" &&
                             traiteurInfo?.whatsapp && (
                               <button
@@ -1658,6 +1870,54 @@ export default function CommandesPage() {
                                 </p>
                               </div>
                             )}
+                          {/* ── Devis officiel Dabari & Double signature Traiteur ── */}
+                          <div className={`rounded-xl p-3.5 space-y-2.5 mb-3 border ${
+                            !commande.prix_devis
+                              ? "bg-amber-50/70 border-amber-300 shadow-xs"
+                              : "bg-slate-50 border-slate-200/80"
+                          }`}>
+                            <div className="flex items-center justify-between gap-2 flex-wrap">
+                              <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                                <FileText size={14} className="text-[#1D6B45]" />
+                                Contrat Devis Dabari
+                              </span>
+                              {getDevisStatusBadge(commande, true)}
+                            </div>
+
+                            {commande.prix_devis ? (
+                              <div className="flex items-baseline justify-between bg-white border border-slate-200 px-3 py-2 rounded-lg text-xs">
+                                <span className="text-slate-600 font-medium">Prix proposé par vous :</span>
+                                <span className="font-extrabold text-[#1D6B45] text-sm">
+                                  {Number(commande.prix_devis).toLocaleString("fr-FR")} € TTC
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="bg-white border border-amber-300 rounded-lg p-2.5 text-xs text-amber-900 font-medium">
+                                Action requise de votre part : vous devez estimer le coût et chiffrer ce devis pour que le client puisse l&apos;examiner et le signer.
+                              </div>
+                            )}
+
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSelectedDevisCommande(commande);
+                                setIsDevisTraiteurView(true);
+                              }}
+                              className={`w-full py-2.5 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-2 ${
+                                !commande.prix_devis
+                                  ? "bg-[#D4870A] hover:bg-[#b87406] text-white shadow-xs"
+                                  : "bg-[#1D6B45] text-white hover:bg-[#155335] shadow-xs"
+                              }`}
+                            >
+                              <FileText size={14} />
+                              {!commande.prix_devis
+                                ? "Chiffrer le prix & Transmettre le devis"
+                                : commande.devis_status === "signe_par_les_deux"
+                                ? "Consulter le contrat signé officiel"
+                                : "Gérer & Signer le devis"}
+                            </button>
+                          </div>
+
                           {commande.statut === "en_attente" && (
                             <div className="space-y-3">
                               <textarea
@@ -2200,6 +2460,17 @@ export default function CommandesPage() {
         onSuccess={() => loadAll()}
         commande={editingDevis}
       />
+
+      {/* Modale de consultation & signature Devis officiel Dabari */}
+      {selectedDevisCommande && (
+        <DevisModal
+          commande={selectedDevisCommande}
+          currentUserId={currentUserId}
+          isTraiteurView={isDevisTraiteurView}
+          onClose={() => setSelectedDevisCommande(null)}
+          onUpdate={handleDevisUpdated}
+        />
+      )}
 
       {/* Modale de modification Commande Plats */}
       <EditPlatModal
