@@ -345,7 +345,7 @@ export default function TraiteurEspaceScreen() {
               <View style={styles.ratingRow}>
                 <Ionicons name="star" size={13} color="#F59E0B" />
                 <Text style={styles.ratingScore}>
-                  {traiteur.rating ? traiteur.rating.toFixed(1) : "5.0"}
+                  {traiteur.rating != null ? Number(traiteur.rating).toFixed(1) : "5.0"}
                 </Text>
                 <Text style={styles.reviewCount}>
                   ({traiteur.review_count || dishes.length * 3 + 4} avis)

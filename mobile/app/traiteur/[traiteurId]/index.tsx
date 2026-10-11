@@ -345,6 +345,7 @@ export default function TraiteurDetailScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.centerContainer} edges={["top"]}>
+          <StatusBar barStyle="light-content" backgroundColor="#165034" />
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Chargement du chef traiteur...</Text>
         </SafeAreaView>
@@ -356,6 +357,7 @@ export default function TraiteurDetailScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.centerContainer} edges={["top"]}>
+          <StatusBar barStyle="light-content" backgroundColor="#165034" />
           <Ionicons name="alert-circle-outline" size={48} color="#FFFFFF" />
           <Text style={styles.notFoundTitle}>Traiteur introuvable</Text>
           <TouchableOpacity
@@ -373,7 +375,7 @@ export default function TraiteurDetailScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#165034" />
 
         <ScrollView
           style={styles.mainScrollView}
@@ -485,15 +487,11 @@ export default function TraiteurDetailScreen() {
             </View>
           </View>
 
-          {/* ── 2. BANNIÈRE ASSURANCE QUALITÉ ET SÉQUESTRE ── */}
+          {/* ── 2. BANNIÈRE PAIEMENT SÉCURISÉ PAR SÉQUESTRE ── */}
           <View style={styles.assuranceBanner}>
             <View style={styles.assuranceItem}>
-              <Ionicons name="shield-checkmark" size={14} color="#1D6B45" />
-              <Text style={styles.assuranceText}>Paiement sécurisé par séquestre</Text>
-            </View>
-            <View style={styles.assuranceItem}>
-              <Ionicons name="checkmark-circle" size={14} color="#D4870A" />
-              <Text style={styles.assuranceText}>Plats 100% frais préparés le jour J</Text>
+              <Ionicons name="shield-checkmark" size={15} color="#1D6B45" />
+              <Text style={styles.assuranceText}>Paiement sécurisé par séquestre Dabari SAS</Text>
             </View>
           </View>
 
@@ -730,7 +728,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#165034",
   },
   centerContainer: {
     flex: 1,
@@ -766,6 +764,7 @@ const styles = StyleSheet.create({
   },
   mainScrollView: {
     flex: 1,
+    backgroundColor: "#F8FAFC",
   },
   scrollContent: {
     paddingBottom: 110,
@@ -960,20 +959,28 @@ const styles = StyleSheet.create({
     marginTop: 12,
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
-    padding: 10,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    gap: 6,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 2,
+    elevation: 1,
   },
   assuranceItem: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
+    gap: 8,
   },
   assuranceText: {
-    fontSize: 11,
-    fontWeight: "600",
-    color: "#334155",
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#165034",
   },
 
   /* ── 3. Menu Title & Filters ── */

@@ -27,17 +27,7 @@ if (Platform.OS !== "web") {
     DateTimePicker = null;
   }
 }
-
-const EVENT_TYPES = [
-  { id: "Mariage", label: "Mariage" },
-  { id: "Anniversaire", label: "Anniversaire" },
-  { id: "Baptême", label: "Baptême" },
-  { id: "Buffet / Cocktail", label: "Buffet" },
-  { id: "Fête de famille", label: "Famille" },
-  { id: "Dîner privé", label: "Dîner privé" },
-  { id: "Événement pro", label: "Événement pro" },
-  { id: "Autre", label: "Autre" },
-];
+import { DEMANDE_EVENT_TYPES as EVENT_TYPES } from "../../utils/constants";
 
 export default function EditTraiteurRequestScreen() {
   const router = useRouter();

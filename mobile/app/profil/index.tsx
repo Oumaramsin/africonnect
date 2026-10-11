@@ -40,6 +40,7 @@ export default function ProfilScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [isPersonalInfoOpen, setIsPersonalInfoOpen] = useState(false);
 
   const getInitials = (name: string) => {
     if (!name.trim()) return "U";
@@ -343,7 +344,146 @@ export default function ProfilScreen() {
             </View>
           )}
 
-          {/* ── SECTION 1 : MES ESPACES MÉTIERS (STYLE WEB) ── */}
+          {/* ── SECTION INFORMATIONS PERSONNELLES (MENU DÉROULANT / ACCORDÉON) ── */}
+          <View style={styles.sectionCard}>
+            <TouchableOpacity
+              style={[
+                styles.formHeaderRow,
+                isPersonalInfoOpen && styles.formHeaderRowOpen,
+              ]}
+              onPress={() => setIsPersonalInfoOpen(!isPersonalInfoOpen)}
+              activeOpacity={0.7}
+            >
+              <View style={styles.formHeaderLeft}>
+                <View style={styles.iconCircleGreen}>
+                  <Ionicons name="create-outline" size={18} color="#1D6B45" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.sectionTitle}>Informations personnelles</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    {isPersonalInfoOpen
+                      ? "Mettez à jour vos coordonnées pour vos commandes et livraisons."
+                      : "Modifier nom, téléphone et adresse principale"}
+                  </Text>
+                </View>
+              </View>
+              <View style={styles.accordionToggleBtn}>
+                <Ionicons
+                  name={isPersonalInfoOpen ? "chevron-up" : "chevron-down"}
+                  size={18}
+                  color="#1D6B45"
+                />
+              </View>
+            </TouchableOpacity>
+
+            {isPersonalInfoOpen && (
+              <>
+                {success && (
+                  <View style={styles.successBanner}>
+                    <Ionicons name="checkmark-circle" size={18} color="#1D6B45" />
+                    <Text style={styles.successBannerText}>
+                      Modifications enregistrées avec succès !
+                    </Text>
+                  </View>
+                )}
+
+                <View style={styles.formFields}>
+                  {/* Email (Lecture seule) */}
+                  <View style={styles.inputGroup}>
+                    <View style={styles.labelRow}>
+                      <Text style={styles.inputLabel}>Adresse Email</Text>
+                      <View style={styles.lockBadge}>
+                        <Ionicons name="lock-closed" size={10} color="#64748B" />
+                        <Text style={styles.lockBadgeText}>Non modifiable</Text>
+                      </View>
+                    </View>
+                    <View style={styles.disabledInput}>
+                      <Ionicons name="mail-outline" size={16} color="#94A3B8" />
+                      <Text style={styles.disabledInputText}>{userEmail}</Text>
+                    </View>
+                  </View>
+
+                  {/* Nom complet */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>Nom complet *</Text>
+                    <View style={styles.inputWrapper}>
+                      <Ionicons name="person-outline" size={16} color="#1D6B45" />
+                      <TextInput
+                        style={styles.textInput}
+                        value={fullName}
+                        onChangeText={setFullName}
+                        placeholder="Aminata Diallo"
+                        placeholderTextColor="#94A3B8"
+                        autoCapitalize="words"
+                      />
+                    </View>
+                  </View>
+
+                  {/* Téléphone */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>
+                      Numéro de téléphone <Text style={styles.optionalText}>(optionnel)</Text>
+                    </Text>
+                    <View style={styles.inputWrapper}>
+                      <Ionicons name="call-outline" size={16} color="#1D6B45" />
+                      <TextInput
+                        style={styles.textInput}
+                        value={phone}
+                        onChangeText={(val) => {
+                          let cleaned = val.replace(/[^0-9+]/g, "");
+                          if (cleaned.startsWith("+")) {
+                            cleaned = "+" + cleaned.slice(1).replace(/\+/g, "");
+                          } else {
+                            cleaned = cleaned.replace(/\+/g, "");
+                          }
+                          const maxLen = cleaned.startsWith("+") ? 16 : 15;
+                          setPhone(cleaned.slice(0, maxLen));
+                        }}
+                        placeholder="+33612345678"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="phone-pad"
+                        maxLength={16}
+                      />
+                    </View>
+                  </View>
+
+                  {/* Ville ou Adresse de livraison principale */}
+                  <View style={styles.inputGroup}>
+                    <Text style={styles.inputLabel}>
+                      Ville ou Adresse de livraison principale <Text style={styles.optionalText}>(optionnel)</Text>
+                    </Text>
+                    <AddressAutocomplete
+                      value={city}
+                      onChangeText={setCity}
+                      onSelectAddress={(item) => {
+                        setCity(item.label);
+                      }}
+                      placeholder="Rechercher une adresse ou une ville (ex: Paris, Dakar...)"
+                    />
+                  </View>
+
+                  {/* Bouton de Sauvegarde */}
+                  <TouchableOpacity
+                    style={[styles.saveBtn, saving && styles.btnDisabled]}
+                    disabled={saving}
+                    activeOpacity={0.85}
+                    onPress={updateProfil}
+                  >
+                    {saving ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+                        <Text style={styles.saveBtnText}>Sauvegarder les modifications</Text>
+                      </View>
+                    )}
+                  </TouchableOpacity>
+                </View>
+              </>
+            )}
+          </View>
+
+          {/* ── SECTION MES ESPACES MÉTIERS (STYLE WEB) ── */}
           <View style={styles.sectionCard}>
             <View style={styles.sectionHeaderRow}>
               <Text style={styles.sectionTitle}>Mes espaces métiers</Text>
@@ -476,125 +616,6 @@ export default function ProfilScreen() {
                   </TouchableOpacity>
                 </>
               )}
-            </View>
-          </View>
-
-          {/* ── SECTION 2 : INFORMATIONS PERSONNELLES (FORMULAIRE MODERNE) ── */}
-          <View style={styles.sectionCard}>
-            <View style={styles.formHeaderRow}>
-              <View style={styles.formHeaderLeft}>
-                <View style={styles.iconCircleGreen}>
-                  <Ionicons name="create-outline" size={18} color="#1D6B45" />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.sectionTitle}>Informations personnelles</Text>
-                  <Text style={styles.sectionSubtitle}>
-                    Mettez à jour vos coordonnées pour vos commandes et livraisons.
-                  </Text>
-                </View>
-              </View>
-            </View>
-
-            {success && (
-              <View style={styles.successBanner}>
-                <Ionicons name="checkmark-circle" size={18} color="#1D6B45" />
-                <Text style={styles.successBannerText}>
-                  Modifications enregistrées avec succès !
-                </Text>
-              </View>
-            )}
-
-            <View style={styles.formFields}>
-              {/* Email (Lecture seule) */}
-              <View style={styles.inputGroup}>
-                <View style={styles.labelRow}>
-                  <Text style={styles.inputLabel}>Adresse Email</Text>
-                  <View style={styles.lockBadge}>
-                    <Ionicons name="lock-closed" size={10} color="#64748B" />
-                    <Text style={styles.lockBadgeText}>Non modifiable</Text>
-                  </View>
-                </View>
-                <View style={styles.disabledInput}>
-                  <Ionicons name="mail-outline" size={16} color="#94A3B8" />
-                  <Text style={styles.disabledInputText}>{userEmail}</Text>
-                </View>
-              </View>
-
-              {/* Nom complet */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>Nom complet *</Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="person-outline" size={16} color="#1D6B45" />
-                  <TextInput
-                    style={styles.textInput}
-                    value={fullName}
-                    onChangeText={setFullName}
-                    placeholder="Aminata Diallo"
-                    placeholderTextColor="#94A3B8"
-                    autoCapitalize="words"
-                  />
-                </View>
-              </View>
-
-              {/* Téléphone */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Numéro de téléphone <Text style={styles.optionalText}>(optionnel)</Text>
-                </Text>
-                <View style={styles.inputWrapper}>
-                  <Ionicons name="call-outline" size={16} color="#1D6B45" />
-                  <TextInput
-                    style={styles.textInput}
-                    value={phone}
-                    onChangeText={(val) => {
-                      let cleaned = val.replace(/[^0-9+]/g, "");
-                      if (cleaned.startsWith("+")) {
-                        cleaned = "+" + cleaned.slice(1).replace(/\+/g, "");
-                      } else {
-                        cleaned = cleaned.replace(/\+/g, "");
-                      }
-                      const maxLen = cleaned.startsWith("+") ? 16 : 15;
-                      setPhone(cleaned.slice(0, maxLen));
-                    }}
-                    placeholder="+33612345678"
-                    placeholderTextColor="#94A3B8"
-                    keyboardType="phone-pad"
-                    maxLength={16}
-                  />
-                </View>
-              </View>
-
-              {/* Ville ou Adresse de livraison principale */}
-              <View style={styles.inputGroup}>
-                <Text style={styles.inputLabel}>
-                  Ville ou Adresse de livraison principale <Text style={styles.optionalText}>(optionnel)</Text>
-                </Text>
-                <AddressAutocomplete
-                  value={city}
-                  onChangeText={setCity}
-                  onSelectAddress={(item) => {
-                    setCity(item.label);
-                  }}
-                  placeholder="Rechercher une adresse ou une ville (ex: Paris, Dakar...)"
-                />
-              </View>
-
-              {/* Bouton de Sauvegarde */}
-              <TouchableOpacity
-                style={[styles.saveBtn, saving && styles.btnDisabled]}
-                disabled={saving}
-                activeOpacity={0.85}
-                onPress={updateProfil}
-              >
-                {saving ? (
-                  <ActivityIndicator size="small" color="#FFFFFF" />
-                ) : (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
-                    <Text style={styles.saveBtnText}>Sauvegarder les modifications</Text>
-                  </View>
-                )}
-              </TouchableOpacity>
             </View>
           </View>
 
@@ -1077,15 +1098,30 @@ const styles = StyleSheet.create({
 
   /* ── Formulaire Informations ── */
   formHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  formHeaderRowOpen: {
     marginBottom: 14,
     paddingBottom: 12,
     borderBottomWidth: 1,
     borderBottomColor: "#F1F5F9",
   },
   formHeaderLeft: {
+    flex: 1,
     flexDirection: "row",
-    alignItems: "flex-start",
+    alignItems: "center",
     gap: 12,
+  },
+  accordionToggleBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 10,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
   },
   iconCircleGreen: {
     width: 38,

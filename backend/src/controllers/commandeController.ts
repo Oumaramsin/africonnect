@@ -122,7 +122,7 @@ export const updateOrderPlatStatusController = async (
 ) => {
   try {
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, message, notes } = req.body;
     const userId = getAuthUserId(req);
     const isAdmin = isUserAdmin(req);
 
@@ -142,7 +142,13 @@ export const updateOrderPlatStatusController = async (
       });
     }
 
-    const order = await updateOrderPlatStatus(id, status, userId, isAdmin);
+    const order = await updateOrderPlatStatus(
+      id,
+      status,
+      (message || notes)?.trim(),
+      userId,
+      isAdmin,
+    );
 
     res.json({
       success: true,

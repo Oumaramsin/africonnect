@@ -227,6 +227,7 @@ export const updateCommandeTraiteurStatus = async (
 export const updateOrderPlatStatus = async (
   id: string,
   status: string,
+  message?: string,
   currentUserId?: string,
   isAdmin?: boolean,
 ) => {
@@ -249,7 +250,10 @@ export const updateOrderPlatStatus = async (
 
     const order = await tx.order.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        notes: message?.trim() ? message.trim() : undefined,
+      },
       include: {
         client: true,
         traiteur: true,
@@ -270,8 +274,12 @@ export const updateOrderPlatStatus = async (
             type: isAccepted ? "order_acceptee" : "order_refusee",
             titre: isAccepted ? "✅ Commande acceptée !" : "❌ Commande refusée",
             message: isAccepted
-              ? "Le traiteur a accepté votre commande de plats !"
-              : "Le traiteur ne peut malheureusement pas honorer votre commande.",
+              ? message?.trim()
+                ? `Le traiteur a accepté votre commande de plats ! Note : ${message.trim()}`
+                : "Le traiteur a accepté votre commande de plats !"
+              : message?.trim()
+                ? `Le traiteur ne peut malheureusement pas honorer votre commande. Motif : ${message.trim()}`
+                : "Le traiteur ne peut malheureusement pas honorer votre commande.",
             data: { order_id: id },
           },
         });
@@ -337,7 +345,10 @@ export const updateGpRequestStatus = async (
 
     const request = await tx.gpRequest.update({
       where: { id },
-      data: { status },
+      data: {
+        status,
+        notes: message?.trim() ? message.trim() : undefined,
+      },
       include: {
         sender: true,
         listing: {
@@ -383,8 +394,9 @@ export const updateGpRequestStatus = async (
       if (status === GP_REQUEST_STATUS.ACCEPTED) {
         notifType = "gp_acceptee";
         notifTitre = "✅ Demande GP acceptée !";
-        notifMsg =
-          "Le GP a accepté votre demande de transport. Vous pouvez convenir du dépôt du colis.";
+        notifMsg = message?.trim()
+          ? `Le GP a accepté votre demande de transport. Note : ${message.trim()}`
+          : "Le GP a accepté votre demande de transport. Vous pouvez convenir du dépôt du colis.";
       } else if (status === GP_REQUEST_STATUS.COLIS_RECU) {
         notifType = "gp_colis_recu";
         notifTitre = "Colis réceptionné !";

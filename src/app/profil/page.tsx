@@ -25,6 +25,9 @@ import {
   ArrowRight,
   CheckCircle2,
   BadgeCheck,
+  FileText,
+  ChevronDown,
+  ChevronUp,
 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { getValidToken, decodeToken, removeToken, authFetch } from "@/lib/auth";
@@ -47,6 +50,7 @@ export default function ProfilPage() {
   const [userRole, setUserRole] = useState("client");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [isPersonalInfoOpen, setIsPersonalInfoOpen] = useState(false);
 
   const {
     register,
@@ -308,156 +312,47 @@ export default function ProfilPage() {
         </div>
       </section>
 
-      {/* ── 3. GRILLE DEUX COLONNES RESPONSIVE (DESKTOP & TABLETTE) ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
-        {/* ── COLONNE GAUCHE (4 colonnes) : NAVIGATION & ACTIVITÉS ── */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Carte Espaces & Activités */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-4">
-            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-              <h2 className="font-extrabold text-slate-900 text-base">
-                Mes espaces métiers
-              </h2>
-              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                Services
-              </span>
+      {/* ── 3. INFORMATIONS PERSONNELLES (MENU DÉROULANT / ACCORDÉON) ── */}
+      <div className="bg-white rounded-3xl border border-slate-200/80 p-6 sm:p-7 shadow-xs">
+        <button
+          type="button"
+          onClick={() => setIsPersonalInfoOpen(!isPersonalInfoOpen)}
+          className="w-full flex items-center justify-between text-left group transition-all"
+        >
+          <div className="flex items-center gap-3.5">
+            <div className="w-11 h-11 rounded-2xl bg-[#1D6B45]/10 text-[#1D6B45] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+              <Edit3 size={20} />
             </div>
-
-            <div className="space-y-3">
-              {/* Espace Commandes */}
-              <Link
-                href="/commandes"
-                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/60 border border-slate-200/60 hover:border-[#1D6B45]/40 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#1D6B45]/10 text-[#1D6B45] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                    <Package size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#1D6B45] transition-colors">
-                      Mes commandes
-                    </h3>
-                    <p className="text-[11px] text-slate-500">
-                      Suivi traiteur & colis GP
-                    </p>
-                  </div>
-                </div>
-                <ArrowRight size={16} className="text-slate-400 group-hover:text-[#1D6B45] group-hover:translate-x-1 transition-all" />
-              </Link>
-
-              {/* Espace Traiteur */}
-              <Link
-                href="/profil/traiteur"
-                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-amber-50/60 border border-slate-200/60 hover:border-[#D4870A]/40 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-[#D4870A]/10 text-[#D4870A] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                    <ChefHat size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#D4870A] transition-colors">
-                      Espace Traiteur
-                    </h3>
-                    <p className="text-[11px] text-slate-500">
-                      {userRole === "traiteur"
-                        ? "Gérer ma carte & plats"
-                        : "Devenir traiteur partenaire"}
-                    </p>
-                  </div>
-                </div>
-                <ArrowRight size={16} className="text-slate-400 group-hover:text-[#D4870A] group-hover:translate-x-1 transition-all" />
-              </Link>
-
-              {/* Espace GP */}
-              <Link
-                href="/profil/gp"
-                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-sky-50/60 border border-slate-200/60 hover:border-sky-500/40 transition-all"
-              >
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
-                    <Plane size={20} />
-                  </div>
-                  <div>
-                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-sky-600 transition-colors">
-                      Espace GP Colis
-                    </h3>
-                    <p className="text-[11px] text-slate-500">
-                      {userRole === "gp"
-                        ? "Gérer mes vols & annonces"
-                        : "Proposer des kilos sur un vol"}
-                    </p>
-                  </div>
-                </div>
-                <ArrowRight size={16} className="text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
-              </Link>
-            </div>
-          </div>
-
-          {/* Carte Confiance & Sécurité Dabari */}
-          <div className="bg-gradient-to-br from-emerald-50/60 to-teal-50/60 rounded-3xl border border-[#1D6B45]/20 p-6 space-y-3">
-            <div className="flex items-center gap-2 text-[#1D6B45]">
-              <ShieldCheck size={20} />
-              <h3 className="font-extrabold text-sm text-slate-900">
-                Garantie de Sécurité Dabari
-              </h3>
-            </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              Vos informations personnelles et adresses de livraison sont protégées. Aucune donnée sensible n&apos;est partagée sans votre accord.
-            </p>
-          </div>
-
-          {/* Zone de Danger (Déconnexion & Suppression) */}
-          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-3">
-            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
-              Gestion du compte
-            </h3>
-            <div className="space-y-2 pt-1">
-              <button
-                onClick={handleSignOut}
-                className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-slate-50 text-slate-700 transition-colors font-medium text-xs sm:text-sm border border-slate-100"
-              >
-                <span className="flex items-center gap-2.5">
-                  <LogOut size={16} className="text-slate-500" />
-                  Se déconnecter de la session
-                </span>
-                <ArrowRight size={14} className="text-slate-400" />
-              </button>
-
-              <button
-                onClick={() => setShowDeleteModal(true)}
-                className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-rose-50 text-rose-600 transition-colors font-semibold text-xs sm:text-sm border border-rose-100"
-              >
-                <span className="flex items-center gap-2.5">
-                  <Trash2 size={16} className="text-rose-500" />
-                  Supprimer mon compte définitivement
-                </span>
-                <ArrowRight size={14} className="text-rose-400" />
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* ── COLONNE DROITE (8 colonnes) : FORMULAIRE D'INFORMATIONS PERSONNELLES ── */}
-        <div className="lg:col-span-8 space-y-6">
-          <div className="bg-white rounded-3xl md:rounded-[32px] border border-slate-200/80 p-6 sm:p-8 md:p-10 shadow-xs space-y-6">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-5">
-              <div>
-                <h2 className="font-extrabold text-slate-900 text-lg sm:text-xl flex items-center gap-2">
-                  <Edit3 size={20} className="text-[#1D6B45]" />
+            <div>
+              <div className="flex items-center gap-2">
+                <h2 className="font-extrabold text-slate-900 text-base sm:text-lg">
                   Informations personnelles
                 </h2>
-                <p className="text-xs sm:text-sm text-slate-500 mt-1">
-                  Mettez à jour vos coordonnées pour vos commandes et livraisons.
-                </p>
+                {isDirty && (
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-200">
+                    Modifié
+                  </span>
+                )}
               </div>
-
-              {isDirty && (
-                <span className="inline-flex items-center gap-1.5 bg-amber-50 text-amber-700 border border-amber-200 px-3 py-1 rounded-full text-xs font-semibold self-start sm:self-auto">
-                  <Sparkles size={12} className="text-[#D4870A]" /> Modifications non enregistrées
-                </span>
-              )}
+              <p className="text-xs text-slate-500 mt-0.5">
+                {isPersonalInfoOpen
+                  ? "Mettez à jour vos coordonnées pour vos commandes et livraisons."
+                  : "Modifier nom, téléphone et adresse principale"}
+              </p>
             </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="hidden sm:inline text-xs font-bold text-[#1D6B45]">
+              {isPersonalInfoOpen ? "Masquer" : "Modifier mes coordonnées"}
+            </span>
+            <div className="w-9 h-9 rounded-xl bg-slate-100 group-hover:bg-emerald-50 text-slate-600 group-hover:text-[#1D6B45] flex items-center justify-center transition-colors">
+              {isPersonalInfoOpen ? <ChevronUp size={18} /> : <ChevronDown size={18} />}
+            </div>
+          </div>
+        </button>
 
+        {isPersonalInfoOpen && (
+          <div className="pt-6 mt-6 border-t border-slate-100 space-y-6 animate-in fade-in duration-200">
             {success && (
               <div className="bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl p-4 text-xs sm:text-sm font-semibold flex items-center gap-2 animate-in fade-in duration-200">
                 <CheckCircle2 size={18} className="text-[#1D6B45] shrink-0" />
@@ -575,6 +470,185 @@ export default function ProfilPage() {
                 </button>
               </div>
             </form>
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. GRILLE DES SERVICES ET GESTION DU COMPTE ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
+        {/* ── COLONNE GAUCHE (7 colonnes) : MES ESPACES MÉTIERS ── */}
+        <div className="lg:col-span-7 space-y-6">
+          {/* Carte Espaces & Activités */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
+              <h2 className="font-extrabold text-slate-900 text-base">
+                Mes espaces métiers
+              </h2>
+              <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
+                Services
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {/* Espace Commandes */}
+              <Link
+                href="/commandes"
+                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/60 border border-slate-200/60 hover:border-[#1D6B45]/40 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#1D6B45]/10 text-[#1D6B45] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Package size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#1D6B45] transition-colors">
+                      Mes commandes
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Suivi traiteur & colis GP
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={16} className="text-slate-400 group-hover:text-[#1D6B45] group-hover:translate-x-1 transition-all" />
+              </Link>
+
+              {/* Espace Traiteur */}
+              <Link
+                href="/profil/traiteur"
+                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-amber-50/60 border border-slate-200/60 hover:border-[#D4870A]/40 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#D4870A]/10 text-[#D4870A] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <ChefHat size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#D4870A] transition-colors">
+                      Espace Traiteur
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {userRole === "traiteur"
+                        ? "Gérer ma carte & plats"
+                        : "Devenir traiteur partenaire"}
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={16} className="text-slate-400 group-hover:text-[#D4870A] group-hover:translate-x-1 transition-all" />
+              </Link>
+
+              {/* Espace GP */}
+              <Link
+                href="/profil/gp"
+                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-sky-50/60 border border-slate-200/60 hover:border-sky-500/40 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-sky-500/10 text-sky-600 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Plane size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-sky-600 transition-colors">
+                      Espace GP Colis
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      {userRole === "gp"
+                        ? "Gérer mes vols & annonces"
+                        : "Proposer des kilos sur un vol"}
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={16} className="text-slate-400 group-hover:text-sky-600 group-hover:translate-x-1 transition-all" />
+              </Link>
+
+              {/* Conditions Générales d'Utilisation (CGU) */}
+              <Link
+                href="/cgu"
+                className="group flex items-center justify-between p-3.5 rounded-2xl bg-slate-50 hover:bg-emerald-50/60 border border-slate-200/60 hover:border-[#1D6B45]/40 transition-all"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-[#1D6B45]/10 text-[#1D6B45] flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <FileText size={20} />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 group-hover:text-[#1D6B45] transition-colors">
+                      Conditions Générales (CGU)
+                    </h3>
+                    <p className="text-[11px] text-slate-500">
+                      Cadre légal, cotransportage & séquestre
+                    </p>
+                  </div>
+                </div>
+                <ArrowRight size={16} className="text-slate-400 group-hover:text-[#1D6B45] group-hover:translate-x-1 transition-all" />
+              </Link>
+            </div>
+          </div>
+        </div>
+
+        {/* ── COLONNE DROITE (5 colonnes) : SÉCURITÉ & GESTION DU COMPTE ── */}
+        <div className="lg:col-span-5 space-y-6">
+          {/* Carte Confiance & Sécurité Dabari */}
+          <div className="bg-gradient-to-br from-emerald-50/70 via-white to-teal-50/70 rounded-3xl border border-[#1D6B45]/20 p-6 space-y-3.5 shadow-xs">
+            <div className="flex items-center gap-2.5 text-[#1D6B45]">
+              <div className="w-9 h-9 rounded-xl bg-[#1D6B45]/10 flex items-center justify-center shrink-0">
+                <ShieldCheck size={20} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">
+                  Garantie & Sécurité Dabari
+                </h3>
+                <p className="text-[11px] text-slate-500">
+                  Protection des données & des paiements
+                </p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              Vos informations personnelles et adresses de livraison sont protégées. Aucune donnée sensible n&apos;est partagée sans votre accord.
+            </p>
+            <div className="pt-2 border-t border-[#1D6B45]/15 flex items-center justify-between">
+              <Link
+                href="/cgu"
+                className="inline-flex items-center gap-1.5 text-xs font-bold text-[#1D6B45] hover:text-[#0F4A30] transition-colors"
+              >
+                <FileText size={14} />
+                <span>Lire les CGU complètes</span>
+                <ArrowRight size={13} />
+              </Link>
+              <a
+                href="/CGU-DABARI.pdf"
+                download="CGU-DABARI.pdf"
+                className="text-[11px] font-semibold text-slate-500 hover:text-slate-900 transition-colors"
+                title="Télécharger le document PDF officiel"
+              >
+                PDF officiel
+              </a>
+            </div>
+          </div>
+
+          {/* Zone de Danger (Déconnexion & Suppression) */}
+          <div className="bg-white rounded-3xl border border-slate-200/80 p-6 shadow-xs space-y-3">
+            <h3 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+              Gestion du compte
+            </h3>
+            <div className="space-y-2 pt-1">
+              <button
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-slate-50 text-slate-700 transition-colors font-medium text-xs sm:text-sm border border-slate-100"
+              >
+                <span className="flex items-center gap-2.5">
+                  <LogOut size={16} className="text-slate-500" />
+                  Se déconnecter de la session
+                </span>
+                <ArrowRight size={14} className="text-slate-400" />
+              </button>
+
+              <button
+                onClick={() => setShowDeleteModal(true)}
+                className="w-full flex items-center justify-between p-3 rounded-2xl hover:bg-rose-50 text-rose-600 transition-colors font-semibold text-xs sm:text-sm border border-rose-100"
+              >
+                <span className="flex items-center gap-2.5">
+                  <Trash2 size={16} className="text-rose-500" />
+                  Supprimer mon compte définitivement
+                </span>
+                <ArrowRight size={14} className="text-rose-400" />
+              </button>
+            </div>
           </div>
         </div>
       </div>

@@ -19,18 +19,7 @@ import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 
-const CUISINES = [
-  "Sénégalais",
-  "Ivoirien",
-  "Camerounais",
-  "Congolais",
-  "Malien",
-  "Guinéen",
-  "Burkinabé",
-  "Togolais",
-  "Béninois",
-  "Afro-Fusion",
-];
+import { CUISINES } from "../../../utils/constants";
 
 export default function TraiteurDishFormScreen() {
   const router = useRouter();

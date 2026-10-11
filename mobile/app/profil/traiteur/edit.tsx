@@ -17,33 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
-
-const CUISINES = [
-  "Sénégalais",
-  "Ivoirien",
-  "Camerounais",
-  "Congolais",
-  "Malien",
-  "Guinéen",
-  "Burkinabé",
-  "Togolais",
-  "Béninois",
-  "Afro-Fusion",
-];
-
-const ZONES = [
-  "Paris",
-  "Saint-Denis",
-  "Aubervilliers",
-  "Montreuil",
-  "Créteil",
-  "Vitry-sur-Seine",
-  "Toute l'Île-de-France",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Lille",
-];
+import { CUISINES, ZONES } from "../../../utils/constants";
 
 export default function EditTraiteurProfileScreen() {
   const router = useRouter();

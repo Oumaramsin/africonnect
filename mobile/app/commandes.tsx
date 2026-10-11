@@ -11,6 +11,7 @@ import {
   Linking,
   TextInput,
   Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
@@ -140,6 +141,7 @@ export default function CommandeScreen() {
   const [isTraiteur, setIsTraiteur] = useState(false);
   const [isGp, setIsGp] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [statusActionNote, setStatusActionNote] = useState<string>("");
   const [confirmAction, setConfirmAction] = useState<{
     type:
       | "accepter_traiteur"
@@ -545,64 +547,90 @@ export default function CommandeScreen() {
       | "accepter_gp"
       | "refuser_gp",
     item: any,
+    note?: string,
   ) {
     const token = await getSecureToken("token");
     if (!token) return;
 
     let url = "";
     let body: any = {};
+    const trimmedNote = note?.trim() || undefined;
 
     switch (actionType) {
       case "accepter_traiteur":
         url = `/commande/traiteur/${item.id}/status`;
-        body = { statut: "acceptee" };
+        body = { statut: "acceptee", message_traiteur: trimmedNote };
         break;
       case "refuser_traiteur":
         url = `/commande/traiteur/${item.id}/status`;
-        body = { statut: "refusee" };
+        body = { statut: "refusee", message_traiteur: trimmedNote };
         break;
       case "accepter_order":
         url = `/commande/order/${item.id}/status`;
-        body = { status: "accepted" };
+        body = { status: "accepted", message: trimmedNote };
         break;
       case "refuser_order":
         url = `/commande/order/${item.id}/status`;
-        body = { status: "rejected" };
+        body = { status: "rejected", message: trimmedNote };
         break;
       case "accepter_gp":
         url = `/commande/gp/${item.id}/status`;
-        body = { status: "accepted" };
+        body = { status: "accepted", message: trimmedNote };
         break;
       case "refuser_gp":
         url = `/commande/gp/${item.id}/status`;
-        body = { status: "rejected" };
+        body = { status: "rejected", message: trimmedNote };
         break;
     }
 
     // Mise à jour optimiste immédiate de l'interface
     if (actionType === "accepter_traiteur") {
       setCommandesRecues((prev) =>
-        prev.map((c) => (c.id === item.id ? { ...c, statut: "acceptee" } : c)),
+        prev.map((c) =>
+          c.id === item.id
+            ? { ...c, statut: "acceptee", message_traiteur: trimmedNote || c.message_traiteur }
+            : c,
+        ),
       );
     } else if (actionType === "refuser_traiteur") {
       setCommandesRecues((prev) =>
-        prev.map((c) => (c.id === item.id ? { ...c, statut: "refusee" } : c)),
+        prev.map((c) =>
+          c.id === item.id
+            ? { ...c, statut: "refusee", message_traiteur: trimmedNote || c.message_traiteur }
+            : c,
+        ),
       );
     } else if (actionType === "accepter_order") {
       setOrdersRecues((prev) =>
-        prev.map((o) => (o.id === item.id ? { ...o, status: "accepted" } : o)),
+        prev.map((o) =>
+          o.id === item.id
+            ? { ...o, status: "accepted", notes: trimmedNote || o.notes }
+            : o,
+        ),
       );
     } else if (actionType === "refuser_order") {
       setOrdersRecues((prev) =>
-        prev.map((o) => (o.id === item.id ? { ...o, status: "rejected" } : o)),
+        prev.map((o) =>
+          o.id === item.id
+            ? { ...o, status: "rejected", notes: trimmedNote || o.notes }
+            : o,
+        ),
       );
     } else if (actionType === "accepter_gp") {
       setGpRecues((prev) =>
-        prev.map((r) => (r.id === item.id ? { ...r, status: "accepted" } : r)),
+        prev.map((r) =>
+          r.id === item.id
+            ? { ...r, status: "accepted", notes: trimmedNote || r.notes }
+            : r,
+        ),
       );
     } else if (actionType === "refuser_gp") {
       setGpRecues((prev) =>
-        prev.map((r) => (r.id === item.id ? { ...r, status: "rejected" } : r)),
+        prev.map((r) =>
+          r.id === item.id
+            ? { ...r, status: "rejected", notes: trimmedNote || r.notes }
+            : r,
+        ),
       );
     }
 
@@ -614,6 +642,8 @@ export default function CommandeScreen() {
 
       if (res.ok) {
         await loadAll(); // Synchro finale backend
+        DeviceEventEmitter.emit("dabari_notifications_updated");
+        DeviceEventEmitter.emit("dabari_orders_updated");
       }
     } catch (err) {
       console.error("Erreur lors de la mise à jour du statut :", err);
@@ -630,6 +660,7 @@ export default function CommandeScreen() {
       | "refuser_gp",
     item: any,
   ) {
+    setStatusActionNote("");
     setConfirmAction({ type: actionType, item });
   }
 
@@ -995,6 +1026,25 @@ export default function CommandeScreen() {
                                     </Text>
                                   </View>
                                 )}
+
+                                {Boolean(cmd.message_traiteur) && (
+                                  <View style={styles.motifBox}>
+                                    <Ionicons
+                                      name="chatbubble-ellipses-outline"
+                                      size={14}
+                                      color={cmd.statut === "refusee" ? "#B91C1C" : "#1D6B45"}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.motifText,
+                                        cmd.statut === "refusee" && styles.motifTextRefuse,
+                                      ]}
+                                    >
+                                      {cmd.statut === "refusee" ? "Motif du refus : " : "Note traiteur : "}
+                                      {cmd.message_traiteur}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
 
                               {/* BOUTON CONSULTER LE DEVIS OFFICIEL */}
@@ -1182,6 +1232,25 @@ export default function CommandeScreen() {
                                     />
                                     <Text style={styles.detailText}>
                                       {ord.delivery_address}
+                                    </Text>
+                                  </View>
+                                )}
+
+                                {Boolean(ord.notes) && (
+                                  <View style={styles.motifBox}>
+                                    <Ionicons
+                                      name="chatbubble-ellipses-outline"
+                                      size={14}
+                                      color={ord.status === "rejected" ? "#B91C1C" : "#1D6B45"}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.motifText,
+                                        ord.status === "rejected" && styles.motifTextRefuse,
+                                      ]}
+                                    >
+                                      {ord.status === "rejected" ? "Motif du refus : " : "Note traiteur : "}
+                                      {ord.notes}
                                     </Text>
                                   </View>
                                 )}
@@ -1379,6 +1448,32 @@ export default function CommandeScreen() {
                                     <Text style={[styles.detailText, { flex: 1 }]}>
                                       Arrivée : {formatDate(gp.arrival_date || listing?.arrival_date)}
                                       {listing?.dropoff_city ? ` (Récup : ${listing.dropoff_city})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
+
+                                {Boolean(gp.notes) && (
+                                  <View style={styles.motifBox}>
+                                    <Ionicons
+                                      name="chatbubble-ellipses-outline"
+                                      size={14}
+                                      color={
+                                        gp.status === "rejected" || gp.status === "refused"
+                                          ? "#B91C1C"
+                                          : "#D4870A"
+                                      }
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.motifText,
+                                        (gp.status === "rejected" || gp.status === "refused") &&
+                                          styles.motifTextRefuse,
+                                      ]}
+                                    >
+                                      {gp.status === "rejected" || gp.status === "refused"
+                                        ? "Motif du refus : "
+                                        : "Note transporteur : "}
+                                      {gp.notes}
                                     </Text>
                                   </View>
                                 )}
@@ -1960,6 +2055,25 @@ export default function CommandeScreen() {
                                     </Text>
                                   </View>
                                 )}
+
+                                {Boolean(cmd.message_traiteur) && (
+                                  <View style={styles.motifBox}>
+                                    <Ionicons
+                                      name="chatbubble-ellipses-outline"
+                                      size={14}
+                                      color={cmd.statut === "refusee" ? "#B91C1C" : "#1D6B45"}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.motifText,
+                                        cmd.statut === "refusee" && styles.motifTextRefuse,
+                                      ]}
+                                    >
+                                      {cmd.statut === "refusee" ? "Motif du refus : " : "Note renseignée : "}
+                                      {cmd.message_traiteur}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
 
                               {/* BOUTON GÉRER / CHIFFRER LE DEVIS (TRAITEUR) */}
@@ -2126,6 +2240,25 @@ export default function CommandeScreen() {
                                     {Number(ord.total_amount || 0).toFixed(2)} €
                                   </Text>
                                 </View>
+
+                                {Boolean(ord.notes) && (
+                                  <View style={styles.motifBox}>
+                                    <Ionicons
+                                      name="chatbubble-ellipses-outline"
+                                      size={14}
+                                      color={ord.status === "rejected" ? "#B91C1C" : "#1D6B45"}
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.motifText,
+                                        ord.status === "rejected" && styles.motifTextRefuse,
+                                      ]}
+                                    >
+                                      {ord.status === "rejected" ? "Motif du refus : " : "Note renseignée : "}
+                                      {ord.notes}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
 
                               {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
@@ -2330,6 +2463,32 @@ export default function CommandeScreen() {
                                     </Text>
                                   </View>
                                 )}
+
+                                {Boolean(gp.notes) && (
+                                  <View style={styles.motifBox}>
+                                    <Ionicons
+                                      name="chatbubble-ellipses-outline"
+                                      size={14}
+                                      color={
+                                        gp.status === "rejected" || gp.status === "refused"
+                                          ? "#B91C1C"
+                                          : "#D4870A"
+                                      }
+                                    />
+                                    <Text
+                                      style={[
+                                        styles.motifText,
+                                        (gp.status === "rejected" || gp.status === "refused") &&
+                                          styles.motifTextRefuse,
+                                      ]}
+                                    >
+                                      {gp.status === "rejected" || gp.status === "refused"
+                                        ? "Motif du refus : "
+                                        : "Note renseignée : "}
+                                      {gp.notes}
+                                    </Text>
+                                  </View>
+                                )}
                               </View>
 
                               {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
@@ -2510,10 +2669,34 @@ export default function CommandeScreen() {
                     : "Cette action déclinera la demande de commande."}
                 </Text>
 
+                <View style={styles.modalNoteContainer}>
+                  <Text style={styles.modalNoteLabel}>
+                    {confirmAction.type.startsWith("accepter")
+                      ? "Note ou consigne pour le client (facultatif) :"
+                      : "Motif ou raison du refus (facultatif) :"}
+                  </Text>
+                  <TextInput
+                    style={styles.modalNoteInput}
+                    placeholder={
+                      confirmAction.type.startsWith("accepter")
+                        ? "Ex: Bien reçu, je prépare votre commande avec soin !"
+                        : "Ex: Créneau complet à cette date, désolé..."
+                    }
+                    placeholderTextColor="#94A3B8"
+                    value={statusActionNote}
+                    onChangeText={setStatusActionNote}
+                    multiline
+                    numberOfLines={3}
+                  />
+                </View>
+
                 <View style={styles.modalButtonsRow}>
                   <TouchableOpacity
                     style={styles.modalCancelBtn}
-                    onPress={() => setConfirmAction(null)}
+                    onPress={() => {
+                      setConfirmAction(null);
+                      setStatusActionNote("");
+                    }}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.modalCancelText}>Annuler</Text>
@@ -2529,8 +2712,10 @@ export default function CommandeScreen() {
                     activeOpacity={0.85}
                     onPress={() => {
                       const { type, item } = confirmAction;
+                      const noteToSend = statusActionNote;
                       setConfirmAction(null);
-                      handleStatusUpdate(type, item);
+                      setStatusActionNote("");
+                      handleStatusUpdate(type, item, noteToSend);
                     }}
                   >
                     <Text style={styles.modalConfirmText}>Confirmer</Text>
@@ -3791,6 +3976,53 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#B45309",
     marginTop: 2,
+  },
+
+  /* Notes & Motifs lors de l'acceptation / refus */
+  modalNoteContainer: {
+    width: "100%",
+    marginTop: 12,
+    marginBottom: 8,
+  },
+  modalNoteLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#475569",
+    marginBottom: 6,
+  },
+  modalNoteInput: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    fontSize: 13,
+    color: "#0F172A",
+    minHeight: 64,
+    textAlignVertical: "top",
+  },
+  motifBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 6,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    marginTop: 6,
+  },
+  motifText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#334155",
+    lineHeight: 16,
+    fontWeight: "500",
+  },
+  motifTextRefuse: {
+    color: "#991B1B",
   },
 });
 

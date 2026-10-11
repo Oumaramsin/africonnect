@@ -21,21 +21,7 @@ import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 import AddressAutocomplete from "../../../components/AddressAutocomplete";
 import { verifyAddressExists } from "../../../utils/addressValidation";
-
-interface EventTypeOption {
-  id: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}
-
-const EVENT_TYPES: EventTypeOption[] = [
-  { id: "mariage", label: "Mariage", icon: "heart" },
-  { id: "bapteme", label: "Baptême", icon: "happy" },
-  { id: "anniversaire", label: "Anniversaire", icon: "gift" },
-  { id: "reception", label: "Réception", icon: "wine" },
-  { id: "entreprise", label: "Événement pro", icon: "briefcase" },
-  { id: "autre", label: "Autre", icon: "sparkles" },
-];
+import { EVENT_TYPES } from "../../../utils/constants";
 
 export default function DevisScreen() {
   const router = useRouter();

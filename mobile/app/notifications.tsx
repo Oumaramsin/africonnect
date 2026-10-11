@@ -9,6 +9,7 @@ import {
   ActivityIndicator,
   RefreshControl,
   Alert,
+  Modal,
   DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -32,6 +33,13 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState<boolean>(false);
   const [activeCategory, setActiveCategory] = useState<NotificationCategory>("all");
   const [actionLoadingId, setActionLoadingId] = useState<string | null>(null);
+  const [deleteModalState, setDeleteModalState] = useState<{
+    visible: boolean;
+    type: "single" | "all";
+    id?: string;
+    title?: string;
+  } | null>(null);
+  const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
   const fetchNotifications = useCallback(async (isRefresh = false) => {
     if (!isRefresh) setLoading(true);
@@ -136,64 +144,56 @@ export default function NotificationsScreen() {
     }
   };
 
-  const handleDeleteNotification = (id: string) => {
-    Alert.alert(
-      "Supprimer la notification",
-      "Voulez-vous supprimer cette notification de votre historique ?",
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Supprimer",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              setActionLoadingId(id);
-              const res = await apiFetch(`/notifications/${id}`, {
-                method: "DELETE",
-              });
-              if (res.ok) {
-                setNotifications((prev) => prev.filter((n) => n.id !== id));
-                DeviceEventEmitter.emit("dabari_notifications_updated");
-                DeviceEventEmitter.emit("dabari_orders_updated");
-              }
-            } catch (e) {
-              console.error("[Notifications] Erreur delete :", e);
-            } finally {
-              setActionLoadingId(null);
-            }
-          },
-        },
-      ],
-    );
+  const handleDeleteNotification = (id: string, title?: string) => {
+    setDeleteModalState({
+      visible: true,
+      type: "single",
+      id,
+      title: title || "cette notification",
+    });
   };
 
   const handleClearAll = () => {
     if (notifications.length === 0) return;
-    Alert.alert(
-      "Effacer l'historique",
-      "Voulez-vous supprimer toutes les notifications de votre centre ?",
-      [
-        { text: "Annuler", style: "cancel" },
-        {
-          text: "Tout effacer",
-          style: "destructive",
-          onPress: async () => {
-            try {
-              const res = await apiFetch("/notifications/clear-all", {
-                method: "DELETE",
-              });
-              if (res.ok) {
-                setNotifications([]);
-                DeviceEventEmitter.emit("dabari_notifications_updated");
-                DeviceEventEmitter.emit("dabari_orders_updated");
-              }
-            } catch (e) {
-              console.error("[Notifications] Erreur clearAll :", e);
-            }
-          },
-        },
-      ],
-    );
+    setDeleteModalState({
+      visible: true,
+      type: "all",
+      title: "toutes les notifications",
+    });
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteModalState) return;
+    setIsDeleting(true);
+    try {
+      if (deleteModalState.type === "single" && deleteModalState.id) {
+        const id = deleteModalState.id;
+        setActionLoadingId(id);
+        const res = await apiFetch(`/notifications/${id}`, {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setNotifications((prev) => prev.filter((n) => n.id !== id));
+          DeviceEventEmitter.emit("dabari_notifications_updated");
+          DeviceEventEmitter.emit("dabari_orders_updated");
+        }
+      } else if (deleteModalState.type === "all") {
+        const res = await apiFetch("/notifications/clear-all", {
+          method: "DELETE",
+        });
+        if (res.ok) {
+          setNotifications([]);
+          DeviceEventEmitter.emit("dabari_notifications_updated");
+          DeviceEventEmitter.emit("dabari_orders_updated");
+        }
+      }
+    } catch (e) {
+      console.error("[Notifications] Erreur suppression :", e);
+    } finally {
+      setIsDeleting(false);
+      setActionLoadingId(null);
+      setDeleteModalState(null);
+    }
   };
 
   const handleNotificationPress = async (notif: AppNotification) => {
@@ -637,7 +637,7 @@ export default function NotificationsScreen() {
 
                           <TouchableOpacity
                             style={styles.iconActionCircle}
-                            onPress={() => handleDeleteNotification(notif.id)}
+                            onPress={() => handleDeleteNotification(notif.id, notif.titre)}
                             activeOpacity={0.7}
                             accessibilityLabel="Supprimer"
                           >
@@ -656,6 +656,63 @@ export default function NotificationsScreen() {
             </View>
           )}
         </ScrollView>
+
+        {/* ── MODALE POP-UP DE CONFIRMATION DE SUPPRESSION ── */}
+        <Modal
+          visible={Boolean(deleteModalState?.visible)}
+          transparent
+          animationType="fade"
+          onRequestClose={() => !isDeleting && setDeleteModalState(null)}
+        >
+          <View style={styles.modalBackdrop}>
+            <View style={styles.modalCard}>
+              <View style={styles.modalIconCircle}>
+                <Ionicons name="trash-outline" size={26} color="#DC2626" />
+              </View>
+
+              <Text style={styles.modalTitle}>
+                {deleteModalState?.type === "all"
+                  ? "Effacer tout l'historique ?"
+                  : "Supprimer la notification ?"}
+              </Text>
+
+              <Text style={styles.modalDescription}>
+                {deleteModalState?.type === "all"
+                  ? "Voulez-vous supprimer toutes les notifications de votre centre d'alertes ? Cette action est irréversible."
+                  : deleteModalState?.title
+                    ? `Voulez-vous supprimer cette alerte de votre historique ?\n\n« ${deleteModalState.title} »`
+                    : "Voulez-vous supprimer cette notification de votre historique ?"}
+              </Text>
+
+              <View style={styles.modalActionsRow}>
+                <TouchableOpacity
+                  style={styles.modalCancelBtn}
+                  onPress={() => setDeleteModalState(null)}
+                  disabled={isDeleting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.modalCancelBtnText}>Annuler</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={[styles.modalConfirmBtn, isDeleting && styles.modalBtnDisabled]}
+                  onPress={confirmDelete}
+                  disabled={isDeleting}
+                  activeOpacity={0.8}
+                >
+                  {isDeleting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Ionicons name="trash" size={15} color="#FFFFFF" />
+                      <Text style={styles.modalConfirmBtnText}>Supprimer</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -668,7 +725,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#0B3B24",
   },
   header: {
     backgroundColor: "#0B3B24",
@@ -948,5 +1005,89 @@ const styles = StyleSheet.create({
     borderColor: "#E2E8F0",
     justifyContent: "center",
     alignItems: "center",
+  },
+
+  /* ── Modale de confirmation de suppression ── */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  modalCard: {
+    width: "100%",
+    maxWidth: 360,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    padding: 22,
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 8,
+  },
+  modalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#FEE2E2",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  modalTitle: {
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#0F172A",
+    textAlign: "center",
+    marginBottom: 8,
+  },
+  modalDescription: {
+    fontSize: 13,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    width: "100%",
+  },
+  modalCancelBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#F1F5F9",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  modalCancelBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  modalConfirmBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#DC2626",
+    justifyContent: "center",
+    alignItems: "center",
+    shadowColor: "#DC2626",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 4,
+    elevation: 2,
+  },
+  modalConfirmBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  modalBtnDisabled: {
+    opacity: 0.6,
   },
 });

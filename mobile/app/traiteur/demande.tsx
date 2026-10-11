@@ -19,38 +19,7 @@ import { Ionicons } from "@expo/vector-icons";
 import AddressAutocomplete, { AddressFeature } from "../../components/AddressAutocomplete";
 import { apiFetch } from "../../utils/api";
 import { verifyAddressExists } from "../../utils/addressValidation";
-
-interface EventTypeOption {
-  id: string;
-  label: string;
-  icon: keyof typeof Ionicons.glyphMap;
-}
-
-const EVENT_TYPES: EventTypeOption[] = [
-  { id: "Mariage", label: "Mariage", icon: "heart" },
-  { id: "Anniversaire", label: "Anniversaire", icon: "gift" },
-  { id: "Baptême", label: "Baptême", icon: "happy" },
-  { id: "Buffet / Cocktail", label: "Buffet", icon: "wine" },
-  { id: "Fête de famille", label: "Famille", icon: "people" },
-  { id: "Dîner privé", label: "Dîner privé", icon: "restaurant" },
-  { id: "Événement pro", label: "Événement pro", icon: "briefcase" },
-  { id: "Autre", label: "Autre", icon: "sparkles" },
-];
-
-const DISH_SUGGESTIONS = [
-  "Thieboudienne au poisson",
-  "Poulet Yassa aux oignons",
-  "Alloco & Dibi d'agneau",
-  "Maffé au bœuf fondant",
-  "Ndolé aux crevettes",
-  "Attiéké poisson braisé",
-  "Pastels croustillants au thon",
-  "Samoussas au bœuf épicé",
-  "Jus de Bissap menthe",
-  "Jus de Gingembre pressé",
-  "Thiakry vanillé",
-  "Viandes 100% Halal",
-];
+import { DEMANDE_EVENT_TYPES as EVENT_TYPES, EventTypeOption, DISH_SUGGESTIONS } from "../../utils/constants";
 
 export default function DemandeTraiteurScreen() {
   const router = useRouter();

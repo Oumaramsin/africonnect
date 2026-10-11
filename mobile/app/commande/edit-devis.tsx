@@ -28,14 +28,7 @@ if (Platform.OS !== "web") {
     DateTimePicker = null;
   }
 }
-
-const EVENT_TYPES = [
-  "Mariage",
-  "Anniversaire",
-  "Baptême",
-  "Entreprise",
-  "Autre",
-];
+import { EVENT_TYPE_NAMES as EVENT_TYPES } from "../../utils/constants";
 
 export default function EditDevisScreen() {
   const router = useRouter();

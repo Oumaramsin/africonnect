@@ -12,6 +12,7 @@ import {
   Linking,
   KeyboardAvoidingView,
   Platform,
+  DeviceEventEmitter,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
@@ -787,6 +788,8 @@ export default function DevisModal({
 
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
+      DeviceEventEmitter.emit("dabari_notifications_updated");
+      DeviceEventEmitter.emit("dabari_orders_updated");
       setIsEditingPrice(false);
       setSuccessMessage("Devis chiffré et transmis avec succès au client.");
     } catch (err: any) {
@@ -824,6 +827,8 @@ export default function DevisModal({
 
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
+      DeviceEventEmitter.emit("dabari_notifications_updated");
+      DeviceEventEmitter.emit("dabari_orders_updated");
       setSignerName("");
       setAgreedTerms(false);
       setSuccessMessage("Devis signé avec succès !");
@@ -858,6 +863,8 @@ export default function DevisModal({
 
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
+      DeviceEventEmitter.emit("dabari_notifications_updated");
+      DeviceEventEmitter.emit("dabari_orders_updated");
       setShowRefusalModal(false);
       setSuccessMessage("Le devis a été décliné.");
     } catch (err: any) {
@@ -903,6 +910,8 @@ export default function DevisModal({
 
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
+      DeviceEventEmitter.emit("dabari_notifications_updated");
+      DeviceEventEmitter.emit("dabari_orders_updated");
       setShowAcompteModal(false);
 
       if (action === "verser") {

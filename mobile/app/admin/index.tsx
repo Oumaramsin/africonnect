@@ -65,32 +65,7 @@ type GpListing = {
 };
 
 type Tab = "traiteurs" | "gp" | "utilisateurs";
-
-const CUISINES = [
-  "Sénégalais",
-  "Ivoirien",
-  "Camerounais",
-  "Congolais",
-  "Malien",
-  "Guinéen",
-  "Burkinabé",
-  "Togolais",
-  "Béninois",
-  "Afro-Fusion",
-];
-
-const ZONES = [
-  "Paris",
-  "Saint-Denis",
-  "Aubervilliers",
-  "Montreuil",
-  "Créteil",
-  "Vitry-sur-Seine",
-  "Lyon",
-  "Marseille",
-  "Bordeaux",
-  "Toulouse",
-];
+import { CUISINES, ZONES } from "../../utils/constants";
 
 export default function AdminScreen() {
   const router = useRouter();

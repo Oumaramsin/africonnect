@@ -119,7 +119,6 @@ export default function Navbar() {
     ...(isLoggedIn
       ? [{ href: "/commandes", label: "Mes Commandes", icon: Package, badge: unreadCount }]
       : []),
-    { href: "/cgu", label: "CGU", icon: ShieldCheck },
   ];
 
   const hideNavbarOn = ["/login", "/register", "/reset-password"];
