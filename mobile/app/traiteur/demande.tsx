@@ -17,21 +17,33 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import AddressAutocomplete, { AddressFeature } from "../../components/AddressAutocomplete";
+import OrderEditModal, { DetailRowItem } from "../../components/OrderEditModal";
 import { apiFetch } from "../../utils/api";
+import { showErrorAlert } from "../../utils/alerts";
 import { verifyAddressExists } from "../../utils/addressValidation";
 import { DEMANDE_EVENT_TYPES as EVENT_TYPES, EventTypeOption, DISH_SUGGESTIONS } from "../../utils/constants";
+
+let DateTimePicker: any = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch {
+    DateTimePicker = null;
+  }
+}
 
 export default function DemandeTraiteurScreen() {
   const router = useRouter();
 
-  const tomorrow = useMemo(() => {
-    const d = new Date(Date.now() + 86400000);
-    return d.toISOString().split("T")[0];
+  const defaultDateObj = useMemo(() => {
+    return new Date(Date.now() + 86400000);
   }, []);
 
   const [eventType, setEventType] = useState("Mariage");
   const [guestCount, setGuestCount] = useState("");
-  const [eventDate, setEventDate] = useState(tomorrow);
+  const [selectedDateObj, setSelectedDateObj] = useState<Date>(defaultDateObj);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [eventDate, setEventDate] = useState(() => defaultDateObj.toISOString().split("T")[0]);
   const [location, setLocation] = useState("");
   const [foodPreferences, setFoodPreferences] = useState("");
   const [budget, setBudget] = useState("");
@@ -39,6 +51,18 @@ export default function DemandeTraiteurScreen() {
 
   const [submitting, setSubmitting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [showSuccessModal, setShowSuccessModal] = useState(false);
+
+  const handleDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === "android") setShowDatePicker(false);
+    if (date) {
+      setSelectedDateObj(date);
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      const dd = String(date.getDate()).padStart(2, "0");
+      setEventDate(`${yyyy}-${mm}-${dd}`);
+    }
+  };
 
   // Estimation du budget par invité
   const budgetPerGuest = useMemo(() => {
@@ -56,6 +80,54 @@ export default function DemandeTraiteurScreen() {
     eventDate.trim().length >= 8 &&
     location.trim().length >= 3 &&
     foodPreferences.trim().length >= 8;
+
+  // Récapitulatif pour les modales de confirmation et de succès
+  const modalDetails: DetailRowItem[] = useMemo(() => [
+    {
+      icon: "restaurant-outline",
+      label: "Événement",
+      value: eventType,
+      isHighlight: true,
+    },
+    {
+      icon: "calendar-outline",
+      label: "Date prévue",
+      value: eventDate,
+    },
+    {
+      icon: "location-outline",
+      label: "Lieu",
+      value: location,
+    },
+    ...(guestCount.trim()
+      ? [
+          {
+            icon: "people-outline" as const,
+            label: "Invités",
+            value: `${guestCount.trim()} pers.`,
+          },
+        ]
+      : []),
+    ...(budget.trim()
+      ? [
+          {
+            icon: "cash-outline" as const,
+            label: "Budget indicatif",
+            value: `${budget.trim()} €`,
+            isHighlight: true,
+          },
+        ]
+      : []),
+    ...(foodPreferences.trim()
+      ? [
+          {
+            icon: "fast-food-outline" as const,
+            label: "Plats / Souhaits",
+            value: foodPreferences.trim(),
+          },
+        ]
+      : []),
+  ], [eventType, eventDate, location, guestCount, budget, foodPreferences]);
 
   // Ajouter une suggestion culinaire en un clic
   const handleAddSuggestion = (item: string) => {
@@ -79,7 +151,7 @@ export default function DemandeTraiteurScreen() {
     try {
       const addressCheck = await verifyAddressExists(location.trim());
       if (!addressCheck.isValid) {
-        Alert.alert(
+        showErrorAlert(
           "Lieu non reconnu",
           addressCheck.error ||
             "L'adresse ou ville indiquée n'a pas été trouvée. Veuillez sélectionner une adresse dans les suggestions."
@@ -111,26 +183,17 @@ export default function DemandeTraiteurScreen() {
 
       const data = await res.json();
       if (!res.ok) {
-        Alert.alert(
+        showErrorAlert(
           "Erreur",
           data.message || "Impossible de publier l'annonce pour le moment."
         );
         return;
       }
 
-      Alert.alert(
-        "Annonce publiée avec succès",
-        "Votre besoin événementiel a été partagé avec nos chefs partenaires certifiés. Leurs propositions apparaîtront dans votre espace Devis & Annonces.",
-        [
-          {
-            text: "Voir mes devis & annonces",
-            onPress: () => router.push("/commandes"),
-          },
-        ]
-      );
+      setShowSuccessModal(true);
     } catch (err: any) {
       console.error("Erreur publication demande traiteur:", err);
-      Alert.alert("Erreur", "Une erreur inattendue est survenue.");
+      showErrorAlert("Erreur", "Une erreur inattendue est survenue.");
     } finally {
       setSubmitting(false);
     }
@@ -139,7 +202,7 @@ export default function DemandeTraiteurScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#165034" />
 
         {/* ── 1. HEADER HERO DABARI ── */}
         <View style={styles.headerHero}>
@@ -249,13 +312,21 @@ export default function DemandeTraiteurScreen() {
               <View style={styles.formGridRow}>
                 <View style={styles.formCol}>
                   <Text style={styles.fieldLabel}>Date prévue *</Text>
-                  <TextInput
-                    style={styles.inputField}
-                    placeholder="AAAA-MM-JJ"
-                    placeholderTextColor="#94A3B8"
-                    value={eventDate}
-                    onChangeText={setEventDate}
-                  />
+                  <TouchableOpacity
+                    style={styles.datePickerBtn}
+                    onPress={() => setShowDatePicker(true)}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons name="calendar-outline" size={16} color="#1D6B45" />
+                    <Text style={styles.datePickerBtnText}>
+                      {selectedDateObj.toLocaleDateString("fr-FR", {
+                        day: "2-digit",
+                        month: "2-digit",
+                        year: "numeric",
+                      })}
+                    </Text>
+                    <Ionicons name="chevron-down" size={13} color="#94A3B8" />
+                  </TouchableOpacity>
                 </View>
 
                 <View style={styles.formCol}>
@@ -420,70 +491,80 @@ export default function DemandeTraiteurScreen() {
           </ScrollView>
         </KeyboardAvoidingView>
 
-        {/* ── 8. MODALE DE CONFIRMATION DE PUBLICATION ── */}
-        {showConfirmModal && (
+        {/* ── MODALE DE CONFIRMATION DE PUBLICATION ── */}
+        <OrderEditModal
+          visible={showConfirmModal}
+          type="confirm"
+          service="event"
+          title="Confirmer la publication"
+          subtitle="Voulez-vous publier cette annonce pour votre événement ?"
+          details={modalDetails}
+          noticeText="Votre annonce sera visible auprès de nos chefs partenaires certifiés qui vous enverront leurs propositions sans engagement."
+          confirmLabel="Confirmer & Publier"
+          cancelLabel="Modifier"
+          isLoading={submitting}
+          onConfirm={handleSubmit}
+          onCancel={() => setShowConfirmModal(false)}
+        />
+
+        {/* ── MODALE DE SUCCÈS ADAPTÉE AUX COULEURS DE L'APPLICATION ── */}
+        <OrderEditModal
+          visible={showSuccessModal}
+          type="success"
+          service="event"
+          title="Annonce publiée avec succès !"
+          subtitle="Votre besoin événementiel a bien été partagé avec nos chefs partenaires certifiés."
+          details={modalDetails}
+          noticeText="Leurs propositions apparaîtront dans votre espace Devis & Annonces. Vous serez notifié(e) dès qu'un chef vous répondra."
+          confirmLabel="Voir mes devis & annonces"
+          onConfirm={() => {
+            setShowSuccessModal(false);
+            router.push("/commandes");
+          }}
+        />
+
+        {/* DatePicker Modale iOS / Native Android */}
+        {Platform.OS === "ios" && DateTimePicker && (
           <Modal
+            visible={showDatePicker}
             transparent
             animationType="fade"
-            visible={showConfirmModal}
-            onRequestClose={() => setShowConfirmModal(false)}
+            onRequestClose={() => setShowDatePicker(false)}
           >
-            <View style={styles.modalBackdrop}>
-              <View style={styles.modalCard}>
-                <View style={styles.modalHeader}>
-                  <Ionicons name="checkmark-circle-outline" size={28} color="#1D6B45" />
-                  <Text style={styles.modalTitle}>Confirmer la publication</Text>
-                </View>
-
-                <View style={styles.modalSummaryBox}>
-                  <Text style={styles.modalSummaryRow}>
-                    <Text style={styles.modalSummaryLabel}>Événement : </Text>
-                    {eventType}
-                  </Text>
-                  <Text style={styles.modalSummaryRow}>
-                    <Text style={styles.modalSummaryLabel}>Date : </Text>
-                    {eventDate}
-                  </Text>
-                  <Text style={styles.modalSummaryRow}>
-                    <Text style={styles.modalSummaryLabel}>Lieu : </Text>
-                    {location}
-                  </Text>
-                  {Boolean(guestCount) && (
-                    <Text style={styles.modalSummaryRow}>
-                      <Text style={styles.modalSummaryLabel}>Invités : </Text>
-                      {guestCount} pers.
-                    </Text>
-                  )}
-                  {Boolean(budget) && (
-                    <Text style={styles.modalSummaryRow}>
-                      <Text style={styles.modalSummaryLabel}>Budget : </Text>
-                      {budget} €
-                    </Text>
-                  )}
-                </View>
-
-                <Text style={styles.modalReassurance}>
-                  Votre annonce sera visible auprès de nos chefs partenaires certifiés qui vous enverront leurs propositions tarifaires sans engagement.
-                </Text>
-
-                <View style={styles.modalActionsRow}>
-                  <TouchableOpacity
-                    style={styles.modalCancelBtn}
-                    onPress={() => setShowConfirmModal(false)}
-                  >
-                    <Text style={styles.modalCancelBtnText}>Modifier</Text>
+            <View style={styles.dateModalBackdrop}>
+              <View style={styles.dateModalCard}>
+                <View style={styles.dateModalHeader}>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.dateModalCancelText}>Annuler</Text>
                   </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={styles.modalConfirmBtn}
-                    onPress={handleSubmit}
-                  >
-                    <Text style={styles.modalConfirmBtnText}>Confirmer & Publier</Text>
+                  <Text style={styles.dateModalTitle}>Date de l'événement</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.dateModalConfirmText}>Valider</Text>
                   </TouchableOpacity>
                 </View>
+                <DateTimePicker
+                  value={selectedDateObj}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={new Date()}
+                  onValueChange={handleDateChange}
+                  onDismiss={() => setShowDatePicker(false)}
+                  textColor="#0F172A"
+                />
               </View>
             </View>
           </Modal>
+        )}
+
+        {Platform.OS === "android" && DateTimePicker && showDatePicker && (
+          <DateTimePicker
+            value={selectedDateObj}
+            mode="date"
+            display="default"
+            minimumDate={new Date()}
+            onValueChange={handleDateChange}
+            onDismiss={() => setShowDatePicker(false)}
+          />
         )}
       </SafeAreaView>
     </View>
@@ -497,7 +578,7 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#165034",
   },
 
   /* ── Hero Header ── */
@@ -577,6 +658,7 @@ const styles = StyleSheet.create({
   /* ── Scroll & Content ── */
   contentScroll: {
     flex: 1,
+    backgroundColor: "#F8FAFC",
   },
   scrollPadding: {
     padding: 16,
@@ -877,5 +959,65 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
+  },
+
+  /* ── Date Picker ── */
+  datePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  datePickerBtnText: {
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0F172A",
+  },
+  dateModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "flex-end",
+  },
+  dateModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 32,
+    paddingTop: 16,
+    paddingHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  dateModalCancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  dateModalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  dateModalConfirmText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1D6B45",
   },
 });

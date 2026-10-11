@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,11 +7,12 @@ import {
   ScrollView,
   StatusBar,
   TextInput,
+  Modal,
+  Platform,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { Platform } from "react-native";
 import { CartItem } from "../../utils/types/traiteur";
 import { deleteSecureToken, getSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
@@ -73,12 +74,26 @@ export default function CommanderScreen() {
     }
   };
 
+  const isDateTimeInPast = useMemo(() => {
+    if (!deliveryDate || !deliveryTime) return false;
+    const [y, m, d] = deliveryDate.split("-").map(Number);
+    const [hh, mm] = deliveryTime.split(":").map(Number);
+    if (isNaN(y) || isNaN(m) || isNaN(d) || isNaN(hh) || isNaN(mm)) return false;
+    const scheduled = new Date(y, m - 1, d, hh, mm, 0);
+    return scheduled.getTime() < Date.now();
+  }, [deliveryDate, deliveryTime]);
+
   const handleDateChange = (event: any, date?: Date) => {
     if (Platform.OS === "android") setShowDatePicker(false);
     if (date) {
       const updated = new Date(selectedDate);
       updated.setFullYear(date.getFullYear(), date.getMonth(), date.getDate());
       setSelectedDate(updated);
+      if (updated.getTime() < Date.now()) {
+        setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+      } else if (error === "L'heure de livraison ne peut pas être antérieure à l'heure actuelle.") {
+        setError(null);
+      }
     }
   };
 
@@ -88,6 +103,11 @@ export default function CommanderScreen() {
       const updated = new Date(selectedDate);
       updated.setHours(time.getHours(), time.getMinutes());
       setSelectedDate(updated);
+      if (updated.getTime() < Date.now()) {
+        setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+      } else if (error === "L'heure de livraison ne peut pas être antérieure à l'heure actuelle.") {
+        setError(null);
+      }
     }
   };
 
@@ -100,6 +120,7 @@ export default function CommanderScreen() {
   const isFormValid =
     deliveryDate.trim() !== "" &&
     deliveryTime.trim() !== "" &&
+    !isDateTimeInPast &&
     (deliveryType === "pickup" ||
       (deliveryType === "delivery" && deliveryAddress.trim() !== ""));
 
@@ -136,6 +157,16 @@ export default function CommanderScreen() {
       return;
     }
 
+    const [y, m, d] = deliveryDate.split("-").map(Number);
+    const [hh, mm] = deliveryTime.split(":").map(Number);
+    if (!isNaN(y) && !isNaN(m) && !isNaN(d) && !isNaN(hh) && !isNaN(mm)) {
+      const scheduled = new Date(y, m - 1, d, hh, mm, 0);
+      if (scheduled.getTime() < Date.now()) {
+        setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+        return;
+      }
+    }
+
     setError(null);
     setShowConfirmModal(true);
   };
@@ -150,6 +181,17 @@ export default function CommanderScreen() {
       if (!token) {
         router.push("/login");
         return;
+      }
+
+      const [y, m, d] = deliveryDate.split("-").map(Number);
+      const [hh, mm] = deliveryTime.split(":").map(Number);
+      if (!isNaN(y) && !isNaN(m) && !isNaN(d) && !isNaN(hh) && !isNaN(mm)) {
+        const scheduled = new Date(y, m - 1, d, hh, mm, 0);
+        if (scheduled.getTime() < Date.now()) {
+          setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+          setLoading(false);
+          return;
+        }
       }
       const formattedDate = deliveryTime.includes(":")
         ? `${deliveryDate}T${deliveryTime}:00`
@@ -228,7 +270,7 @@ export default function CommanderScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#165034" />
 
         {/* Top Header Card (Gradient Vert) */}
         <View style={styles.headerCard}>
@@ -434,27 +476,6 @@ export default function CommanderScreen() {
                 )}
               </View>
             </View>
-
-            {Platform.OS !== "web" && DateTimePicker && showDatePicker && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="date"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                minimumDate={new Date()}
-                onValueChange={handleDateChange}
-                onDismiss={() => setShowDatePicker(false)}
-              />
-            )}
-
-            {Platform.OS !== "web" && DateTimePicker && showTimePicker && (
-              <DateTimePicker
-                value={selectedDate}
-                mode="time"
-                display={Platform.OS === "ios" ? "spinner" : "default"}
-                onValueChange={handleTimeChange}
-                onDismiss={() => setShowTimePicker(false)}
-              />
-            )}
           </View>
 
           {/* 5. Notes pour le traiteur */}
@@ -537,6 +558,91 @@ export default function CommanderScreen() {
               </View>
             </View>
           </View>
+        )}
+
+        {/* DatePicker Modale iOS / Native Android */}
+        {Platform.OS === "ios" && DateTimePicker && (
+          <Modal
+            visible={showDatePicker}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <View style={styles.dateModalBackdrop}>
+              <View style={styles.dateModalCard}>
+                <View style={styles.dateModalHeader}>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.dateModalCancelText}>Annuler</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.dateModalTitle}>Date de livraison</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.dateModalConfirmText}>Valider</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={new Date()}
+                  onValueChange={handleDateChange}
+                  onDismiss={() => setShowDatePicker(false)}
+                  textColor="#0F172A"
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {Platform.OS === "ios" && DateTimePicker && (
+          <Modal
+            visible={showTimePicker}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowTimePicker(false)}
+          >
+            <View style={styles.dateModalBackdrop}>
+              <View style={styles.dateModalCard}>
+                <View style={styles.dateModalHeader}>
+                  <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                    <Text style={styles.dateModalCancelText}>Annuler</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.dateModalTitle}>Heure de livraison</Text>
+                  <TouchableOpacity onPress={() => setShowTimePicker(false)}>
+                    <Text style={styles.dateModalConfirmText}>Valider</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={selectedDate}
+                  mode="time"
+                  display="spinner"
+                  onValueChange={handleTimeChange}
+                  onDismiss={() => setShowTimePicker(false)}
+                  textColor="#0F172A"
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {Platform.OS === "android" && DateTimePicker && showDatePicker && (
+          <DateTimePicker
+            value={selectedDate}
+            mode="date"
+            display="default"
+            minimumDate={new Date()}
+            onValueChange={handleDateChange}
+            onDismiss={() => setShowDatePicker(false)}
+          />
+        )}
+
+        {Platform.OS === "android" && DateTimePicker && showTimePicker && (
+          <DateTimePicker
+            value={selectedDate}
+            mode="time"
+            display="default"
+            onValueChange={handleTimeChange}
+            onDismiss={() => setShowTimePicker(false)}
+          />
         )}
       </SafeAreaView>
     </View>
@@ -908,5 +1014,48 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+
+  /* ── Date & Time Modals ── */
+  dateModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "flex-end",
+  },
+  dateModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 32,
+    paddingTop: 16,
+    paddingHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  dateModalCancelText: {
+    fontSize: 15,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  dateModalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  dateModalConfirmText: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#1D6B45",
   },
 });

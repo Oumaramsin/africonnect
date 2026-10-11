@@ -117,6 +117,15 @@ export const createCommandeTraiteurController = async (
       });
     }
 
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    if (parsedDate.getTime() < startOfToday.getTime()) {
+      return res.status(400).json({
+        success: false,
+        error: "La date de l'événement ne peut pas être dans le passé.",
+      });
+    }
+
     const commande = await createOrderTraiteur({
       client_id: clientId,
       traiteur_id,
@@ -167,6 +176,23 @@ export const createDishesOrderController = async (
 
     if (!isValidUUID(traiteur_id)) {
       return res.status(400).json({ success: false, error: "Identifiant traiteur invalide." });
+    }
+
+    const parsedDeliveryDate = new Date(delivery_date);
+    if (isNaN(parsedDeliveryDate.getTime())) {
+      return res.status(400).json({
+        success: false,
+        error: "Date ou heure de livraison invalide.",
+      });
+    }
+
+    // Tolérance de 5 minutes pour d'éventuels décalages d'horloge entre client et serveur
+    const nowWithTolerance = Date.now() - 5 * 60 * 1000;
+    if (parsedDeliveryDate.getTime() < nowWithTolerance) {
+      return res.status(400).json({
+        success: false,
+        error: "L'heure de livraison ne peut pas être antérieure à l'heure actuelle.",
+      });
     }
 
     if (!items || !Array.isArray(items) || items.length === 0) {
@@ -489,6 +515,15 @@ export const createTraiteurRequestController = async (
       return res.status(400).json({ success: false, error: "Date d'événement invalide." });
     }
 
+    const startOfToday = new Date();
+    startOfToday.setHours(0, 0, 0, 0);
+    if (parsedDate.getTime() < startOfToday.getTime()) {
+      return res.status(400).json({
+        success: false,
+        error: "La date de l'événement ne peut pas être dans le passé.",
+      });
+    }
+
     let parsedGuestCount: number | null = null;
     if (guest_count !== undefined && guest_count !== null && guest_count !== "") {
       const g = parseInt(String(guest_count), 10);
@@ -607,11 +642,11 @@ export const cancelTraiteurRequestController = async (
       return res.status(400).json({ success: false, error: "Identifiant de demande invalide." });
     }
 
-    const request = await cancelTraiteurRequest(id, userId);
+    const result = await deleteTraiteurRequest(id, userId);
     res.json({
       success: true,
-      data: { request },
-      message: "Demande annulée avec succès.",
+      data: result,
+      message: "Annonce annulée et supprimée avec succès.",
     });
   } catch (error: any) {
     console.error("Erreur dans cancelTraiteurRequestController:", error);

@@ -85,19 +85,28 @@ export const markAllNotificationsAsRead = async (userId: string) => {
 export const deleteNotification = async (
   notificationId: string,
   userId: string,
+  isAdmin: boolean = false,
 ) => {
   return await db.notification.deleteMany({
-    where: {
-      id: notificationId,
-      user_id: userId,
-    },
+    where: isAdmin
+      ? { id: notificationId }
+      : {
+          id: notificationId,
+          user_id: userId,
+        },
   });
 };
 
-export const clearAllNotifications = async (userId: string) => {
+export const clearAllNotifications = async (
+  userId: string,
+  isAdmin: boolean = false,
+) => {
   return await db.notification.deleteMany({
-    where: {
-      user_id: userId,
-    },
+    where: isAdmin
+      ? {}
+      : {
+          user_id: userId,
+        },
   });
 };
+

@@ -23,18 +23,28 @@ import AddressAutocomplete from "../../../components/AddressAutocomplete";
 import { verifyAddressExists } from "../../../utils/addressValidation";
 import { EVENT_TYPES } from "../../../utils/constants";
 
+let DateTimePicker: any = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch {
+    DateTimePicker = null;
+  }
+}
+
 export default function DevisScreen() {
   const router = useRouter();
   const { traiteurId } = useLocalSearchParams<{ traiteurId: string }>();
 
-  const tomorrow = useMemo(() => {
-    const d = new Date(Date.now() + 86400000 * 14); // Par défaut dans 2 semaines
-    return d.toISOString().split("T")[0];
+  const defaultDateObj = useMemo(() => {
+    return new Date(Date.now() + 86400000 * 14); // Par défaut dans 2 semaines
   }, []);
 
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
 
-  const [dateEvenement, setDateEvenement] = useState(tomorrow);
+  const [selectedDateObj, setSelectedDateObj] = useState<Date>(defaultDateObj);
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [dateEvenement, setDateEvenement] = useState(() => defaultDateObj.toISOString().split("T")[0]);
   const [nbPersonnes, setNbPersonnes] = useState("");
   const [adresse, setAdresse] = useState("");
   const [typeEvenement, setTypeEvenement] = useState("mariage");
@@ -151,6 +161,17 @@ export default function DevisScreen() {
     }
   };
 
+  const handleDateChange = (event: any, date?: Date) => {
+    if (Platform.OS === "android") setShowDatePicker(false);
+    if (date) {
+      setSelectedDateObj(date);
+      const yyyy = date.getFullYear();
+      const mm = String(date.getMonth() + 1).padStart(2, "0");
+      const dd = String(date.getDate()).padStart(2, "0");
+      setDateEvenement(`${yyyy}-${mm}-${dd}`);
+    }
+  };
+
   if (success) {
     const rawWhatsapp = traiteur?.whatsapp || (traiteur as any)?.phone || "";
     const waUrl = formatWhatsAppUrl(
@@ -161,6 +182,7 @@ export default function DevisScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.container} edges={["top"]}>
+          <StatusBar barStyle="light-content" backgroundColor="#165034" />
           <View style={styles.successContainer}>
             <View style={styles.successIconCircle}>
               <Ionicons name="checkmark-circle" size={68} color="#1D6B45" />
@@ -209,7 +231,8 @@ export default function DevisScreen() {
   if (!isLoggedIn) {
     return (
       <View style={styles.topGreenWrapper}>
-        <SafeAreaView style={styles.centerLoading}>
+        <SafeAreaView style={styles.centerLoading} edges={["top"]}>
+          <StatusBar barStyle="light-content" backgroundColor="#165034" />
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Vérification du profil...</Text>
         </SafeAreaView>
@@ -220,7 +243,7 @@ export default function DevisScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#165034" />
 
         {/* ── 1. HEADER HERO DABARI ── */}
         <View style={styles.headerHero}>
@@ -345,13 +368,21 @@ export default function DevisScreen() {
             <View style={styles.formGridRow}>
               <View style={styles.formCol}>
                 <Text style={styles.fieldLabel}>Date de réception *</Text>
-                <TextInput
-                  style={styles.inputField}
-                  placeholder="AAAA-MM-JJ"
-                  placeholderTextColor="#94A3B8"
-                  value={dateEvenement}
-                  onChangeText={setDateEvenement}
-                />
+                <TouchableOpacity
+                  style={styles.datePickerBtn}
+                  onPress={() => setShowDatePicker(true)}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="calendar-outline" size={17} color="#1D6B45" />
+                  <Text style={styles.datePickerBtnText}>
+                    {selectedDateObj.toLocaleDateString("fr-FR", {
+                      day: "2-digit",
+                      month: "2-digit",
+                      year: "numeric",
+                    })}
+                  </Text>
+                  <Ionicons name="chevron-down" size={14} color="#94A3B8" />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.formCol}>
@@ -501,6 +532,50 @@ export default function DevisScreen() {
             </View>
           </Modal>
         )}
+
+        {/* DatePicker Modale iOS / Native Android */}
+        {Platform.OS === "ios" && DateTimePicker && (
+          <Modal
+            visible={showDatePicker}
+            transparent
+            animationType="fade"
+            onRequestClose={() => setShowDatePicker(false)}
+          >
+            <View style={styles.dateModalBackdrop}>
+              <View style={styles.dateModalCard}>
+                <View style={styles.dateModalHeader}>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.dateModalCancelText}>Annuler</Text>
+                  </TouchableOpacity>
+                  <Text style={styles.dateModalTitle}>Date de l'événement</Text>
+                  <TouchableOpacity onPress={() => setShowDatePicker(false)}>
+                    <Text style={styles.dateModalConfirmText}>Valider</Text>
+                  </TouchableOpacity>
+                </View>
+                <DateTimePicker
+                  value={selectedDateObj}
+                  mode="date"
+                  display="spinner"
+                  minimumDate={new Date()}
+                  onValueChange={handleDateChange}
+                  onDismiss={() => setShowDatePicker(false)}
+                  textColor="#0F172A"
+                />
+              </View>
+            </View>
+          </Modal>
+        )}
+
+        {Platform.OS === "android" && DateTimePicker && showDatePicker && (
+          <DateTimePicker
+            value={selectedDateObj}
+            mode="date"
+            display="default"
+            minimumDate={new Date()}
+            onValueChange={handleDateChange}
+            onDismiss={() => setShowDatePicker(false)}
+          />
+        )}
       </SafeAreaView>
     </View>
   );
@@ -513,10 +588,11 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#165034",
   },
   centerLoading: {
     flex: 1,
+    backgroundColor: "#165034",
     alignItems: "center",
     justifyContent: "center",
     gap: 12,
@@ -604,6 +680,7 @@ const styles = StyleSheet.create({
   /* ── Scroll & Content ── */
   contentScroll: {
     flex: 1,
+    backgroundColor: "#F8FAFC",
   },
   scrollPadding: {
     padding: 16,
@@ -764,6 +841,59 @@ const styles = StyleSheet.create({
     paddingVertical: 9,
     fontSize: 13,
     color: "#0F172A",
+  },
+  datePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#F8FAFC",
+    borderColor: "#CBD5E1",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 9,
+    gap: 6,
+  },
+  datePickerBtnText: {
+    flex: 1,
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  dateModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "flex-end",
+  },
+  dateModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 24,
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingHorizontal: 18,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  dateModalCancelText: {
+    fontSize: 14,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  dateModalTitle: {
+    fontSize: 15,
+    color: "#0F172A",
+    fontWeight: "800",
+  },
+  dateModalConfirmText: {
+    fontSize: 14,
+    color: "#1D6B45",
+    fontWeight: "800",
   },
   textAreaField: {
     height: 80,

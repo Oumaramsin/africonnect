@@ -96,6 +96,27 @@ export default function EditGpScreen() {
     }
   };
 
+  const listing = request?.listing || request?.gp_listings;
+  const currentReqWeight = Number(initialData?.weightKg || request?.weight_kg || 0);
+  const listingAvailableKg = Number(listing?.available_kg || 0);
+  // Capacité maximale pouvant être allouée à cette demande :
+  // poids initialement réservé + capacité restante libre sur le trajet
+  const maxAllowedKg = Number((currentReqWeight + listingAvailableKg).toFixed(1));
+
+  const parsedWeight = parseFloat(weightKg);
+  const parsedDeclaredValue = parseFloat(declaredValue);
+
+  const isWeightValid = !isNaN(parsedWeight) && parsedWeight > 0 && parsedWeight <= maxAllowedKg;
+  const isContentValid = contentDesc.trim().length > 0;
+  const isDeclaredValueValid =
+    declaredValue.trim().length > 0 &&
+    !isNaN(parsedDeclaredValue) &&
+    parsedDeclaredValue >= 0;
+
+  const isWeightExceeded = !isNaN(parsedWeight) && parsedWeight > maxAllowedKg;
+
+  const isFormValid = isWeightValid && isContentValid && isDeclaredValueValid;
+
   const hasChanges = useMemo(() => {
     if (!initialData) return false;
     if (weightKg.trim() !== initialData.weightKg.trim()) return true;
@@ -106,7 +127,6 @@ export default function EditGpScreen() {
   }, [initialData, weightKg, contentDesc, declaredValue, notes]);
 
   const getPricePerKg = () => {
-    const listing = request?.listing || request?.gp_listings;
     return Number(listing?.price_per_kg || 0);
   };
 
@@ -117,16 +137,31 @@ export default function EditGpScreen() {
   };
 
   const handleSaveClick = () => {
-    const parsedWeight = parseFloat(weightKg);
     if (!parsedWeight || parsedWeight <= 0) {
-      showErrorAlert("Erreur", "Le poids du colis doit être supérieur à 0 kg.");
+      showErrorAlert("Poids invalide", "Le poids du colis doit être supérieur à 0 kg.");
+      return;
+    }
+
+    if (parsedWeight > maxAllowedKg) {
+      showErrorAlert(
+        "Capacité dépassée",
+        `Le transporteur n'a que ${listingAvailableKg} kg restants de disponible. Le poids maximum autorisé pour votre colis est de ${maxAllowedKg} kg.`,
+      );
       return;
     }
 
     if (!contentDesc.trim()) {
       showErrorAlert(
-        "Description manquante",
-        "Veuillez décrire le contenu du colis.",
+        "Description obligatoire",
+        "Veuillez obligatoirement décrire le contenu de votre colis.",
+      );
+      return;
+    }
+
+    if (!declaredValue.trim() || isNaN(parsedDeclaredValue) || parsedDeclaredValue < 0) {
+      showErrorAlert(
+        "Valeur déclarée obligatoire",
+        "Veuillez obligatoirement renseigner la valeur déclarée de votre colis.",
       );
       return;
     }
@@ -138,10 +173,10 @@ export default function EditGpScreen() {
     setIsSaving(true);
     try {
       const payload = {
-        weight_kg: parseFloat(weightKg),
-        content_desc: contentDesc,
-        declared_value: parseFloat(declaredValue) || undefined,
-        notes: notes,
+        weight_kg: parsedWeight,
+        content_desc: contentDesc.trim(),
+        declared_value: parsedDeclaredValue,
+        notes: notes.trim(),
       };
 
       const res = await apiFetch(`/commande/gp/${id}`, {
@@ -166,7 +201,6 @@ export default function EditGpScreen() {
     }
   };
 
-  const listing = request?.listing || request?.gp_listings;
   const depCity = request?.departure_city || listing?.departure_city;
   const arrCity = request?.arrival_city || listing?.arrival_city;
   const depDate = request?.departure_date || listing?.departure_date;
@@ -180,6 +214,17 @@ export default function EditGpScreen() {
       icon: "airplane-outline",
       label: "Trajet GP",
       value: depCity && arrCity ? `${depCity} ➔ ${arrCity}` : "Transport de colis GP",
+    },
+    {
+      icon: "calendar-outline",
+      label: "Date de départ",
+      value: depDate
+        ? new Date(depDate).toLocaleDateString("fr-FR", {
+            day: "numeric",
+            month: "long",
+            year: "numeric",
+          })
+        : "Non renseignée",
     },
     {
       icon: "scale-outline",
@@ -196,7 +241,12 @@ export default function EditGpScreen() {
     {
       icon: "cube-outline",
       label: "Contenu",
-      value: contentDesc || "Colis personnel",
+      value: contentDesc.trim() || "Colis personnel",
+    },
+    {
+      icon: "shield-checkmark-outline",
+      label: "Valeur déclarée",
+      value: `${!isNaN(parsedDeclaredValue) && parsedDeclaredValue >= 0 ? `${parsedDeclaredValue} €` : "0 €"}`,
     },
   ];
 
@@ -238,75 +288,139 @@ export default function EditGpScreen() {
         {/* Résumé du trajet */}
         {Boolean(depCity && arrCity) && (
           <View style={styles.routeCard}>
-            <View style={styles.routeRow}>
-              <Ionicons name="airplane" size={18} color="#D4870A" />
-              <Text style={styles.routeText}>
-                {depCity} ➔ {arrCity}
-              </Text>
-            </View>
-            {(Boolean(depDate) || Boolean(arrDate)) && (
-              <View style={{ marginTop: 6, gap: 2 }}>
-                {Boolean(depDate) && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                    <Ionicons name="airplane-outline" size={13} color="#1D6B45" />
-                    <Text style={{ fontSize: 12, color: "#64748B" }}>
-                      Départ : {new Date(depDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}
-                      {pickupCity ? ` (Dépôt: ${pickupCity})` : ""}
-                    </Text>
-                  </View>
-                )}
-                {Boolean(arrDate) && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
-                    <Ionicons name="navigate-outline" size={13} color="#D4870A" />
-                    <Text style={{ fontSize: 12, color: "#64748B" }}>
-                      Arrivée : {new Date(arrDate).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}
-                      {dropoffCity ? ` (Récup: ${dropoffCity})` : ""}
-                    </Text>
-                  </View>
-                )}
+            <View style={styles.routeHeaderRow}>
+              <View style={styles.routeRow}>
+                <Ionicons name="airplane" size={18} color="#D4870A" />
+                <Text style={styles.routeText}>
+                  {depCity} ➔ {arrCity}
+                </Text>
               </View>
-            )}
-            {Boolean(pricePerKg > 0) && (
-              <Text style={[styles.pricePerKgText, { marginTop: 4 }]}>
-                Tarif : {pricePerKg.toFixed(2)} € / kg
-              </Text>
-            )}
+              {Boolean(pricePerKg > 0) && (
+                <View style={styles.pricePill}>
+                  <Text style={styles.pricePillText}>
+                    {pricePerKg.toFixed(2)} € / kg
+                  </Text>
+                </View>
+              )}
+            </View>
+
+            <View style={styles.routeDatesContainer}>
+              {Boolean(depDate) && (
+                <View style={styles.routeDateLine}>
+                  <Ionicons name="airplane-outline" size={15} color="#1D6B45" />
+                  <Text style={styles.routeDateText}>
+                    <Text style={styles.routeDateLabel}>Date de départ : </Text>
+                    {new Date(depDate).toLocaleDateString("fr-FR", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                    {pickupCity ? ` (Dépôt : ${pickupCity})` : ""}
+                  </Text>
+                </View>
+              )}
+
+              {Boolean(arrDate) && (
+                <View style={styles.routeDateLine}>
+                  <Ionicons name="navigate-outline" size={15} color="#D4870A" />
+                  <Text style={styles.routeDateText}>
+                    <Text style={styles.routeDateLabel}>Date d'arrivée : </Text>
+                    {new Date(arrDate).toLocaleDateString("fr-FR", {
+                      day: "numeric",
+                      month: "long",
+                      year: "numeric",
+                    })}
+                    {dropoffCity ? ` (Récupération : ${dropoffCity})` : ""}
+                  </Text>
+                </View>
+              )}
+            </View>
           </View>
         )}
 
         {/* Poids du colis */}
         <View style={styles.cardSection}>
-          <Text style={styles.sectionLabel}>POIDS ESTIMÉ DU COLIS (KG)</Text>
+          <View style={styles.labelWithRequiredRow}>
+            <Text style={styles.sectionLabel}>POIDS ESTIMÉ DU COLIS (KG)</Text>
+            <Text style={styles.requiredBadge}>* OBLIGATOIRE</Text>
+          </View>
+
+          {/* Badge Capacité restante GP */}
+          <View style={styles.capacityBadgeBox}>
+            <Ionicons name="scale-outline" size={16} color="#D4870A" />
+            <Text style={styles.capacityBadgeText}>
+              Kilos restants chez le GP : <Text style={{ fontWeight: "800", color: "#B45309" }}>{listingAvailableKg} kg</Text>
+              {"\n"}
+              Poids max autorisé pour votre colis : <Text style={{ fontWeight: "800", color: "#1D6B45" }}>{maxAllowedKg} kg</Text>
+            </Text>
+          </View>
+
           <View style={styles.counterRow}>
             <TouchableOpacity
-              style={styles.counterBtn}
+              style={[
+                styles.counterBtn,
+                (!parsedWeight || parsedWeight <= 0.5) && styles.counterBtnDisabled,
+              ]}
               onPress={() => {
                 const cur = parseFloat(weightKg) || 1;
                 if (cur > 0.5) setWeightKg(String((cur - 0.5).toFixed(1)));
               }}
+              disabled={!parsedWeight || parsedWeight <= 0.5}
               activeOpacity={0.7}
             >
-              <Ionicons name="remove" size={18} color="#D4870A" />
+              <Ionicons
+                name="remove"
+                size={18}
+                color={!parsedWeight || parsedWeight <= 0.5 ? "#CBD5E1" : "#D4870A"}
+              />
             </TouchableOpacity>
 
             <TextInput
-              style={styles.counterInput}
+              style={[
+                styles.counterInput,
+                isWeightExceeded && styles.inputErrorBorder,
+              ]}
               value={weightKg}
               onChangeText={(val) => setWeightKg(val.replace(/[^0-9.]/g, ""))}
               keyboardType="decimal-pad"
+              placeholder="Ex: 5"
+              placeholderTextColor="#94A3B8"
             />
 
             <TouchableOpacity
-              style={styles.counterBtn}
+              style={[
+                styles.counterBtn,
+                parsedWeight >= maxAllowedKg && styles.counterBtnDisabled,
+              ]}
               onPress={() => {
                 const cur = parseFloat(weightKg) || 1;
-                setWeightKg(String((cur + 0.5).toFixed(1)));
+                const next = Number((cur + 0.5).toFixed(1));
+                if (next <= maxAllowedKg) {
+                  setWeightKg(String(next));
+                } else {
+                  setWeightKg(String(maxAllowedKg));
+                }
               }}
+              disabled={parsedWeight >= maxAllowedKg}
               activeOpacity={0.7}
             >
-              <Ionicons name="add" size={18} color="#D4870A" />
+              <Ionicons
+                name="add"
+                size={18}
+                color={parsedWeight >= maxAllowedKg ? "#CBD5E1" : "#D4870A"}
+              />
             </TouchableOpacity>
           </View>
+
+          {/* Message de dépassement de capacité */}
+          {isWeightExceeded && (
+            <View style={styles.weightErrorBox}>
+              <Ionicons name="alert-circle" size={16} color="#DC2626" />
+              <Text style={styles.weightErrorText}>
+                Le poids saisi ({parsedWeight} kg) dépasse la capacité restante du GP ({listingAvailableKg} kg disponibles). Le poids max autorisé pour votre colis est de {maxAllowedKg} kg.
+              </Text>
+            </View>
+          )}
 
           {/* Bannière Total GP Estimé */}
           {Boolean(pricePerKg > 0) && (
@@ -328,23 +442,44 @@ export default function EditGpScreen() {
 
         {/* Description du contenu */}
         <View style={styles.cardSection}>
-          <Text style={styles.sectionLabel}>DESCRIPTION DU CONTENU</Text>
+          <View style={styles.labelWithRequiredRow}>
+            <Text style={styles.sectionLabel}>DESCRIPTION DU CONTENU</Text>
+            <Text style={styles.requiredBadge}>* OBLIGATOIRE</Text>
+          </View>
+          <Text style={styles.fieldHelper}>
+            Précisez la nature exacte des objets transportés (vêtements, documents, etc.).
+          </Text>
           <TextInput
-            style={styles.textInput}
+            style={[
+              styles.textInput,
+              !contentDesc.trim() && styles.inputWarningBorder,
+            ]}
             value={contentDesc}
             onChangeText={setContentDesc}
             placeholder="Ex: Vêtements, documents administratifs, denrées sèches..."
             placeholderTextColor="#94A3B8"
           />
+          {!contentDesc.trim() && (
+            <Text style={styles.fieldErrorNotice}>
+              La description du contenu est obligatoire.
+            </Text>
+          )}
         </View>
 
         {/* Valeur déclarée */}
         <View style={styles.cardSection}>
-          <Text style={styles.sectionLabel}>
-            VALEUR DÉCLARÉE (€ - OPTIONNEL)
+          <View style={styles.labelWithRequiredRow}>
+            <Text style={styles.sectionLabel}>VALEUR DÉCLARÉE (€)</Text>
+            <Text style={styles.requiredBadge}>* OBLIGATOIRE</Text>
+          </View>
+          <Text style={styles.fieldHelper}>
+            Indiquez la valeur marchande estimée du colis (obligatoire pour l'assurance et la douane).
           </Text>
           <TextInput
-            style={styles.textInput}
+            style={[
+              styles.textInput,
+              (!declaredValue.trim() || isNaN(parsedDeclaredValue)) && styles.inputWarningBorder,
+            ]}
             value={declaredValue}
             onChangeText={(val) =>
               setDeclaredValue(val.replace(/[^0-9.]/g, ""))
@@ -353,12 +488,17 @@ export default function EditGpScreen() {
             keyboardType="decimal-pad"
             placeholderTextColor="#94A3B8"
           />
+          {(!declaredValue.trim() || isNaN(parsedDeclaredValue)) && (
+            <Text style={styles.fieldErrorNotice}>
+              La valeur déclarée est obligatoire (saisissez au minimum 0 €).
+            </Text>
+          )}
         </View>
 
         {/* Notes pour le GP */}
         <View style={styles.cardSection}>
           <Text style={styles.sectionLabel}>
-            NOTES & CONSIGNES PARTICULIÈRES
+            NOTES & CONSIGNES PARTICULIÈRES (OPTIONNEL)
           </Text>
           <TextInput
             style={styles.multilineInput}
@@ -376,10 +516,10 @@ export default function EditGpScreen() {
           <TouchableOpacity
             style={[
               styles.saveBtnCentered,
-              (!hasChanges || isSaving) && styles.saveBtnDisabled,
+              (!isFormValid || !hasChanges || isSaving) && styles.saveBtnDisabled,
             ]}
             onPress={handleSaveClick}
-            disabled={!hasChanges || isSaving}
+            disabled={!isFormValid || !hasChanges || isSaving}
             activeOpacity={0.85}
           >
             {isSaving ? (
@@ -387,14 +527,22 @@ export default function EditGpScreen() {
             ) : (
               <View style={styles.saveBtnContent}>
                 <Ionicons
-                  name={hasChanges ? "checkmark-circle" : "lock-closed-outline"}
+                  name={isFormValid && hasChanges ? "checkmark-circle" : "lock-closed-outline"}
                   size={20}
                   color="#FFFFFF"
                 />
                 <Text style={styles.saveBtnText}>
-                  {hasChanges
-                    ? "Enregistrer les modifications"
-                    : "Aucune modification"}
+                  {!hasChanges
+                    ? "Aucune modification"
+                    : isWeightExceeded
+                    ? "Poids supérieur à la capacité"
+                    : !isWeightValid
+                    ? "Poids du colis invalide"
+                    : !isContentValid
+                    ? "Description requise"
+                    : !isDeclaredValueValid
+                    ? "Valeur déclarée requise"
+                    : "Enregistrer les modifications"}
                 </Text>
               </View>
             )}
@@ -511,6 +659,9 @@ const styles = StyleSheet.create({
     padding: 14,
     borderWidth: 1,
     borderColor: "rgba(212, 135, 10, 0.3)",
+    gap: 10,
+  },
+  routeHeaderRow: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
@@ -521,14 +672,46 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   routeText: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "800",
     color: "#D4870A",
   },
-  pricePerKgText: {
+  pricePill: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+  },
+  pricePillText: {
     fontSize: 12,
-    fontWeight: "700",
+    fontWeight: "800",
     color: "#92400E",
+  },
+  routeDatesContainer: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 10,
+    gap: 8,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+    marginTop: 4,
+  },
+  routeDateLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  routeDateText: {
+    fontSize: 12,
+    color: "#475569",
+    fontWeight: "500",
+    flex: 1,
+  },
+  routeDateLabel: {
+    fontWeight: "700",
+    color: "#1E293B",
   },
   cardSection: {
     backgroundColor: "#FFFFFF",
@@ -666,5 +849,71 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
+  },
+  labelWithRequiredRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  requiredBadge: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#DC2626",
+    letterSpacing: 0.5,
+  },
+  capacityBadgeBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFBEB",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FDE68A",
+    padding: 10,
+    gap: 8,
+  },
+  capacityBadgeText: {
+    fontSize: 12,
+    color: "#78350F",
+    lineHeight: 18,
+    flex: 1,
+  },
+  counterBtnDisabled: {
+    opacity: 0.45,
+    borderColor: "#CBD5E1",
+    backgroundColor: "#F1F5F9",
+  },
+  inputErrorBorder: {
+    borderColor: "#DC2626",
+    backgroundColor: "#FEF2F2",
+  },
+  inputWarningBorder: {
+    borderColor: "#F59E0B",
+  },
+  weightErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEF2F2",
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#FECACA",
+    padding: 10,
+    gap: 8,
+  },
+  weightErrorText: {
+    fontSize: 12,
+    color: "#DC2626",
+    fontWeight: "600",
+    flex: 1,
+    lineHeight: 16,
+  },
+  fieldHelper: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 16,
+  },
+  fieldErrorNotice: {
+    fontSize: 11,
+    color: "#DC2626",
+    fontWeight: "600",
   },
 });

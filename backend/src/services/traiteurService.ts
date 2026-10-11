@@ -197,9 +197,13 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
       : null;
 
     const parsedDate = new Date(commande.delivery_date);
-    const finalDeliveryDate = isNaN(parsedDate.getTime())
-      ? new Date()
-      : parsedDate;
+    if (isNaN(parsedDate.getTime())) {
+      throw new Error("Date ou heure de livraison invalide.");
+    }
+    if (parsedDate.getTime() < Date.now() - 5 * 60 * 1000) {
+      throw new Error("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+    }
+    const finalDeliveryDate = parsedDate;
 
     const newOrder = await tx.order.create({
       data: {
@@ -229,7 +233,7 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
           data: {
             user_id: traiteur.user_id,
             type: "nouvelle_commande_plat",
-            titre: "🛒 Nouvelle commande de plats !",
+            titre: "Nouvelle commande de plats !",
             message: `Commande de plats pour un montant total de ${total.toFixed(2)} €`,
             data: {
               order_id: newOrder.id,

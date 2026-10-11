@@ -374,3 +374,18 @@ export function formatNotificationDate(dateString: string): string {
     minute: "2-digit",
   });
 }
+
+/**
+ * Nettoie le titre d'une notification en retirant les éventuels émojis
+ * afin de garantir un affichage moderne et sobre avec les icônes vectorielles thématisées.
+ */
+export function cleanNotificationTitle(title?: string | null): string {
+  if (!title) return "";
+  return title
+    .replace(
+      /([\u2700-\u27BF]|[\uE000-\uF8FF]|\uD83C[\uDC00-\uDFFF]|\uD83D[\uDC00-\uDFFF]|[\u2011-\u26FF]|\uD83E[\uDD10-\uDDFF])/g,
+      ""
+    )
+    .replace(/\s+/g, " ")
+    .trim();
+}

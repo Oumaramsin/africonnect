@@ -194,7 +194,7 @@ export const updateCommandeTraiteurStatus = async (
           data: {
             user_id: commande.client_id,
             type: isAccepted ? "commande_acceptee" : "commande_refusee",
-            titre: isAccepted ? "✅ Commande acceptée !" : "❌ Commande refusée",
+            titre: isAccepted ? "Commande acceptée !" : "Commande refusée",
             message: isAccepted
               ? `Votre commande du ${dateStr} a été acceptée.`
               : message_traiteur
@@ -272,7 +272,7 @@ export const updateOrderPlatStatus = async (
           data: {
             user_id: order.client_id,
             type: isAccepted ? "order_acceptee" : "order_refusee",
-            titre: isAccepted ? "✅ Commande acceptée !" : "❌ Commande refusée",
+            titre: isAccepted ? "Commande acceptée !" : "Commande refusée",
             message: isAccepted
               ? message?.trim()
                 ? `Le traiteur a accepté votre commande de plats ! Note : ${message.trim()}`
@@ -393,7 +393,7 @@ export const updateGpRequestStatus = async (
 
       if (status === GP_REQUEST_STATUS.ACCEPTED) {
         notifType = "gp_acceptee";
-        notifTitre = "✅ Demande GP acceptée !";
+        notifTitre = "Demande GP acceptée !";
         notifMsg = message?.trim()
           ? `Le GP a accepté votre demande de transport. Note : ${message.trim()}`
           : "Le GP a accepté votre demande de transport. Vous pouvez convenir du dépôt du colis.";
@@ -675,16 +675,20 @@ export const updateClientGpRequest = async (
     let newWeight = existing.weight_kg;
     let newTotalAmount = existing.total_amount;
 
-    if (data.weight_kg !== undefined && data.weight_kg > 0) {
-      const oldWeight = Number(existing.weight_kg || 0);
+    if (data.weight_kg !== undefined) {
       const updatedWeight = Number(data.weight_kg);
+      if (isNaN(updatedWeight) || updatedWeight <= 0) {
+        throw new Error("Le poids du colis doit être supérieur à 0 kg.");
+      }
+      const oldWeight = Number(existing.weight_kg || 0);
       const diff = updatedWeight - oldWeight;
 
       if (existing.listing_id && existing.listing) {
         const available = Number(existing.listing.available_kg || 0);
         if (diff > 0 && diff > available) {
+          const maxAllowed = Number((oldWeight + available).toFixed(1));
           throw new Error(
-            `Le transporteur n'a que ${available} kg restants de disponible.`,
+            `Le transporteur n'a que ${available} kg restants de disponible. Le poids maximum autorisé pour votre colis est de ${maxAllowed} kg.`,
           );
         }
 
@@ -703,6 +707,17 @@ export const updateClientGpRequest = async (
       newWeight = updatedWeight as any;
     }
 
+    if (data.content_desc !== undefined && !data.content_desc.trim()) {
+      throw new Error("La description du contenu est obligatoire.");
+    }
+
+    if (data.declared_value !== undefined) {
+      const parsedVal = Number(data.declared_value);
+      if (isNaN(parsedVal) || parsedVal < 0) {
+        throw new Error("La valeur déclarée est obligatoire et doit être supérieure ou égale à 0.");
+      }
+    }
+
     return await tx.gpRequest.update({
       where: { id },
       data: {
@@ -711,7 +726,7 @@ export const updateClientGpRequest = async (
         content_desc:
           data.content_desc !== undefined ? data.content_desc.trim() : undefined,
         declared_value:
-          data.declared_value !== undefined ? data.declared_value : undefined,
+          data.declared_value !== undefined ? Number(data.declared_value) : undefined,
         notes: data.notes !== undefined ? data.notes.trim() : undefined,
       },
       include: {

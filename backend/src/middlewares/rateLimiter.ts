@@ -42,7 +42,7 @@ export const authLimiter = rateLimit({
             data: {
               user_id: admin.id,
               type: "security_alert",
-              titre: "🚨 Alerte Sécurité : Attaque Brute Force",
+              titre: "Alerte Sécurité : Attaque Brute Force",
               message: `Tentatives massives échouées depuis l'IP ${ip} sur ${targetUrl}. L'IP a été bloquée pendant 15 minutes.`,
               data: { ip, targetUrl, timestamp },
             },

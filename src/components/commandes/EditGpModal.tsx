@@ -87,13 +87,34 @@ export default function EditGpModal({
   const dropoffCity = listing?.dropoff_city;
   const pricePerKg = Number(listing?.price_per_kg || 0);
 
-  const parsedWeight = parseFloat(weightKg) || 0;
+  const currentReqWeight = Number(initialData?.weightKg || request.weight_kg || 0);
+  const listingAvailableKg = Number(listing?.available_kg || 0);
+  // Capacité max autorisée = poids initialement pris par cette demande + capacité restante libre
+  const maxAllowedKg = Number((currentReqWeight + listingAvailableKg).toFixed(1));
+
+  const parsedWeight = parseFloat(weightKg);
+  const parsedDeclaredValue = parseFloat(declaredValue);
+
+  const isWeightValid = !isNaN(parsedWeight) && parsedWeight > 0 && parsedWeight <= maxAllowedKg;
+  const isWeightExceeded = !isNaN(parsedWeight) && parsedWeight > maxAllowedKg;
+  const isContentValid = contentDesc.trim().length > 0;
+  const isDeclaredValueValid =
+    declaredValue.trim().length > 0 &&
+    !isNaN(parsedDeclaredValue) &&
+    parsedDeclaredValue >= 0;
+
+  const isFormValid = isWeightValid && isContentValid && isDeclaredValueValid;
   const estimatedTotal = (parsedWeight * pricePerKg).toFixed(2);
 
   const adjustWeight = (delta: number) => {
     const current = parseFloat(weightKg) || 0;
     const next = Math.max(0.5, current + delta);
-    setWeightKg(String(Math.round(next * 10) / 10));
+    const rounded = Math.round(next * 10) / 10;
+    if (delta > 0 && maxAllowedKg > 0 && rounded > maxAllowedKg) {
+      setWeightKg(String(maxAllowedKg));
+    } else {
+      setWeightKg(String(rounded));
+    }
   };
 
   const handlePreSubmit = (e: React.FormEvent) => {
@@ -101,14 +122,24 @@ export default function EditGpModal({
 
     if (!hasChanges) return;
 
-    const w = parseFloat(weightKg);
-    if (!w || w <= 0) {
-      setError("Le poids du colis doit être supérieur à 0 kg.");
+    if (!isWeightValid) {
+      if (isWeightExceeded) {
+        setError(
+          `Le poids saisi (${parsedWeight} kg) dépasse la capacité restante du GP (${listingAvailableKg} kg disponibles). Le poids max autorisé est de ${maxAllowedKg} kg.`
+        );
+      } else {
+        setError("Le poids du colis doit être supérieur à 0 kg.");
+      }
       return;
     }
 
-    if (!contentDesc.trim()) {
-      setError("Veuillez décrire le contenu du colis.");
+    if (!isContentValid) {
+      setError("Veuillez obligatoirement renseigner la description du contenu.");
+      return;
+    }
+
+    if (!isDeclaredValueValid) {
+      setError("La valeur déclarée est obligatoire (saisissez au minimum 0 €).");
       return;
     }
 
@@ -122,9 +153,9 @@ export default function EditGpModal({
 
     try {
       const payload = {
-        weight_kg: parseFloat(weightKg),
+        weight_kg: parsedWeight,
         content_desc: contentDesc.trim(),
-        declared_value: parseFloat(declaredValue) || undefined,
+        declared_value: parsedDeclaredValue,
         notes: notes.trim(),
       };
 
@@ -155,6 +186,16 @@ export default function EditGpModal({
     }
   };
 
+  const getButtonText = () => {
+    if (loading) return "Enregistrement...";
+    if (!contentDesc.trim()) return "Description requise";
+    if (!isDeclaredValueValid) return "Valeur déclarée requise";
+    if (isWeightExceeded) return "Capacité dépassée";
+    if (!isWeightValid) return "Poids invalide";
+    if (!hasChanges) return "Aucune modification";
+    return "Enregistrer";
+  };
+
   return (
     <>
       <div
@@ -183,22 +224,30 @@ export default function EditGpModal({
                   <ArrowRight size={11} className="text-gray-400" />
                   <span>{arrCity}</span>
                 </p>
+                {/* Dates de départ et d'arrivée chacune sur leur propre ligne */}
                 {(depDate || arrDate) && (
-                  <p className="text-[11px] text-gray-400 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5">
+                  <div className="mt-1.5 space-y-0.5 text-[11px]">
                     {depDate && (
-                      <span className="inline-flex items-center gap-1">
-                        <PlaneTakeoff size={11} className="text-[#1D6B45]" />
-                        {new Date(depDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}{pickupCity ? ` (${pickupCity})` : ""}
-                      </span>
+                      <div className="flex items-center gap-1.5 text-emerald-700 font-medium">
+                        <PlaneTakeoff size={12} className="text-[#1D6B45] shrink-0" />
+                        <span>
+                          <strong className="font-semibold text-gray-700">Date de départ :</strong>{" "}
+                          {new Date(depDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}
+                          {pickupCity ? ` (Dépôt : ${pickupCity})` : ""}
+                        </span>
+                      </div>
                     )}
-                    {depDate && arrDate && <span>•</span>}
                     {arrDate && (
-                      <span className="inline-flex items-center gap-1">
-                        <PlaneLanding size={11} className="text-[#D4870A]" />
-                        {new Date(arrDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short" })}{dropoffCity ? ` (${dropoffCity})` : ""}
-                      </span>
+                      <div className="flex items-center gap-1.5 text-amber-800 font-medium">
+                        <PlaneLanding size={12} className="text-[#D4870A] shrink-0" />
+                        <span>
+                          <strong className="font-semibold text-gray-700">Date d'arrivée :</strong>{" "}
+                          {new Date(arrDate).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" })}
+                          {dropoffCity ? ` (Récupération : ${dropoffCity})` : ""}
+                        </span>
+                      </div>
                     )}
-                  </p>
+                  </div>
                 )}
               </div>
             </div>
@@ -220,16 +269,38 @@ export default function EditGpModal({
               </div>
             )}
 
-            {/* Stepper Poids */}
+            {/* Stepper Poids avec visibilité de la capacité restante */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-2">
-                Poids du colis (kg) *
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Poids du colis (kg)
+                </label>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  * Obligatoire
+                </span>
+              </div>
+
+              {/* Badge Capacité restante GP */}
+              <div className="mb-2.5 p-3 rounded-2xl bg-amber-50/70 border border-amber-200/80 text-xs text-amber-900 flex items-start gap-2.5">
+                <Scale size={16} className="text-[#D4870A] shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <p>
+                    Kilos restants chez le GP :{" "}
+                    <strong className="font-bold text-amber-800">{listingAvailableKg} kg</strong>
+                  </p>
+                  <p>
+                    Poids max autorisé pour votre colis :{" "}
+                    <strong className="font-bold text-[#1D6B45]">{maxAllowedKg} kg</strong>
+                  </p>
+                </div>
+              </div>
+
               <div className="flex items-center gap-3">
                 <button
                   type="button"
                   onClick={() => adjustWeight(-0.5)}
-                  className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 font-bold flex items-center justify-center hover:bg-gray-200 transition-colors"
+                  disabled={!parsedWeight || parsedWeight <= 0.5}
+                  className="w-10 h-10 rounded-xl bg-gray-100 border border-gray-200 text-gray-700 font-bold flex items-center justify-center hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <Minus size={16} />
                 </button>
@@ -237,19 +308,34 @@ export default function EditGpModal({
                   type="number"
                   step="0.5"
                   min="0.5"
+                  max={maxAllowedKg}
                   value={weightKg}
                   onChange={(e) => setWeightKg(e.target.value)}
-                  className="flex-1 px-4 py-2.5 rounded-xl border border-gray-200 text-center font-extrabold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#D4870A] text-base"
+                  className={`flex-1 px-4 py-2.5 rounded-xl border text-center font-extrabold text-gray-900 focus:outline-none focus:ring-2 focus:ring-[#D4870A] text-base ${
+                    isWeightExceeded ? "border-red-400 bg-red-50/40 text-red-700" : "border-gray-200"
+                  }`}
                   required
                 />
                 <button
                   type="button"
                   onClick={() => adjustWeight(0.5)}
-                  className="w-10 h-10 rounded-xl bg-[#D4870A] text-white font-bold flex items-center justify-center hover:bg-[#b57207] transition-colors"
+                  disabled={parsedWeight >= maxAllowedKg}
+                  className="w-10 h-10 rounded-xl bg-[#D4870A] text-white font-bold flex items-center justify-center hover:bg-[#b57207] disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
                 >
                   <Plus size={16} />
                 </button>
               </div>
+
+              {/* Message en cas de dépassement de la capacité */}
+              {isWeightExceeded && (
+                <div className="mt-2 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700 flex items-center gap-2">
+                  <AlertCircle size={15} className="shrink-0" />
+                  <span>
+                    Le poids saisi ({parsedWeight} kg) dépasse la capacité restante du GP ({listingAvailableKg} kg disponibles). Le poids max autorisé est de {maxAllowedKg} kg.
+                  </span>
+                </div>
+              )}
+
               {pricePerKg > 0 && (
                 <div className="flex items-center justify-between text-xs text-gray-500 mt-2 px-1">
                   <span>Tarif unitaire : {pricePerKg.toFixed(2)} € / kg</span>
@@ -260,37 +346,71 @@ export default function EditGpModal({
               )}
             </div>
 
+            {/* Description du contenu */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                Description du contenu *
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Description du contenu
+                </label>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  * Obligatoire
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 mb-1.5">
+                Précisez la nature exacte des objets transportés (vêtements, documents, etc.).
+              </p>
               <input
                 type="text"
                 value={contentDesc}
                 onChange={(e) => setContentDesc(e.target.value)}
                 placeholder="Ex: Vêtements, documents, cosmétiques..."
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#D4870A] text-sm"
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#D4870A] ${
+                  !contentDesc.trim() ? "border-amber-300 bg-amber-50/20" : "border-gray-200"
+                }`}
                 required
               />
+              {!contentDesc.trim() && (
+                <p className="text-[11px] text-amber-700 font-medium mt-1">
+                  La description du contenu est obligatoire.
+                </p>
+              )}
             </div>
 
+            {/* Valeur déclarée */}
             <div>
-              <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                Valeur déclarée (€ - facultatif)
-              </label>
+              <div className="flex items-center justify-between mb-1.5">
+                <label className="text-xs font-bold text-gray-700 uppercase tracking-wider">
+                  Valeur déclarée (€)
+                </label>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  * Obligatoire
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500 mb-1.5">
+                Indiquez la valeur estimée du colis (au minimum 0 €).
+              </p>
               <input
                 type="number"
                 min="0"
+                step="1"
                 value={declaredValue}
                 onChange={(e) => setDeclaredValue(e.target.value)}
                 placeholder="Ex: 50"
-                className="w-full px-4 py-2.5 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-[#D4870A] text-sm"
+                className={`w-full px-4 py-2.5 rounded-xl border text-sm focus:outline-none focus:ring-2 focus:ring-[#D4870A] ${
+                  !isDeclaredValueValid ? "border-amber-300 bg-amber-50/20" : "border-gray-200"
+                }`}
+                required
               />
+              {!isDeclaredValueValid && (
+                <p className="text-[11px] text-amber-700 font-medium mt-1">
+                  La valeur déclarée est obligatoire (saisissez au minimum 0 €).
+                </p>
+              )}
             </div>
 
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
-                Notes supplémentaires
+                Notes supplémentaires (optionnel)
               </label>
               <textarea
                 rows={2}
@@ -312,18 +432,14 @@ export default function EditGpModal({
               </button>
               <button
                 type="submit"
-                disabled={loading || !hasChanges}
+                disabled={loading || !hasChanges || !isFormValid}
                 className={`flex-1 py-3 text-sm font-bold rounded-xl transition-all shadow-md flex items-center justify-center gap-2 ${
-                  !hasChanges || loading
+                  !hasChanges || !isFormValid || loading
                     ? "bg-gray-200 text-gray-400 cursor-not-allowed shadow-none border border-gray-200"
                     : "bg-[#D4870A] hover:bg-[#b57207] text-white active:scale-[0.98]"
                 }`}
               >
-                {loading
-                  ? "Enregistrement..."
-                  : !hasChanges
-                  ? "Aucune modification"
-                  : "Enregistrer"}
+                {getButtonText()}
               </button>
             </div>
           </form>
@@ -351,7 +467,8 @@ export default function EditGpModal({
             </h3>
             <p className="text-gray-600 mb-6 text-xs sm:text-sm leading-relaxed">
               Voulez-vous enregistrer cette réservation de transport pour un colis de{" "}
-              <span className="font-bold text-gray-900">{weightKg} kg</span> ({contentDesc}) vers{" "}
+              <span className="font-bold text-gray-900">{weightKg} kg</span> ({contentDesc}) avec une valeur déclarée de{" "}
+              <span className="font-bold text-gray-900">{declaredValue} €</span> vers{" "}
               <span className="font-bold text-gray-900">{arrCity}</span> pour un total estimé de{" "}
               <span className="font-bold text-[#D4870A]">{estimatedTotal} €</span> ?
             </p>

@@ -41,7 +41,7 @@ traiteurRouter.get("/requests/:id", getTraiteurRequestByIdController);
 traiteurRouter.put("/requests/:id", AuthMiddleware.authenticate, updateTraiteurRequestController);
 traiteurRouter.patch("/requests/:id", AuthMiddleware.authenticate, updateTraiteurRequestController);
 traiteurRouter.patch("/requests/:id/cancel", AuthMiddleware.authenticate, cancelTraiteurRequestController);
-traiteurRouter.delete("/requests/:id/cancel", AuthMiddleware.authenticate, cancelTraiteurRequestController);
+traiteurRouter.delete("/requests/:id/cancel", AuthMiddleware.authenticate, deleteTraiteurRequestController);
 traiteurRouter.delete("/requests/:id", AuthMiddleware.authenticate, deleteTraiteurRequestController);
 
 // Propositions / Devis envoyés par les traiteurs

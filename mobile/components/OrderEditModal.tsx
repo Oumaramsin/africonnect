@@ -19,8 +19,8 @@ export type DetailRowItem = {
 
 type Props = {
   visible: boolean;
-  type: "confirm" | "success";
-  service: "plat" | "devis" | "gp";
+  type: "confirm" | "success" | "danger";
+  service: "plat" | "devis" | "gp" | "event";
   title: string;
   subtitle?: string;
   details?: DetailRowItem[];
@@ -48,10 +48,13 @@ export default function OrderEditModal({
   onConfirm,
   onCancel,
 }: Props) {
+  const isDanger = type === "danger";
   const isGold = service === "gp";
-  const primaryColor = isGold ? "#D4870A" : "#1D6B45";
-  const primaryBgLight = isGold ? "#FEF3C7" : "#DCFCE7";
-  const primaryBorderLight = isGold
+  const primaryColor = isDanger ? "#DC2626" : isGold ? "#D4870A" : "#1D6B45";
+  const primaryBgLight = isDanger ? "#FEE2E2" : isGold ? "#FEF3C7" : "#DCFCE7";
+  const primaryBorderLight = isDanger
+    ? "rgba(220, 38, 38, 0.25)"
+    : isGold
     ? "rgba(212, 135, 10, 0.25)"
     : "rgba(29, 107, 69, 0.25)";
 
@@ -59,9 +62,10 @@ export default function OrderEditModal({
 
   // Icon par service et type
   const getHeaderIcon = (): keyof typeof Ionicons.glyphMap => {
+    if (isDanger) return "trash-outline";
     if (isSuccess) return "checkmark-circle";
     if (service === "plat") return "fast-food";
-    if (service === "devis") return "calendar";
+    if (service === "devis" || service === "event") return "calendar";
     return "airplane";
   };
 
@@ -125,7 +129,7 @@ export default function OrderEditModal({
                   { color: primaryColor },
                 ]}
               >
-                RÉCAPITULATIF DES CHANGEMENTS
+                {isDanger ? "DÉTAILS DE L'ANNONCE" : "RÉCAPITULATIF DES CHANGEMENTS"}
               </Text>
 
               <View style={styles.recapList}>
@@ -193,13 +197,15 @@ export default function OrderEditModal({
               ) : (
                 <View style={styles.btnContentRow}>
                   <Ionicons
-                    name={isSuccess ? "arrow-forward" : "checkmark-circle"}
+                    name={isDanger ? "trash-outline" : isSuccess ? "arrow-forward" : "checkmark-circle"}
                     size={18}
                     color="#FFFFFF"
                   />
                   <Text style={styles.primaryBtnText}>
                     {confirmLabel ||
-                      (isSuccess
+                      (isDanger
+                        ? "Confirmer la suppression"
+                        : isSuccess
                         ? "Voir mes commandes"
                         : "Confirmer la modification")}
                   </Text>

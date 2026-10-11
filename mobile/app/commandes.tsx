@@ -250,16 +250,16 @@ export default function CommandeScreen() {
     }
   };
 
-  // ── État Annulation Commande ──
+  // ── État Annulation Commande / Suppression Annonce ──
   const [cancelConfirmTarget, setCancelConfirmTarget] = useState<{
-    type: "traiteur" | "order" | "gp";
+    type: "traiteur" | "order" | "gp" | "traiteur_request";
     id: string;
     title: string;
   } | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
 
   const openCancelConfirm = (
-    type: "traiteur" | "order" | "gp",
+    type: "traiteur" | "order" | "gp" | "traiteur_request",
     id: string,
     title: string,
   ) => {
@@ -271,33 +271,47 @@ export default function CommandeScreen() {
     setIsCancelling(true);
     const { type, id } = cancelConfirmTarget;
     try {
-      const res = await apiFetch(`/commande/cancel/${type}/${id}`, {
-        method: "POST",
-      });
-      if (!res.ok) {
-        const data = await res.json();
-        throw new Error(data.error || "Erreur lors de l'annulation");
-      }
+      if (type === "traiteur_request") {
+        // Suppression définitive de l'annonce d'événement et de ses propositions
+        const res = await apiFetch(`/traiteur/requests/${id}`, {
+          method: "DELETE",
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(data.message || data.error || "Erreur lors de la suppression de l'annonce");
+        }
 
-      // Mise à jour locale optimiste
-      if (type === "traiteur") {
-        setCommandesEnvoyees((prev) =>
-          prev.map((c) => (c.id === id ? { ...c, statut: "annulee" } : c)),
-        );
-      } else if (type === "order") {
-        setOrdersEnvoyees((prev) =>
-          prev.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o)),
-        );
-      } else if (type === "gp") {
-        setGpEnvoyees((prev) =>
-          prev.map((g) => (g.id === id ? { ...g, status: "cancelled" } : g)),
-        );
+        // Suppression immédiate de la liste locale
+        setMyTraiteurRequests((prev) => prev.filter((r) => r.id !== id));
+      } else {
+        const res = await apiFetch(`/commande/cancel/${type}/${id}`, {
+          method: "POST",
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          throw new Error(data.error || "Erreur lors de l'annulation");
+        }
+
+        // Mise à jour locale optimiste
+        if (type === "traiteur") {
+          setCommandesEnvoyees((prev) =>
+            prev.map((c) => (c.id === id ? { ...c, statut: "annulee" } : c)),
+          );
+        } else if (type === "order") {
+          setOrdersEnvoyees((prev) =>
+            prev.map((o) => (o.id === id ? { ...o, status: "cancelled" } : o)),
+          );
+        } else if (type === "gp") {
+          setGpEnvoyees((prev) =>
+            prev.map((g) => (g.id === id ? { ...g, status: "cancelled" } : g)),
+          );
+        }
       }
 
       setCancelConfirmTarget(null);
       await loadAll();
     } catch (e: any) {
-      Alert.alert("Erreur", e.message || "Erreur lors de l'annulation");
+      Alert.alert("Erreur", e.message || "Erreur lors de l'opération");
     } finally {
       setIsCancelling(false);
     }
@@ -452,37 +466,11 @@ export default function CommandeScreen() {
     }
   };
 
-  const handleCancelTraiteurRequest = (requestId: string) => {
-    Alert.alert(
-      "Annuler l'annonce",
-      "Voulez-vous vraiment annuler cette recherche de traiteur ?",
-      [
-        { text: "Non", style: "cancel" },
-        {
-          text: "Oui, annuler",
-          style: "destructive",
-          onPress: async () => {
-            setCancellingRequestId(requestId);
-            try {
-              const res = await apiFetch(
-                `/traiteur/requests/${requestId}/cancel`,
-                {
-                  method: "DELETE",
-                },
-              );
-              if (!res.ok) {
-                const err = await res.json();
-                throw new Error(err.message || "Erreur");
-              }
-              await loadAll();
-            } catch (e: any) {
-              Alert.alert("Erreur", e.message || "Erreur");
-            } finally {
-              setCancellingRequestId(null);
-            }
-          },
-        },
-      ],
+  const handleCancelTraiteurRequest = (req: TraiteurRequest) => {
+    openCancelConfirm(
+      "traiteur_request",
+      req.id,
+      req.title || `votre recherche ${req.event_type}`,
     );
   };
 
@@ -1703,15 +1691,13 @@ export default function CommandeScreen() {
 
                             <TouchableOpacity
                               onPress={() =>
-                                handleCancelTraiteurRequest(req.id)
+                                handleCancelTraiteurRequest(req)
                               }
                               style={styles.cancelRequestBtn}
                               activeOpacity={0.7}
                             >
                               <Text style={styles.cancelRequestBtnText}>
-                                {cancellingRequestId === req.id
-                                  ? "..."
-                                  : "Annuler"}
+                                Annuler
                               </Text>
                             </TouchableOpacity>
                           </View>
@@ -2738,18 +2724,26 @@ export default function CommandeScreen() {
               <View style={styles.confirmModalCard}>
                 <View style={styles.confirmIconContainer}>
                   <Ionicons
-                    name="alert-circle-outline"
+                    name={
+                      cancelConfirmTarget.type === "traiteur_request"
+                        ? "trash-outline"
+                        : "alert-circle-outline"
+                    }
                     size={36}
                     color="#B91C1C"
                   />
                 </View>
 
                 <Text style={styles.confirmModalTitle}>
-                  Annuler la commande ?
+                  {cancelConfirmTarget.type === "traiteur_request"
+                    ? "Supprimer l'annonce ?"
+                    : "Annuler la commande ?"}
                 </Text>
 
                 <Text style={styles.confirmModalSubtext}>
-                  Êtes-vous sûr(e) de vouloir annuler {cancelConfirmTarget.title} ? Cette action est irréversible.
+                  {cancelConfirmTarget.type === "traiteur_request"
+                    ? `Êtes-vous sûr(e) de vouloir annuler et supprimer ${cancelConfirmTarget.title} ? Cette action supprimera définitivement votre recherche d'événement ainsi que les propositions associées.`
+                    : `Êtes-vous sûr(e) de vouloir annuler ${cancelConfirmTarget.title} ? Cette action est irréversible.`}
                 </Text>
 
                 <View style={styles.confirmModalButtonsRow}>
@@ -2759,7 +2753,11 @@ export default function CommandeScreen() {
                     disabled={isCancelling}
                     activeOpacity={0.8}
                   >
-                    <Text style={styles.confirmCancelText}>Non, garder</Text>
+                    <Text style={styles.confirmCancelText}>
+                      {cancelConfirmTarget.type === "traiteur_request"
+                        ? "Non, garder l'annonce"
+                        : "Non, garder"}
+                    </Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
@@ -2775,7 +2773,9 @@ export default function CommandeScreen() {
                       <ActivityIndicator size="small" color="#FFFFFF" />
                     ) : (
                       <Text style={styles.confirmExecuteText}>
-                        Oui, annuler
+                        {cancelConfirmTarget.type === "traiteur_request"
+                          ? "Oui, supprimer"
+                          : "Oui, annuler"}
                       </Text>
                     )}
                   </TouchableOpacity>

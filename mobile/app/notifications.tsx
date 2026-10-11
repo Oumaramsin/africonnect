@@ -23,6 +23,7 @@ import {
   getNotificationCategory,
   getNotificationVisuals,
   formatNotificationDate,
+  cleanNotificationTitle,
 } from "../utils/types/notification";
 
 export default function NotificationsScreen() {
@@ -169,26 +170,56 @@ export default function NotificationsScreen() {
       if (deleteModalState.type === "single" && deleteModalState.id) {
         const id = deleteModalState.id;
         setActionLoadingId(id);
-        const res = await apiFetch(`/notifications/${id}`, {
+
+        // Suppression optimiste immédiate dans l'état local
+        setNotifications((prev) => prev.filter((n) => n.id !== id));
+
+        let res = await apiFetch(`/notifications/${id}`, {
           method: "DELETE",
         });
-        if (res.ok) {
-          setNotifications((prev) => prev.filter((n) => n.id !== id));
-          DeviceEventEmitter.emit("dabari_notifications_updated");
+
+        // Fallback POST si la méthode DELETE n'est pas routée
+        if (!res.ok && res.status === 404) {
+          res = await apiFetch(`/notifications/${id}/delete`, {
+            method: "POST",
+          });
+        }
+
+        if (!res.ok && res.status >= 400 && res.status !== 404) {
+          Alert.alert("Erreur", "Impossible de supprimer cette notification du serveur.");
+          fetchNotifications(true);
+        } else {
           DeviceEventEmitter.emit("dabari_orders_updated");
         }
       } else if (deleteModalState.type === "all") {
-        const res = await apiFetch("/notifications/clear-all", {
+        // Effacement optimiste immédiat de tout l'historique
+        const backup = [...notifications];
+        setNotifications([]);
+
+        let res = await apiFetch("/notifications/clear-all", {
           method: "DELETE",
         });
-        if (res.ok) {
-          setNotifications([]);
-          DeviceEventEmitter.emit("dabari_notifications_updated");
+
+        // Fallback POST si la méthode DELETE n'est pas routée
+        if (!res.ok && res.status === 404) {
+          res = await apiFetch("/notifications/clear-all", {
+            method: "POST",
+          });
+        }
+
+        if (!res.ok && res.status >= 400 && res.status !== 404) {
+          Alert.alert("Erreur", "Impossible d'effacer tout l'historique sur le serveur.");
+          setNotifications(backup);
+        } else {
           DeviceEventEmitter.emit("dabari_orders_updated");
         }
       }
     } catch (e) {
       console.error("[Notifications] Erreur suppression :", e);
+      Alert.alert(
+        "Erreur",
+        "Une erreur est survenue lors de la suppression de la notification.",
+      );
     } finally {
       setIsDeleting(false);
       setActionLoadingId(null);
@@ -526,7 +557,7 @@ export default function NotificationsScreen() {
                         ]}
                         numberOfLines={2}
                       >
-                        {notif.titre}
+                        {cleanNotificationTitle(notif.titre)}
                       </Text>
 
                       {/* Message détaillé */}
@@ -680,7 +711,7 @@ export default function NotificationsScreen() {
                 {deleteModalState?.type === "all"
                   ? "Voulez-vous supprimer toutes les notifications de votre centre d'alertes ? Cette action est irréversible."
                   : deleteModalState?.title
-                    ? `Voulez-vous supprimer cette alerte de votre historique ?\n\n« ${deleteModalState.title} »`
+                    ? `Voulez-vous supprimer cette alerte de votre historique ?\n\n« ${cleanNotificationTitle(deleteModalState.title)} »`
                     : "Voulez-vous supprimer cette notification de votre historique ?"}
               </Text>
 

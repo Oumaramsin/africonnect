@@ -111,7 +111,7 @@ export const createTraiteurFromUser = async (
         data: {
           user_id: userId,
           type: "statut_partenaire",
-          titre: "🎉 Statut Traiteur approuvé !",
+          titre: "Statut Traiteur approuvé !",
           message:
             "Félicitations, votre compte a été validé en tant que traiteur partenaire Dabari ! Vous pouvez dès à présent configurer vos menus et recevoir des commandes.",
           data: { traiteur_id: traiteur.id },
@@ -253,7 +253,7 @@ export const createGpFromUser = async (
         data: {
           user_id: userId,
           type: "statut_partenaire",
-          titre: "✈️ Statut GP Transporteur approuvé !",
+          titre: "Statut GP Transporteur approuvé !",
           message:
             "Félicitations, votre profil de transporteur GP Dabari a été approuvé ! Votre premier trajet a été publié avec succès.",
           data: { listing_id: gpListing.id },

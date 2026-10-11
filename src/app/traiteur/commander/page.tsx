@@ -58,6 +58,23 @@ const schema = z
       message: "Adresse de livraison requise",
       path: ["delivery_address"],
     },
+  )
+  .refine(
+    (data) => {
+      if (data.delivery_date && data.delivery_time) {
+        const [y, m, d] = data.delivery_date.split("-").map(Number);
+        const [hh, mm] = data.delivery_time.split(":").map(Number);
+        if (!isNaN(y) && !isNaN(m) && !isNaN(d) && !isNaN(hh) && !isNaN(mm)) {
+          const scheduled = new Date(y, m - 1, d, hh, mm, 0);
+          return scheduled.getTime() >= Date.now();
+        }
+      }
+      return true;
+    },
+    {
+      message: "L'heure de livraison ne peut pas être antérieure à l'heure actuelle.",
+      path: ["delivery_time"],
+    },
   );
 
 type FormData = z.infer<typeof schema>;
@@ -186,6 +203,17 @@ export default function CommanderPage() {
       }
     }
 
+    const [py, pm, pd] = safeData.delivery_date.split("-").map(Number);
+    const [phh, pmm] = safeData.delivery_time.split(":").map(Number);
+    if (!isNaN(py) && !isNaN(pm) && !isNaN(pd) && !isNaN(phh) && !isNaN(pmm)) {
+      const scheduled = new Date(py, pm - 1, pd, phh, pmm, 0);
+      if (scheduled.getTime() < Date.now()) {
+        setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+        return;
+      }
+    }
+
+    setError(null);
     setPendingData(safeData);
     setShowConfirmModal(true);
   };
@@ -228,6 +256,17 @@ export default function CommanderPage() {
 
     const safeDate = data.delivery_date?.trim() || defaultDeliveryDate;
     const safeTime = data.delivery_time?.trim() || defaultDeliveryTime;
+
+    const [sy, sm, sd] = safeDate.split("-").map(Number);
+    const [shh, smm] = safeTime.split(":").map(Number);
+    if (!isNaN(sy) && !isNaN(sm) && !isNaN(sd) && !isNaN(shh) && !isNaN(smm)) {
+      const scheduled = new Date(sy, sm - 1, sd, shh, smm, 0);
+      if (scheduled.getTime() < Date.now()) {
+        setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
+        setLoading(false);
+        return;
+      }
+    }
 
     try {
       const token = getValidToken();
