@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -7,6 +7,12 @@ import {
   ScrollView,
   StatusBar,
   Image,
+  TextInput,
+  ActivityIndicator,
+  Modal,
+  Share,
+  Linking,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -15,14 +21,6 @@ import { getSecureToken, saveSecureToken } from "../../../utils/storage";
 import { CartItem, Dish, Traiteur } from "../../../utils/types/traiteur";
 import { apiFetch } from "../../../utils/api";
 
-type FormState = {
-  date_evenement: string;
-  nb_personnes: string;
-  adresse: string;
-  type_evenement: string;
-  notes: string;
-};
-
 function DishCard({
   dish,
   qty,
@@ -30,28 +28,28 @@ function DishCard({
   onAdd,
   onRemove,
   onRequireLogin,
+  onOpenModal,
 }: {
-  dish: any;
+  dish: Dish;
   qty: number;
   isLoggedIn: boolean;
   onAdd: () => void;
   onRemove: () => void;
   onRequireLogin: () => void;
+  onOpenModal: () => void;
 }) {
   const [imgIndex, setImgIndex] = useState(0);
 
   let images: string[] = [];
-  if (Array.isArray(dish.image_urls) && dish.image_urls.length > 0) {
-    images = dish.image_urls;
-  } else if (
-    typeof dish.image_urls === "string" &&
-    dish.image_urls.trim().startsWith("[")
-  ) {
+  const rawUrls = (dish as any).image_urls;
+  if (Array.isArray(rawUrls) && rawUrls.length > 0) {
+    images = rawUrls;
+  } else if (typeof rawUrls === "string" && rawUrls.trim().startsWith("[")) {
     try {
-      const parsed = JSON.parse(dish.image_urls);
+      const parsed = JSON.parse(rawUrls);
       if (Array.isArray(parsed) && parsed.length > 0) images = parsed;
-    } catch (e) {
-      images = [dish.image_urls];
+    } catch {
+      images = [rawUrls];
     }
   } else if (dish.image_url) {
     images = [dish.image_url];
@@ -67,17 +65,20 @@ function DishCard({
 
   return (
     <View style={styles.dishCard}>
-      {/* Image Placeholder du Plat avec Carrousel */}
-      <View style={styles.dishImageCover}>
+      {/* Zone visuelle du plat */}
+      <TouchableOpacity
+        style={styles.dishImageCover}
+        onPress={onOpenModal}
+        activeOpacity={0.92}
+      >
         {images.length > 0 ? (
           <>
             <Image
               source={{ uri: images[imgIndex] }}
-              style={{ width: "100%", height: "100%" }}
+              style={styles.dishImage}
               resizeMode="cover"
             />
 
-            {/* Navigation Flèches & Points si plusieurs images */}
             {images.length > 1 && (
               <>
                 <TouchableOpacity
@@ -85,7 +86,7 @@ function DishCard({
                   onPress={handlePrev}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="chevron-back" size={16} color="#FFFFFF" />
+                  <Ionicons name="chevron-back" size={14} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <TouchableOpacity
@@ -93,18 +94,16 @@ function DishCard({
                   onPress={handleNext}
                   activeOpacity={0.8}
                 >
-                  <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+                  <Ionicons name="chevron-forward" size={14} color="#FFFFFF" />
                 </TouchableOpacity>
 
                 <View style={styles.dotsRow}>
-                  {images.map((_: any, idx: number) => (
+                  {images.map((_, idx) => (
                     <View
                       key={idx}
                       style={[
                         styles.dotItem,
-                        idx === imgIndex
-                          ? styles.dotActive
-                          : styles.dotInactive,
+                        idx === imgIndex ? styles.dotActive : styles.dotInactive,
                       ]}
                     />
                   ))}
@@ -113,45 +112,47 @@ function DishCard({
             )}
           </>
         ) : (
-          <View style={styles.dishEmojiCircle}>
-            <Ionicons name="restaurant" size={32} color="#D4870A" />
+          <View style={styles.dishFallbackBox}>
+            <Ionicons name="restaurant" size={32} color="#1D6B45" />
           </View>
         )}
 
-        {dish.cuisine_type && (
+        {dish.cuisine_type ? (
           <View style={styles.cuisineTagBadge}>
             <Text style={styles.cuisineTagBadgeText}>{dish.cuisine_type}</Text>
           </View>
-        )}
-      </View>
+        ) : null}
+      </TouchableOpacity>
 
-      {/* Dish Info */}
+      {/* Contenu et Détails du Plat */}
       <View style={styles.dishContent}>
-        <Text style={styles.dishName}>{dish.name}</Text>
-        <Text style={styles.dishDesc} numberOfLines={3}>
-          {dish.description}
-        </Text>
-
-        {/* Footer Row (Prix & Bouton Ajouter/Compteur) */}
-        <View style={styles.dishFooterRow}>
-          <Text style={styles.dishPrice}>
-            {Number(dish.price).toFixed(2)} €
+        <TouchableOpacity onPress={onOpenModal} activeOpacity={0.8}>
+          <Text style={styles.dishName}>{dish.name}</Text>
+          <Text style={styles.dishDesc} numberOfLines={2}>
+            {dish.description || "Préparé selon la recette traditionnelle avec des ingrédients frais."}
           </Text>
+        </TouchableOpacity>
+
+        <View style={styles.dishFooterRow}>
+          <View>
+            <Text style={styles.dishPriceLabel}>Prix unitaire</Text>
+            <Text style={styles.dishPrice}>{Number(dish.price).toFixed(2)} €</Text>
+          </View>
 
           {!isLoggedIn ? (
             <TouchableOpacity
-              style={[styles.addBtn, styles.addBtnDisabled]}
+              style={styles.addBtnDisabled}
               onPress={onRequireLogin}
               activeOpacity={0.8}
             >
-              <Ionicons name="lock-closed-outline" size={12} color="#64748B" />
-              <Text style={styles.addBtnTextDisabled}>Connexion requise</Text>
+              <Ionicons name="lock-closed" size={12} color="#64748B" />
+              <Text style={styles.addBtnTextDisabled}>Connexion</Text>
             </TouchableOpacity>
           ) : qty === 0 ? (
             <TouchableOpacity
               style={styles.addBtn}
               onPress={onAdd}
-              activeOpacity={0.8}
+              activeOpacity={0.85}
             >
               <Text style={styles.addBtnText}>+ Ajouter</Text>
             </TouchableOpacity>
@@ -187,122 +188,103 @@ export default function TraiteurDetailScreen() {
   const { traiteurId } = useLocalSearchParams<{ traiteurId: string }>();
 
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState("all");
+  const [selectedDishModal, setSelectedDishModal] = useState<Dish | null>(null);
 
-  // Calculs du panier basés sur l'état cart
+  // Vérifier la connexion utilisateur
+  useEffect(() => {
+    (async () => {
+      const token = await getSecureToken("token");
+      setIsLoggedIn(Boolean(token));
+    })();
+  }, []);
+
+  // Récupération de la fiche traiteur
+  useEffect(() => {
+    let ignore = false;
+    async function fetchTraiteurData() {
+      setLoading(true);
+      try {
+        const response = await apiFetch(`/traiteur/${traiteurId}`);
+        if (response.ok) {
+          const data = await response.json();
+          if (!ignore) {
+            setTraiteur(data.data?.traiteur || null);
+          }
+        }
+      } catch (err) {
+        console.error("Erreur chargement traiteur:", err);
+      } finally {
+        if (!ignore) setLoading(false);
+      }
+    }
+    fetchTraiteurData();
+    return () => {
+      ignore = true;
+    };
+  }, [traiteurId]);
+
+  // Plats disponibles
+  const availableDishes = useMemo(() => {
+    return traiteur?.dishes?.filter((d) => d.is_available) || [];
+  }, [traiteur?.dishes]);
+
+  // Catégories / Origines culinaires pour les filtres
+  const categories = useMemo(() => {
+    const list: { label: string; value: string; count: number }[] = [
+      { label: "Toutes les spécialités", value: "all", count: availableDishes.length },
+    ];
+    const map = new Map<string, number>();
+    availableDishes.forEach((d) => {
+      if (d.cuisine_type) {
+        const key = d.cuisine_type.trim();
+        map.set(key, (map.get(key) || 0) + 1);
+      }
+    });
+    map.forEach((count, key) => {
+      list.push({ label: key, value: key.toLowerCase(), count });
+    });
+    return list;
+  }, [availableDishes]);
+
+  // Filtrage de la carte des plats
+  const filteredDishes = useMemo(() => {
+    return availableDishes.filter((dish) => {
+      const matchesCategory =
+        selectedCategory === "all" ||
+        dish.cuisine_type?.toLowerCase() === selectedCategory;
+
+      const q = searchQuery.trim().toLowerCase();
+      const matchesSearch =
+        !q ||
+        dish.name.toLowerCase().includes(q) ||
+        dish.description?.toLowerCase().includes(q) ||
+        dish.cuisine_type?.toLowerCase().includes(q);
+
+      return matchesCategory && matchesSearch;
+    });
+  }, [availableDishes, selectedCategory, searchQuery]);
+
+  // Gestion du panier
   const getQty = (dishId: string) =>
     cart.find((i) => i.dish.id === dishId)?.quantity || 0;
 
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
   const totalPrice = cart.reduce(
     (sum, i) => sum + Number(i.dish.price) * i.quantity,
-    0,
+    0
   );
-
-  const [open, setOpen] = useState(false);
-  const [loading, setLoading] = useState(false);
-  const [success, setSuccess] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [form, setForm] = useState<FormState>({
-    date_evenement: "",
-    nb_personnes: "",
-    adresse: "",
-    type_evenement: "",
-    notes: "",
-  });
-
-  useEffect(() => {
-    const load = async () => {
-      const token = await getSecureToken("token");
-      if (token) {
-        setIsLoggedIn(true);
-      }
-    };
-    load();
-  }, []);
-
-  const updateField = (field: keyof FormState, value: string) => {
-    setForm((prev) => ({ ...prev, [field]: value }));
-  };
-
-  const handlePreSubmit = async () => {
-    if (!form.date_evenement || !form.nb_personnes || !form.adresse) {
-      setError("Merci de remplir les champs obligatoires");
-      return;
-    }
-
-    if (parseInt(form.nb_personnes) < 1) {
-      setError("Le nombre de personnes doit être d'au moins 1");
-      return;
-    }
-
-    const today = new Date().toISOString().split("T")[0];
-    if (form.date_evenement < today) {
-      setError("La date de l'événement ne peut pas être dans le passé");
-      return;
-    }
-
-    setError(null);
-    setShowConfirmModal(true);
-  };
-
-  useEffect(() => {
-    async function fetchTraiteurs() {
-      setLoading(true);
-      try {
-        const response = await apiFetch(`/traiteur/${traiteurId}`);
-        const data = await response.json();
-        setTraiteur(data.data.traiteur);
-        setLoading(false);
-      } catch (error) {
-        console.error("Une erreur est survenue", error);
-      }
-    }
-    fetchTraiteurs();
-  }, [traiteurId]);
-
-  const confirmOrder = async () => {
-    setLoading(true);
-    setError(null);
-    const token = await getSecureToken("token");
-    if (!token) {
-      setIsLoggedIn(false);
-      return;
-    }
-    try {
-      const response = await apiFetch("/traiteur", {
-        method: "POST",
-        body: JSON.stringify({
-          traiteur_id: traiteurId,
-          date_evenement: form.date_evenement,
-          nb_personnes: parseInt(form.nb_personnes),
-          adresse: form.adresse,
-          type_evenement: form.type_evenement,
-          notes: form.notes,
-        }),
-      });
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || "Erreur lors de la commande du traiteur");
-        setLoading(false);
-        return;
-      }
-      setSuccess(true);
-    } catch (err: any) {
-      setError("Impossible de contacter le serveur.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const addToCart = (dish: Dish) => {
     setCart((prev) => {
       const existing = prev.find((i) => i.dish.id === dish.id);
       if (existing) {
         return prev.map((i) =>
-          i.dish.id === dish.id ? { ...i, quantity: i.quantity + 1 } : i,
+          i.dish.id === dish.id ? { ...i, quantity: i.quantity + 1 } : i
         );
       }
       return [
@@ -322,7 +304,7 @@ export default function TraiteurDetailScreen() {
       const existing = prev.find((i) => i.dish.id === dishId);
       if (existing && existing.quantity > 1) {
         return prev.map((i) =>
-          i.dish.id === dishId ? { ...i, quantity: i.quantity - 1 } : i,
+          i.dish.id === dishId ? { ...i, quantity: i.quantity - 1 } : i
         );
       }
       return prev.filter((i) => i.dish.id !== dishId);
@@ -333,29 +315,58 @@ export default function TraiteurDetailScreen() {
     await saveSecureToken("dabari_cart", JSON.stringify(cart));
     router.push("/traiteur/commander");
   };
+
+  // Partager le profil du chef
+  const handleShare = async () => {
+    if (!traiteur) return;
+    try {
+      await Share.share({
+        title: `${traiteur.name} - Traiteur sur Dabari`,
+        message: `Découvrez ${traiteur.name}, traiteur de gastronomie africaine sur Dabari : https://dabari.fr/traiteur/${traiteur.id}`,
+      });
+    } catch {
+      // Ignoré
+    }
+  };
+
+  // Contacter via WhatsApp
+  const handleContactWhatsApp = () => {
+    if (!traiteur?.whatsapp) return;
+    const cleanNumber = traiteur.whatsapp.replace(/\D/g, "");
+    const msg = encodeURIComponent(
+      `Bonjour Chef ${traiteur.name}, je vous contacte via Dabari concernant vos prestations traiteur.`
+    );
+    Linking.openURL(`https://wa.me/${cleanNumber}?text=${msg}`).catch(() => {
+      Alert.alert("Erreur", "Impossible d'ouvrir l'application WhatsApp.");
+    });
+  };
+
   if (loading) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        >
-          <Text style={{ color: "#1D6B45", fontWeight: "700" }}>
-            Chargement du traiteur...
-          </Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.centerContainer} edges={["top"]}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={styles.loadingText}>Chargement du chef traiteur...</Text>
+        </SafeAreaView>
+      </View>
     );
   }
 
   if (!traiteur) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        >
-          <Text style={{ color: "#6B7280" }}>Traiteur introuvable</Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.centerContainer} edges={["top"]}>
+          <Ionicons name="alert-circle-outline" size={48} color="#FFFFFF" />
+          <Text style={styles.notFoundTitle}>Traiteur introuvable</Text>
+          <TouchableOpacity
+            style={styles.backToListBtn}
+            onPress={() => router.push("/traiteur")}
+          >
+            <Ionicons name="arrow-back" size={16} color="#1D6B45" />
+            <Text style={styles.backToListText}>Retour aux traiteurs</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -369,166 +380,343 @@ export default function TraiteurDetailScreen() {
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* Top Header Card (Gradient Vert Vert & Or) */}
-          <View style={styles.headerCard}>
-            <TouchableOpacity
-              style={styles.backBtn}
-              onPress={() => router.push("/traiteur")}
-              activeOpacity={0.7}
-            >
-              <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-              <Text style={styles.backBtnText}>Retour</Text>
-            </TouchableOpacity>
+          {/* ── 1. HERO DU CHEF (IDENTIQUE AU DESIGN WEB) ── */}
+          <View style={styles.heroCard}>
+            {/* Ligne de retour navigation */}
+            <View style={styles.heroNavRow}>
+              <TouchableOpacity
+                style={styles.backBtn}
+                onPress={() => router.push("/traiteur")}
+                activeOpacity={0.7}
+              >
+                <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+                <Text style={styles.backBtnText}>Tous les traiteurs</Text>
+              </TouchableOpacity>
 
-            <View style={styles.profileRow}>
-              {/* Traiteur Avatar */}
-              <View style={styles.avatarContainer}>
-                <Image
-                  source={{ uri: traiteur.image_url || undefined }}
-                  style={styles.avatarImage}
-                  resizeMode="cover"
-                />
+              <View style={styles.verifiedPill}>
+                <Ionicons name="shield-checkmark" size={12} color="#6EE7B7" />
+                <Text style={styles.verifiedPillText}>Chef Partenaire Vérifié</Text>
               </View>
+            </View>
 
-              <View style={{ flex: 1 }}>
-                <Text style={styles.traiteurTitle}>{traiteur.name}</Text>
-                <Text style={styles.traiteurBio} numberOfLines={2}>
-                  {traiteur.bio}
-                </Text>
-              </View>
-
-              {/* Rating Badge */}
-              <View style={styles.ratingBox}>
-                <Ionicons
-                  name="star"
-                  size={16}
-                  color={
-                    Number(traiteur.rating || 0) > 0
-                      ? "#FBBF24"
-                      : "rgba(255, 255, 255, 0.4)"
-                  }
-                />
-                {Number(traiteur.rating || 0) > 0 ? (
-                  <>
-                    <Text style={styles.ratingScore}>
-                      {Number(traiteur.rating).toFixed(1)}
-                    </Text>
-                    <Text style={styles.ratingReviews}>Avis</Text>
-                  </>
+            {/* Profil Chef & Avatar */}
+            <View style={styles.chefProfileRow}>
+              <View style={styles.chefAvatarBox}>
+                {traiteur.image_url ? (
+                  <Image
+                    source={{ uri: traiteur.image_url }}
+                    style={styles.chefAvatarImage}
+                    resizeMode="cover"
+                  />
                 ) : (
-                  <Text style={styles.noRatingText}>Aucun avis</Text>
+                  <Ionicons name="restaurant" size={32} color="#FFFFFF" />
                 )}
               </View>
+
+              <View style={styles.chefProfileInfo}>
+                <Text style={styles.chefName}>{traiteur.name}</Text>
+                <Text style={styles.chefBio} numberOfLines={3}>
+                  {traiteur.bio || "Spécialiste de la cuisine traditionnelle africaine. Plats cuisinés avec amour et ingrédients authentiques."}
+                </Text>
+              </View>
             </View>
 
-            {/* Zones de livraison */}
-            <View style={styles.zonesRow}>
-              {traiteur.delivery_zones.map((z) => (
-                <View key={z} style={styles.zonePill}>
-                  <Ionicons name="location" size={12} color="#FFFFFF" />
-                  <Text style={styles.zoneText}>{z}</Text>
-                </View>
-              ))}
-            </View>
-          </View>
+            {/* Note & Avis */}
+            <View style={styles.statsBar}>
+              <View style={styles.ratingBadge}>
+                <Ionicons name="star" size={14} color="#FBBF24" />
+                <Text style={styles.ratingBadgeValue}>
+                  {traiteur.review_count === 0 ? "Nouveau Chef" : Number(traiteur.rating || 5).toFixed(1)}
+                </Text>
+                {Boolean(traiteur.review_count && traiteur.review_count > 0) && (
+                  <Text style={styles.ratingBadgeCount}>({traiteur.review_count} avis)</Text>
+                )}
+              </View>
 
-          {/* Section Demande de Devis sur-mesure */}
-          <View style={styles.devisCardContainer}>
-            <TouchableOpacity
-              style={[
-                styles.devisCard,
-                !isLoggedIn && styles.devisCardDisabled,
-              ]}
-              activeOpacity={isLoggedIn ? 0.85 : 0.95}
-              onPress={() => {
-                if (!isLoggedIn) {
-                  router.push("/(auth)/login");
-                } else {
-                  router.push(`/traiteur/${traiteurId}/devis`);
-                }
-              }}
-            >
-              <View
-                style={[
-                  styles.devisIconCircle,
-                  !isLoggedIn && styles.devisIconCircleDisabled,
-                ]}
+              {/* Bouton Partager */}
+              <TouchableOpacity
+                style={styles.shareBtn}
+                onPress={handleShare}
+                activeOpacity={0.8}
               >
-                <Ionicons
-                  name={isLoggedIn ? "calendar" : "lock-closed"}
-                  size={22}
-                  color={isLoggedIn ? "#1D6B45" : "#64748B"}
-                />
+                <Ionicons name="share-social-outline" size={15} color="#FFFFFF" />
+                <Text style={styles.shareBtnText}>Partager</Text>
+              </TouchableOpacity>
+            </View>
+
+            {/* Zones de livraison desservies */}
+            {traiteur.delivery_zones && traiteur.delivery_zones.length > 0 && (
+              <View style={styles.zonesSection}>
+                <Ionicons name="location-outline" size={13} color="#6EE7B7" />
+                <Text style={styles.zonesLabel}>Zones :</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.zonesScroll}>
+                  {traiteur.delivery_zones.map((zone) => (
+                    <View key={zone} style={styles.zonePill}>
+                      <Text style={styles.zoneText}>{zone}</Text>
+                    </View>
+                  ))}
+                </ScrollView>
               </View>
-              <View style={{ flex: 1 }}>
-                <Text
-                  style={[
-                    styles.devisTitle,
-                    !isLoggedIn && { color: "#64748B" },
-                  ]}
+            )}
+
+            {/* Actions Rapides du Chef */}
+            <View style={styles.heroActionRow}>
+              {/* Bouton Devis Événement Sur-Mesure */}
+              <TouchableOpacity
+                style={styles.devisBtnGold}
+                onPress={() => router.push(`/traiteur/${traiteurId}/devis`)}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="sparkles" size={15} color="#FFFFFF" />
+                <Text style={styles.devisBtnGoldText}>Demander un devis</Text>
+              </TouchableOpacity>
+
+              {/* Bouton Contact WhatsApp direct si disponible */}
+              {Boolean(traiteur.whatsapp) && (
+                <TouchableOpacity
+                  style={styles.whatsAppBtn}
+                  onPress={handleContactWhatsApp}
+                  activeOpacity={0.88}
                 >
-                  Demander un devis sur-mesure
-                </Text>
-                <Text style={styles.devisSubtitle}>
-                  {isLoggedIn
-                    ? "Mariages, baptêmes, anniversaires & grands repas de famille."
-                    : "Connectez-vous pour demander un devis au traiteur."}
-                </Text>
+                  <Ionicons name="logo-whatsapp" size={15} color="#FFFFFF" />
+                  <Text style={styles.whatsAppBtnText}>WhatsApp</Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+
+          {/* ── 2. BANNIÈRE ASSURANCE QUALITÉ ET SÉQUESTRE ── */}
+          <View style={styles.assuranceBanner}>
+            <View style={styles.assuranceItem}>
+              <Ionicons name="shield-checkmark" size={14} color="#1D6B45" />
+              <Text style={styles.assuranceText}>Paiement sécurisé par séquestre</Text>
+            </View>
+            <View style={styles.assuranceItem}>
+              <Ionicons name="checkmark-circle" size={14} color="#D4870A" />
+              <Text style={styles.assuranceText}>Plats 100% frais préparés le jour J</Text>
+            </View>
+          </View>
+
+          {/* ── 3. RECHERCHE & FILTRES DU MENU ── */}
+          <View style={styles.menuSectionHeader}>
+            <View>
+              <Text style={styles.menuSectionTitle}>La Carte du Chef</Text>
+              <Text style={styles.menuSectionSubtitle}>
+                {availableDishes.length} plat{availableDishes.length > 1 ? "s" : ""} disponible{availableDishes.length > 1 ? "s" : ""} à la commande
+              </Text>
+            </View>
+          </View>
+
+          {availableDishes.length > 0 && (
+            <View style={styles.searchFilterWrapper}>
+              <View style={styles.searchBarBox}>
+                <Ionicons name="search-outline" size={16} color="#64748B" />
+                <TextInput
+                  style={styles.searchInput}
+                  placeholder="Rechercher un plat (Tiep, Yassa, Aloco, Ndolé...)"
+                  placeholderTextColor="#94A3B8"
+                  value={searchQuery}
+                  onChangeText={setSearchQuery}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                />
+                {searchQuery.length > 0 && (
+                  <TouchableOpacity onPress={() => setSearchQuery("")}>
+                    <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                  </TouchableOpacity>
+                )}
               </View>
-              <Ionicons
-                name={isLoggedIn ? "chevron-forward" : "log-in-outline"}
-                size={18}
-                color={isLoggedIn ? "#1D6B45" : "#64748B"}
-              />
-            </TouchableOpacity>
-          </View>
 
-          {/* Header Menu Title */}
-          <View style={styles.menuHeaderRow}>
-            <Text style={styles.menuTitle}>
-              Menu ·{" "}
-              {traiteur.dishes?.filter((d) => d.is_available).length || 0} plats
-            </Text>
-          </View>
+              {categories.length > 1 && (
+                <ScrollView
+                  horizontal
+                  showsHorizontalScrollIndicator={false}
+                  contentContainerStyle={styles.categoriesScroll}
+                >
+                  {categories.map((cat) => {
+                    const isSelected = selectedCategory === cat.value;
+                    return (
+                      <TouchableOpacity
+                        key={cat.value}
+                        style={[styles.categoryPill, isSelected && styles.categoryPillActive]}
+                        onPress={() => setSelectedCategory(cat.value)}
+                        activeOpacity={0.8}
+                      >
+                        <Text style={[styles.categoryPillText, isSelected && styles.categoryPillTextActive]}>
+                          {cat.label} ({cat.count})
+                        </Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </ScrollView>
+              )}
+            </View>
+          )}
 
-          {/* Liste des Plats */}
+          {/* ── 4. LISTE DES PLATS DE LA CARTE ── */}
           <View style={styles.dishesList}>
-            {traiteur.dishes?.map((dish: any) => (
-              <DishCard
-                key={dish.id}
-                dish={dish}
-                qty={getQty(dish.id)}
-                isLoggedIn={isLoggedIn}
-                onAdd={() => addToCart(dish)}
-                onRemove={() => removeFromCart(dish.id)}
-                onRequireLogin={() => router.push("/(auth)/login")}
-              />
-            ))}
+            {availableDishes.length === 0 ? (
+              <View style={styles.emptyDishesBox}>
+                <Ionicons name="restaurant-outline" size={40} color="#94A3B8" />
+                <Text style={styles.emptyDishesTitle}>Aucun plat à la carte pour l'instant</Text>
+                <Text style={styles.emptyDishesSubtitle}>
+                  Ce chef propose principalement des prestations sur devis pour les réceptions et événements.
+                </Text>
+                <TouchableOpacity
+                  style={styles.emptyDevisBtn}
+                  onPress={() => router.push(`/traiteur/${traiteurId}/devis`)}
+                >
+                  <Ionicons name="calendar-outline" size={15} color="#FFFFFF" />
+                  <Text style={styles.emptyDevisBtnText}>Demander un devis sur-mesure</Text>
+                </TouchableOpacity>
+              </View>
+            ) : filteredDishes.length === 0 ? (
+              <View style={styles.emptyFilterBox}>
+                <Text style={styles.emptyFilterTitle}>Aucun plat ne correspond à vos filtres</Text>
+                <TouchableOpacity
+                  onPress={() => {
+                    setSearchQuery("");
+                    setSelectedCategory("all");
+                  }}
+                >
+                  <Text style={styles.resetFilterText}>Réinitialiser les filtres</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              filteredDishes.map((dish) => (
+                <DishCard
+                  key={dish.id}
+                  dish={dish}
+                  qty={getQty(dish.id)}
+                  isLoggedIn={isLoggedIn}
+                  onAdd={() => addToCart(dish)}
+                  onRemove={() => removeFromCart(dish.id)}
+                  onRequireLogin={() => router.push("/(auth)/login")}
+                  onOpenModal={() => setSelectedDishModal(dish)}
+                />
+              ))
+            )}
           </View>
         </ScrollView>
 
-        {/* Bouton Flottant "Voir mon panier" */}
+        {/* ── 5. PANIER FLOTTANT (STYLE WEB MOBILE MODERNE) ── */}
         {cart.length > 0 && (
-          <View style={styles.floatingCartBar}>
+          <View style={styles.floatingCartContainer}>
             <TouchableOpacity
-              style={styles.floatingCartBtn}
-              onPress={() => {
-                saveSecureToken("dabari_cart", JSON.stringify(cart));
-                goToCheckout();
-              }}
-              activeOpacity={0.9}
+              style={styles.floatingCartBar}
+              onPress={goToCheckout}
+              activeOpacity={0.92}
             >
-              <View style={styles.cartBadgeCount}>
-                <Text style={styles.cartBadgeText}>{totalItems}</Text>
+              <View style={styles.floatingCartLeft}>
+                <View style={styles.cartCountPill}>
+                  <Text style={styles.cartCountText}>{totalItems}</Text>
+                </View>
+                <Text style={styles.floatingCartTitle}>Voir mon panier</Text>
               </View>
 
-              <Text style={styles.floatingCartTitle}>Voir mon panier</Text>
-
-              <Text style={styles.floatingCartPrice}>
-                {totalPrice.toFixed(2)} €
-              </Text>
+              <View style={styles.floatingCartRight}>
+                <Text style={styles.floatingCartTotal}>{totalPrice.toFixed(2)} €</Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
+              </View>
             </TouchableOpacity>
           </View>
+        )}
+
+        {/* ── 6. MODALE DÉTAILS ET PHOTO DU PLAT (POPUP IDENTIQUE AU WEB) ── */}
+        {selectedDishModal && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={Boolean(selectedDishModal)}
+            onRequestClose={() => setSelectedDishModal(null)}
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalCard}>
+                {/* Photo du plat en grand */}
+                <View style={styles.modalImageContainer}>
+                  {selectedDishModal.image_urls && selectedDishModal.image_urls.length > 0 ? (
+                    <Image
+                      source={{ uri: selectedDishModal.image_urls[0] }}
+                      style={styles.modalImage}
+                      resizeMode="cover"
+                    />
+                  ) : selectedDishModal.image_url ? (
+                    <Image
+                      source={{ uri: selectedDishModal.image_url }}
+                      style={styles.modalImage}
+                      resizeMode="cover"
+                    />
+                  ) : (
+                    <View style={styles.modalFallbackCover}>
+                      <Ionicons name="restaurant" size={44} color="#1D6B45" />
+                    </View>
+                  )}
+
+                  <TouchableOpacity
+                    style={styles.modalCloseBtn}
+                    onPress={() => setSelectedDishModal(null)}
+                  >
+                    <Ionicons name="close" size={18} color="#FFFFFF" />
+                  </TouchableOpacity>
+
+                  {selectedDishModal.cuisine_type ? (
+                    <View style={styles.modalCuisineBadge}>
+                      <Text style={styles.modalCuisineBadgeText}>
+                        {selectedDishModal.cuisine_type}
+                      </Text>
+                    </View>
+                  ) : null}
+                </View>
+
+                {/* Contenu de la modale */}
+                <View style={styles.modalBody}>
+                  <View style={styles.modalHeaderRow}>
+                    <Text style={styles.modalDishTitle}>{selectedDishModal.name}</Text>
+                    <Text style={styles.modalDishPrice}>
+                      {Number(selectedDishModal.price).toFixed(2)} €
+                    </Text>
+                  </View>
+
+                  <Text style={styles.modalDishDescription}>
+                    {selectedDishModal.description ||
+                      "Plat traditionnel cuisiné avec des ingrédients frais selon les recettes authentiques de la diaspora africaine."}
+                  </Text>
+
+                  {/* Bouton d'ajout */}
+                  <View style={styles.modalFooter}>
+                    {isLoggedIn ? (
+                      <TouchableOpacity
+                        style={styles.modalAddBtn}
+                        onPress={() => {
+                          addToCart(selectedDishModal);
+                          setSelectedDishModal(null);
+                        }}
+                        activeOpacity={0.88}
+                      >
+                        <Ionicons name="bag-add" size={16} color="#FFFFFF" />
+                        <Text style={styles.modalAddBtnText}>
+                          Ajouter au panier ({Number(selectedDishModal.price).toFixed(2)} €)
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.modalLoginBtn}
+                        onPress={() => {
+                          setSelectedDishModal(null);
+                          router.push("/(auth)/login");
+                        }}
+                      >
+                        <Ionicons name="lock-closed" size={14} color="#1D6B45" />
+                        <Text style={styles.modalLoginBtnText}>
+                          Se connecter pour commander
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                </View>
+              </View>
+            </View>
+          </Modal>
         )}
       </SafeAreaView>
     </View>
@@ -542,369 +730,384 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#F8FAFC",
+  },
+  centerContainer: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+    gap: 12,
+  },
+  loadingText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  notFoundTitle: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "800",
+  },
+  backToListBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  backToListText: {
+    color: "#1D6B45",
+    fontSize: 12,
+    fontWeight: "800",
   },
   mainScrollView: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
   },
   scrollContent: {
     paddingBottom: 110,
   },
 
-  /* Header Card */
-  headerCard: {
+  /* ── 1. Hero Card ── */
+  heroCard: {
     backgroundColor: "#165034",
-    paddingTop: 12,
-    paddingBottom: 24,
-    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 20,
+    paddingHorizontal: 18,
     borderBottomLeftRadius: 28,
     borderBottomRightRadius: 28,
+    gap: 12,
+  },
+  heroNavRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 14,
     gap: 4,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.8)",
-    fontSize: 13,
+    color: "rgba(255, 255, 255, 0.85)",
+    fontSize: 12,
     fontWeight: "600",
   },
-  profileRow: {
+  verifiedPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-  },
-  avatarContainer: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
-    borderColor: "rgba(255, 255, 255, 0.35)",
-    borderWidth: 1.5,
-    justifyContent: "center",
-    alignItems: "center",
-    overflow: "hidden",
-  },
-  avatarImage: {
-    width: "100%",
-    height: "100%",
-    borderRadius: 28,
-  },
-  avatarEmoji: {
-    fontSize: 26,
-  },
-  traiteurTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    marginBottom: 2,
-  },
-  traiteurBio: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.8)",
-    lineHeight: 16,
-  },
-  ratingBox: {
+    gap: 4,
     backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderColor: "rgba(255, 255, 255, 0.25)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
     borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 10,
-    paddingVertical: 8,
-    alignItems: "center",
-    minWidth: 55,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  ratingScore: {
-    fontSize: 14,
-    fontWeight: "800",
+  verifiedPillText: {
     color: "#FFFFFF",
-    marginTop: 2,
-  },
-  ratingReviews: {
-    fontSize: 9,
-    color: "rgba(255, 255, 255, 0.7)",
-  },
-  noRatingText: {
     fontSize: 10,
     fontWeight: "700",
-    color: "rgba(255, 255, 255, 0.9)",
-    marginTop: 2,
-    textAlign: "center",
   },
-  zonesRow: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 14,
-  },
-  zonePill: {
+  chefProfileRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    gap: 14,
+  },
+  chefAvatarBox: {
+    width: 64,
+    height: 64,
+    borderRadius: 20,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    borderWidth: 2,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    alignItems: "center",
+    justifyContent: "center",
+    overflow: "hidden",
+  },
+  chefAvatarImage: {
+    width: "100%",
+    height: "100%",
+  },
+  chefProfileInfo: {
+    flex: 1,
+    gap: 2,
+  },
+  chefName: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  chefBio: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.85)",
+    lineHeight: 16,
+  },
+  statsBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingTop: 2,
+  },
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
     paddingHorizontal: 10,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  ratingBadgeValue: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  ratingBadgeCount: {
+    color: "rgba(255, 255, 255, 0.7)",
+    fontSize: 11,
+  },
+  shareBtn: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
+  },
+  shareBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  zonesSection: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  zonesLabel: {
+    color: "rgba(255, 255, 255, 0.8)",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  zonesScroll: {
+    gap: 6,
+  },
+  zonePill: {
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
   zoneText: {
     color: "#FFFFFF",
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
   },
-
-  /* Devis Banner */
-  devisCardContainer: {
-    paddingHorizontal: 18,
-    marginTop: 16,
+  heroActionRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 4,
   },
-  devisCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 14,
+  devisBtnGold: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    borderWidth: 1,
-    borderColor: "rgba(29, 107, 69, 0.2)",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#D4870A",
+    paddingVertical: 10,
+    borderRadius: 14,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 3,
     elevation: 2,
   },
-  devisCardDisabled: {
-    backgroundColor: "#F8FAFC",
-    borderColor: "#E2E8F0",
-    opacity: 0.9,
+  devisBtnGoldText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
   },
-  devisIconCircleDisabled: {
-    backgroundColor: "#F1F5F9",
-  },
-  devisIconCircle: {
-    width: 42,
-    height: 42,
-    borderRadius: 14,
-    backgroundColor: "#E8F5E9",
-    justifyContent: "center",
+  whatsAppBtn: {
+    flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#25D366",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
   },
-  devisTitle: {
-    fontSize: 13,
+  whatsAppBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
     fontWeight: "800",
-    color: "#111827",
   },
-  devisSubtitle: {
+
+  /* ── 2. Reassurance Banner ── */
+  assuranceBanner: {
+    marginHorizontal: 16,
+    marginTop: 12,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 6,
+  },
+  assuranceItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  assuranceText: {
     fontSize: 11,
-    color: "#6B7280",
-    marginTop: 2,
+    fontWeight: "600",
+    color: "#334155",
   },
 
-  /* Menu Title */
-  menuHeaderRow: {
-    paddingHorizontal: 18,
-    marginTop: 22,
-    marginBottom: 12,
+  /* ── 3. Menu Title & Filters ── */
+  menuSectionHeader: {
+    paddingHorizontal: 16,
+    marginTop: 16,
   },
-  menuTitle: {
-    fontSize: 17,
+  menuSectionTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  menuSectionSubtitle: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  searchFilterWrapper: {
+    paddingHorizontal: 16,
+    marginTop: 10,
+    gap: 8,
+  },
+  searchBarBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 6,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12,
+    color: "#0F172A",
+  },
+  categoriesScroll: {
+    gap: 6,
+    paddingVertical: 2,
+  },
+  categoryPill: {
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  categoryPillActive: {
+    backgroundColor: "#1D6B45",
+    borderColor: "#1D6B45",
+  },
+  categoryPillText: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#475569",
+  },
+  categoryPillTextActive: {
+    color: "#FFFFFF",
     fontWeight: "800",
-    color: "#111827",
   },
 
-  /* Dishes List */
+  /* ── 4. Dishes List ── */
   dishesList: {
-    paddingHorizontal: 18,
-    gap: 16,
+    paddingHorizontal: 16,
+    paddingTop: 10,
+    gap: 14,
   },
   dishCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
+    borderColor: "#E2E8F0",
     overflow: "hidden",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 4 },
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
+    shadowRadius: 4,
+    elevation: 1,
   },
   dishImageCover: {
     height: 140,
-    backgroundColor: "#FFF8E7",
-    justifyContent: "center",
-    alignItems: "center",
+    backgroundColor: "#F1F5F9",
     position: "relative",
   },
-  dishEmojiCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#FFFFFF",
+  dishImage: {
+    width: "100%",
+    height: "100%",
+  },
+  dishFallbackBox: {
+    flex: 1,
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 6,
-    elevation: 2,
-  },
-  cuisineTagBadge: {
-    position: "absolute",
-    top: 10,
-    right: 10,
-    backgroundColor: "rgba(255, 255, 255, 0.95)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    borderRadius: 12,
-  },
-  cuisineTagBadgeText: {
-    fontSize: 10,
-    fontWeight: "800",
-    color: "#1D6B45",
-  },
-  dishContent: {
-    padding: 16,
-  },
-  dishName: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
-    marginBottom: 4,
-  },
-  dishDesc: {
-    fontSize: 12,
-    color: "#6B7280",
-    lineHeight: 18,
-    marginBottom: 14,
-  },
-  dishFooterRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "#F3F4F6",
-  },
-  dishPrice: {
-    fontSize: 18,
-    fontWeight: "900",
-    color: "#1D6B45",
-  },
-
-  /* Add / Counter Buttons */
-  addBtn: {
-    backgroundColor: "#1D6B45",
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 14,
-  },
-  addBtnDisabled: {
-    backgroundColor: "#F1F5F9",
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
-  },
-  addBtnText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  addBtnTextDisabled: {
-    color: "#64748B",
-    fontSize: 12,
-    fontWeight: "700",
-  },
-  counterRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F3F4F6",
-    paddingHorizontal: 6,
-    paddingVertical: 4,
-    borderRadius: 20,
-    gap: 8,
-  },
-  counterBtnMinus: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#FFFFFF",
-    borderColor: "rgba(29, 107, 69, 0.3)",
-    borderWidth: 1,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  counterBtnMinusText: {
-    color: "#1D6B45",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  counterQtyText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#111827",
-    minWidth: 16,
-    textAlign: "center",
-  },
-  counterBtnPlus: {
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    backgroundColor: "#1D6B45",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  counterBtnPlusText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "800",
+    backgroundColor: "#ECFDF5",
   },
   arrowLeftBtn: {
     position: "absolute",
     left: 8,
     top: "40%",
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
+    justifyContent: "center",
     zIndex: 10,
   },
   arrowRightBtn: {
     position: "absolute",
     right: 8,
     top: "40%",
-    backgroundColor: "rgba(0, 0, 0, 0.45)",
-    width: 28,
-    height: 28,
-    borderRadius: 14,
-    justifyContent: "center",
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    width: 26,
+    height: 26,
+    borderRadius: 13,
     alignItems: "center",
+    justifyContent: "center",
     zIndex: 10,
   },
   dotsRow: {
     position: "absolute",
     bottom: 8,
+    left: 0,
+    right: 0,
     flexDirection: "row",
+    justifyContent: "center",
     gap: 4,
-    backgroundColor: "rgba(0, 0, 0, 0.4)",
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    zIndex: 10,
   },
   dotItem: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
+    width: 5,
+    height: 5,
+    borderRadius: 2.5,
   },
   dotActive: {
     backgroundColor: "#FFFFFF",
@@ -912,47 +1115,358 @@ const styles = StyleSheet.create({
   dotInactive: {
     backgroundColor: "rgba(255, 255, 255, 0.4)",
   },
-
-  /* Floating Bottom Cart Bar */
-  floatingCartBar: {
+  cuisineTagBadge: {
     position: "absolute",
-    bottom: 20,
-    left: 18,
-    right: 18,
+    top: 8,
+    right: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
-  floatingCartBtn: {
-    backgroundColor: "#1D6B45",
-    borderRadius: 20,
-    paddingVertical: 14,
-    paddingHorizontal: 18,
+  cuisineTagBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#1D6B45",
+    textTransform: "uppercase",
+  },
+  dishContent: {
+    padding: 12,
+    gap: 6,
+  },
+  dishName: {
+    fontSize: 15,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  dishDesc: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 16,
+  },
+  dishFooterRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2,
-    shadowRadius: 10,
-    elevation: 6,
+    paddingTop: 8,
+    marginTop: 4,
+    borderTopWidth: 1,
+    borderColor: "#F1F5F9",
   },
-  cartBadgeCount: {
-    backgroundColor: "rgba(255, 255, 255, 0.25)",
-    paddingHorizontal: 10,
-    paddingVertical: 4,
+  dishPriceLabel: {
+    fontSize: 9,
+    color: "#94A3B8",
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  dishPrice: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#166534",
+  },
+  addBtn: {
+    backgroundColor: "#1D6B45",
+    paddingHorizontal: 14,
+    paddingVertical: 7,
     borderRadius: 10,
   },
-  cartBadgeText: {
+  addBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  addBtnDisabled: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+  },
+  addBtnTextDisabled: {
+    color: "#64748B",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  counterRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#ECFDF5",
+    paddingHorizontal: 4,
+    paddingVertical: 3,
+    borderRadius: 12,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  counterBtnMinus: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+  },
+  counterBtnMinusText: {
+    color: "#1D6B45",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  counterQtyText: {
+    fontSize: 13,
+    fontWeight: "900",
+    color: "#1D6B45",
+    minWidth: 14,
+    textAlign: "center",
+  },
+  counterBtnPlus: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    backgroundColor: "#1D6B45",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  counterBtnPlusText: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  emptyDishesBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 36,
+    paddingHorizontal: 20,
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+  },
+  emptyDishesTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#1E293B",
+  },
+  emptyDishesSubtitle: {
+    fontSize: 11,
+    color: "#64748B",
+    textAlign: "center",
+    lineHeight: 16,
+  },
+  emptyDevisBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#D4870A",
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 10,
+    marginTop: 6,
+  },
+  emptyDevisBtnText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  emptyFilterBox: {
+    alignItems: "center",
+    paddingVertical: 30,
+    gap: 6,
+  },
+  emptyFilterTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  resetFilterText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#1D6B45",
+  },
+
+  /* ── 5. Floating Cart ── */
+  floatingCartContainer: {
+    position: "absolute",
+    bottom: 20,
+    left: 16,
+    right: 16,
+    zIndex: 40,
+  },
+  floatingCartBar: {
+    backgroundColor: "#1D6B45",
+    borderRadius: 18,
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  floatingCartLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  cartCountPill: {
+    backgroundColor: "rgba(255, 255, 255, 0.25)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  cartCountText: {
+    color: "#FFFFFF",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  floatingCartTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  floatingCartRight: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  floatingCartTotal: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+
+  /* ── 6. Modal Dish Detail ── */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    width: "100%",
+    maxWidth: 380,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  modalImageContainer: {
+    height: 180,
+    backgroundColor: "#F1F5F9",
+    position: "relative",
+  },
+  modalImage: {
+    width: "100%",
+    height: "100%",
+  },
+  modalFallbackCover: {
+    flex: 1,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#ECFDF5",
+  },
+  modalCloseBtn: {
+    position: "absolute",
+    top: 10,
+    right: 10,
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  modalCuisineBadge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "#FFFFFF",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  modalCuisineBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#1D6B45",
+    textTransform: "uppercase",
+  },
+  modalBody: {
+    padding: 16,
+    gap: 10,
+  },
+  modalHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 10,
+  },
+  modalDishTitle: {
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  modalDishPrice: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#166534",
+  },
+  modalDishDescription: {
+    fontSize: 12,
+    color: "#64748B",
+    lineHeight: 18,
+  },
+  modalFooter: {
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  modalAddBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#1D6B45",
+    paddingVertical: 11,
+    borderRadius: 12,
+  },
+  modalAddBtnText: {
     color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "800",
   },
-  floatingCartTitle: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
+  modalLoginBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#ECFDF5",
+    paddingVertical: 10,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
   },
-  floatingCartPrice: {
-    color: "#FFFFFF",
-    fontSize: 15,
+  modalLoginBtnText: {
+    color: "#1D6B45",
+    fontSize: 12,
     fontWeight: "800",
   },
 });

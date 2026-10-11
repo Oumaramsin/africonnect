@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useState, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,7 @@ import {
   TextInput,
   Image,
   ActivityIndicator,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -18,28 +19,31 @@ import { GpListing } from "../../utils/types/gp";
 import { apiFetch } from "../../utils/api";
 
 const destination = [
-  { label: "Tout", value: "tout" },
-  { label: "🇫🇷 France", value: "France" },
-  { label: "🇸🇳 Sénégal", value: "Sénégal" },
-  { label: "🇨🇮 Côte d'Ivoire", value: "Côte d'Ivoire" },
-  { label: "🇨🇲 Cameroun", value: "Cameroun" },
-  { label: "🇲🇱 Mali", value: "Mali" },
-  { label: "🇬🇳 Guinée", value: "Guinée" },
-  { label: "🇨🇬 Congo", value: "Congo" },
-  { label: "🇨🇩 RDC", value: "RDC" },
-  { label: "🇧🇫 Burkina Faso", value: "Burkina Faso" },
-  { label: "🇧🇯 Bénin", value: "Bénin" },
-  { label: "🇹🇬 Togo", value: "Togo" },
-  { label: "🇬🇦 Gabon", value: "Gabon" },
-  { label: "🇲🇦 Maroc", value: "Maroc" },
-  { label: "🇧🇪 Belgique", value: "Belgique" },
-  { label: "🇨🇦 Canada", value: "Canada" },
+  { label: "Tout voir", value: "tout", icon: "globe-outline" },
+  { label: "France", value: "France", icon: "location-outline" },
+  { label: "Sénégal", value: "Sénégal", icon: "location-outline" },
+  { label: "Côte d'Ivoire", value: "Côte d'Ivoire", icon: "location-outline" },
+  { label: "Cameroun", value: "Cameroun", icon: "location-outline" },
+  { label: "Mali", value: "Mali", icon: "location-outline" },
+  { label: "Guinée", value: "Guinée", icon: "location-outline" },
+  { label: "Congo", value: "Congo", icon: "location-outline" },
+  { label: "RDC", value: "RDC", icon: "location-outline" },
+  { label: "Burkina Faso", value: "Burkina Faso", icon: "location-outline" },
+  { label: "Bénin", value: "Bénin", icon: "location-outline" },
+  { label: "Togo", value: "Togo", icon: "location-outline" },
+  { label: "Gabon", value: "Gabon", icon: "location-outline" },
+  { label: "Maroc", value: "Maroc", icon: "location-outline" },
+  { label: "Belgique", value: "Belgique", icon: "location-outline" },
+  { label: "Canada", value: "Canada", icon: "location-outline" },
 ];
 
 export default function GpScreen() {
   const router = useRouter();
 
   const [selectedDestination, setSelectedDestination] = useState("tout");
+  const [searchQuery, setSearchQuery] = useState("");
+  const [direction, setDirection] = useState<"all" | "to_africa" | "to_france">("all");
+  const [showDestinationModal, setShowDestinationModal] = useState(false);
   const [sortByDistance, setSortByDistance] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
@@ -90,82 +94,234 @@ export default function GpScreen() {
     });
   };
 
-  const filteredGp = gp.filter((item) => {
-    if (selectedDestination === "tout") return true;
+  const destinationCounts = useMemo(() => {
+    const counts: Record<string, number> = { tout: gp.length };
+    for (const d of destination) {
+      if (d.value === "tout") continue;
+      const val = d.value.toLowerCase();
+      counts[d.value] = gp.filter((item) => {
+        const arr = (item.arrival_country || "").toLowerCase();
+        const dep = (item.departure_country || "").toLowerCase();
+        return arr.includes(val) || dep.includes(val);
+      }).length;
+    }
+    return counts;
+  }, [gp]);
 
-    const destLower = selectedDestination.toLowerCase();
-    const arrCountry = (item.arrival_country || "").toLowerCase();
-    const arrCity = (item.arrival_city || "").toLowerCase();
-    const depCountry = (item.departure_country || "").toLowerCase();
-    const depCity = (item.departure_city || "").toLowerCase();
+  const filteredGp = useMemo(() => {
+    return gp.filter((item) => {
+      // 1. Filtre par pays de destination ou départ
+      if (selectedDestination !== "tout") {
+        const destLower = selectedDestination.toLowerCase();
+        const arrCountry = (item.arrival_country || "").toLowerCase();
+        const arrCity = (item.arrival_city || "").toLowerCase();
+        const depCountry = (item.departure_country || "").toLowerCase();
+        const depCity = (item.departure_city || "").toLowerCase();
 
-    return (
-      arrCountry.includes(destLower) ||
-      arrCity.includes(destLower) ||
-      depCountry.includes(destLower) ||
-      depCity.includes(destLower) ||
-      destLower.includes(arrCountry) ||
-      destLower.includes(arrCity) ||
-      destLower.includes(depCountry) ||
-      destLower.includes(depCity)
-    );
-  });
+        const matches =
+          arrCountry.includes(destLower) ||
+          arrCity.includes(destLower) ||
+          depCountry.includes(destLower) ||
+          depCity.includes(destLower) ||
+          destLower.includes(arrCountry) ||
+          destLower.includes(arrCity) ||
+          destLower.includes(depCountry) ||
+          destLower.includes(depCity);
+
+        if (!matches) return false;
+      }
+
+      // 2. Filtre de direction
+      if (direction === "to_africa") {
+        const dep = (item.departure_country || "").toLowerCase();
+        if (!dep.includes("france") && !dep.includes("belgique") && !dep.includes("europe")) {
+          return false;
+        }
+      } else if (direction === "to_france") {
+        const arr = (item.arrival_country || "").toLowerCase();
+        if (!arr.includes("france") && !arr.includes("belgique") && !arr.includes("europe")) {
+          return false;
+        }
+      }
+
+      // 3. Barre de recherche textuelle
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim();
+        const arrCountry = (item.arrival_country || "").toLowerCase();
+        const arrCity = (item.arrival_city || "").toLowerCase();
+        const depCountry = (item.departure_country || "").toLowerCase();
+        const depCity = (item.departure_city || "").toLowerCase();
+        const travelerName = (item.profiles?.full_name || "").toLowerCase();
+        const desc = (item.description || "").toLowerCase();
+
+        if (
+          !arrCountry.includes(q) &&
+          !arrCity.includes(q) &&
+          !depCountry.includes(q) &&
+          !depCity.includes(q) &&
+          !travelerName.includes(q) &&
+          !desc.includes(q)
+        ) {
+          return false;
+        }
+      }
+
+      return true;
+    });
+  }, [gp, selectedDestination, direction, searchQuery]);
 
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
-        {/* Header */}
+        {/* Header Vert Compact */}
         <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.push("/accueil")}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="arrow-back"
-              size={18}
-              color="rgba(255, 255, 255, 0.8)"
-            />
-            <Text style={styles.backBtnText}>Accueil</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.push("/accueil")}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={18}
+                color="#FFFFFF"
+              />
+              <Text style={styles.backBtnText}>Accueil</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.headerPublishBtn}
+              onPress={() => {
+                if (isLoggedIn) {
+                  router.push("/gp/nouveau");
+                } else {
+                  router.push("/login");
+                }
+              }}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="add" size={14} color="#0B3B24" />
+              <Text style={styles.headerPublishBtnText}>Publier un vol</Text>
+            </TouchableOpacity>
+          </View>
 
           <Text style={styles.headerTitle}>Transport GP Colis</Text>
-          <Text style={styles.headerSubtitle}>
-            Envoyez vos colis rapidement et en toute sécurité entre l'Europe et
-            l'Afrique.
-          </Text>
-        </View>
 
-        {/* Destinations Chips */}
-        <View style={styles.searchSection}>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.filterScroll}
-          >
-            {destination.map((dest) => {
-              const active = selectedDestination === dest.value;
-              return (
+          {/* Direction toggle (Tous / Vers Afrique / Vers Europe) */}
+          <View style={styles.directionToggleContainer}>
+            <TouchableOpacity
+              style={[
+                styles.directionToggleBtn,
+                direction === "all" && styles.directionToggleBtnActive,
+              ]}
+              onPress={() => setDirection("all")}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.directionToggleText,
+                  direction === "all" && styles.directionToggleTextActive,
+                ]}
+              >
+                Tous
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.directionToggleBtn,
+                direction === "to_africa" && styles.directionToggleBtnActive,
+              ]}
+              onPress={() => setDirection("to_africa")}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.directionToggleText,
+                  direction === "to_africa" && styles.directionToggleTextActive,
+                ]}
+              >
+                Vers l'Afrique
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={[
+                styles.directionToggleBtn,
+                direction === "to_france" && styles.directionToggleBtnActive,
+              ]}
+              onPress={() => setDirection("to_france")}
+              activeOpacity={0.85}
+            >
+              <Text
+                style={[
+                  styles.directionToggleText,
+                  direction === "to_france" && styles.directionToggleTextActive,
+                ]}
+              >
+                Vers l'Europe
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Barre de Recherche & Bouton Filtrer Compacts (1 seule ligne) */}
+          <View style={styles.searchFilterRow}>
+            <View style={styles.searchBarWrapper}>
+              <Ionicons name="search-outline" size={16} color="#0B3B24" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder="Rechercher ville, pays, GP..."
+                placeholderTextColor="#94A3B8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCapitalize="none"
+                autoCorrect={false}
+              />
+              {searchQuery.length > 0 && (
                 <TouchableOpacity
-                  key={dest.value}
-                  style={[styles.destChip, active && styles.destChipActive]}
-                  onPress={() => setSelectedDestination(dest.value)}
-                  activeOpacity={0.8}
+                  onPress={() => setSearchQuery("")}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Text
-                    style={[
-                      styles.destChipText,
-                      active && styles.destChipTextActive,
-                    ]}
-                  >
-                    {dest.label}
-                  </Text>
+                  <Ionicons name="close-circle" size={16} color="#94A3B8" />
                 </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
+              )}
+            </View>
+
+            <TouchableOpacity
+              style={[
+                styles.filterBtn,
+                selectedDestination !== "tout" && styles.filterBtnActive,
+              ]}
+              onPress={() => setShowDestinationModal(true)}
+              activeOpacity={0.85}
+            >
+              <Ionicons
+                name="airplane-outline"
+                size={15}
+                color={selectedDestination !== "tout" ? "#0B3B24" : "#FFFFFF"}
+              />
+              <Text
+                style={[
+                  styles.filterBtnText,
+                  selectedDestination !== "tout" && styles.filterBtnTextActive,
+                ]}
+                numberOfLines={1}
+              >
+                {selectedDestination === "tout" ? "Pays" : selectedDestination}
+              </Text>
+              {selectedDestination !== "tout" && (
+                <TouchableOpacity
+                  onPress={(e) => {
+                    e.stopPropagation();
+                    setSelectedDestination("tout");
+                  }}
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                >
+                  <Ionicons name="close-circle" size={14} color="#0B3B24" />
+                </TouchableOpacity>
+              )}
+            </TouchableOpacity>
+          </View>
         </View>
 
         <ScrollView
@@ -457,6 +613,105 @@ export default function GpScreen() {
             {isLoggedIn ? "Je suis GP" : "Se connecter pour publier"}
           </Text>
         </TouchableOpacity>
+
+        {/* Modale Bottom Sheet de Filtrage par Destination */}
+        <Modal
+          visible={showDestinationModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowDestinationModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.filterModalCard}>
+              <View style={styles.filterModalHeader}>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.filterModalTitle}>Filtrer par destination</Text>
+                  <Text style={styles.filterModalSubtitle}>
+                    Sélectionnez le pays d'arrivée ou de départ de votre colis
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  style={styles.filterModalCloseBtn}
+                  onPress={() => setShowDestinationModal(false)}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                >
+                  <Ionicons name="close" size={20} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+
+              <ScrollView
+                style={styles.filterModalOptionsList}
+                showsVerticalScrollIndicator={false}
+              >
+                {destination.map((dest) => {
+                  const count = destinationCounts[dest.value] ?? 0;
+                  const isSelected = selectedDestination === dest.value;
+                  return (
+                    <TouchableOpacity
+                      key={dest.value}
+                      style={[
+                        styles.filterOptionRow,
+                        isSelected && styles.filterOptionRowSelected,
+                      ]}
+                      onPress={() => {
+                        setSelectedDestination(dest.value);
+                        setShowDestinationModal(false);
+                      }}
+                      activeOpacity={0.7}
+                    >
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                        <Ionicons
+                          name={dest.icon as any}
+                          size={18}
+                          color={isSelected ? "#0B3B24" : "#64748B"}
+                        />
+                        <Text
+                          style={[
+                            styles.filterOptionLabel,
+                            isSelected && styles.filterOptionLabelSelected,
+                          ]}
+                        >
+                          {dest.label}
+                        </Text>
+                      </View>
+                      <View
+                        style={[
+                          styles.filterOptionBadge,
+                          isSelected && styles.filterOptionBadgeSelected,
+                        ]}
+                      >
+                        <Text
+                          style={[
+                            styles.filterOptionBadgeText,
+                            isSelected && styles.filterOptionBadgeTextSelected,
+                          ]}
+                        >
+                          {count}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
+
+              {selectedDestination !== "tout" && (
+                <TouchableOpacity
+                  style={styles.filterResetBtn}
+                  onPress={() => {
+                    setSelectedDestination("tout");
+                    setShowDestinationModal(false);
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons name="refresh-outline" size={15} color="#B91C1C" />
+                  <Text style={styles.filterResetBtnText}>
+                    Réinitialiser le filtre pays
+                  </Text>
+                </TouchableOpacity>
+              )}
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -465,74 +720,229 @@ export default function GpScreen() {
 const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
 
   /* Header Card */
   headerCard: {
-    backgroundColor: "#165034",
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 20,
+    backgroundColor: "#0B3B24",
+    paddingHorizontal: 16,
+    paddingTop: 8,
+    paddingBottom: 14,
+    gap: 10,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 12,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255, 255, 255, 0.9)",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  headerPublishBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#E5A93C",
+    paddingHorizontal: 11,
+    paddingVertical: 5.5,
+    borderRadius: 20,
+  },
+  headerPublishBtnText: {
+    color: "#0B3B24",
+    fontSize: 11.5,
+    fontWeight: "800",
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "900",
     color: "#FFFFFF",
-    marginBottom: 4,
-  },
-  headerSubtitle: {
-    fontSize: 13,
-    color: "rgba(255, 255, 255, 0.8)",
-    lineHeight: 18,
+    letterSpacing: -0.3,
   },
 
-  /* Section Recherche & Filtres */
-  searchSection: {
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 18,
-    paddingTop: 14,
-    paddingBottom: 12,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
+  /* Direction Toggle */
+  directionToggleContainer: {
+    flexDirection: "row",
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    borderRadius: 14,
+    padding: 3,
+    gap: 4,
   },
-  filterScroll: {
+  directionToggleBtn: {
+    flex: 1,
+    paddingVertical: 6,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  directionToggleBtnActive: {
+    backgroundColor: "#FFFFFF",
+  },
+  directionToggleText: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "rgba(255, 255, 255, 0.8)",
+  },
+  directionToggleTextActive: {
+    color: "#0B3B24",
+    fontWeight: "800",
+  },
+
+  /* Search & Filter Compact Row */
+  searchFilterRow: {
+    flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
-  destChip: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "#F1F5F9",
+  searchBarWrapper: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    gap: 8,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 12.5,
+    color: "#0F172A",
+    padding: 0,
+  },
+  filterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
     borderWidth: 1,
-    borderColor: "#E2E8F0",
+    borderColor: "rgba(255, 255, 255, 0.25)",
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    borderRadius: 14,
   },
-  destChipActive: {
-    backgroundColor: "#1D6B45",
-    borderColor: "#1D6B45",
+  filterBtnActive: {
+    backgroundColor: "#E5A93C",
+    borderColor: "#E5A93C",
   },
-  destChipText: {
+  filterBtnText: {
+    color: "#FFFFFF",
+    fontSize: 11.5,
+    fontWeight: "700",
+  },
+  filterBtnTextActive: {
+    color: "#0B3B24",
+    fontWeight: "800",
+  },
+
+  /* Modale Overlay & Bottom Sheet */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.5)",
+    justifyContent: "flex-end",
+  },
+  filterModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingHorizontal: 20,
+    paddingTop: 20,
+    paddingBottom: 36,
+    maxHeight: "80%",
+  },
+  filterModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  filterModalTitle: {
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  filterModalSubtitle: {
     fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+  },
+  filterModalCloseBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterModalOptionsList: {
+    maxHeight: 340,
+  },
+  filterOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+    borderRadius: 12,
+    marginBottom: 4,
+  },
+  filterOptionRowSelected: {
+    backgroundColor: "#F0FDF4",
+  },
+  filterOptionLabel: {
+    fontSize: 14,
     fontWeight: "600",
+    color: "#334155",
+  },
+  filterOptionLabelSelected: {
+    color: "#0B3B24",
+    fontWeight: "800",
+  },
+  filterOptionBadge: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 10,
+  },
+  filterOptionBadgeSelected: {
+    backgroundColor: "#DCFCE7",
+  },
+  filterOptionBadgeText: {
+    fontSize: 11,
+    fontWeight: "700",
     color: "#64748B",
   },
-  destChipTextActive: {
-    color: "#FFFFFF",
+  filterOptionBadgeTextSelected: {
+    color: "#0B3B24",
+    fontWeight: "800",
+  },
+  filterResetBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    marginTop: 14,
+    paddingVertical: 10,
+    borderRadius: 12,
+    backgroundColor: "#FEF2F2",
+  },
+  filterResetBtnText: {
+    color: "#B91C1C",
+    fontSize: 13,
     fontWeight: "700",
   },
 

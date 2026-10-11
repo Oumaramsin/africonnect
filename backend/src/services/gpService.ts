@@ -243,6 +243,13 @@ export const updateGpListing = async (
     }
   }
 
+  const effectiveDep = (updateData.departure_date as Date) || listing.departure_date;
+  const effectiveArr = updateData.arrival_date !== undefined ? (updateData.arrival_date as Date | null) : listing.arrival_date;
+
+  if (effectiveDep && effectiveArr && new Date(effectiveArr) < new Date(effectiveDep)) {
+    throw new Error("La date d'arrivée ne peut pas être antérieure à la date de départ.");
+  }
+
   return await db.gpListing.update({
     where: { id },
     data: updateData,
@@ -273,10 +280,35 @@ export const deleteGpListing = async (
 
   // Si des demandes sont rattachées, désactivation douce (soft-delete) pour préserver l'historique
   if (hasRequests) {
-    return await db.gpListing.update({
+    const updatedListing = await db.gpListing.update({
       where: { id },
       data: { is_active: false },
+      include: { requests: true },
     });
+
+    for (const req of updatedListing.requests) {
+      if (
+        req.sender_id &&
+        req.status !== GP_REQUEST_STATUS.CANCELLED &&
+        req.status !== GP_REQUEST_STATUS.REFUSED
+      ) {
+        try {
+          await db.notification.create({
+            data: {
+              user_id: req.sender_id,
+              type: "gp_vol_annule",
+              titre: "Trajet GP annulé par le transporteur",
+              message: `Le voyage ${listing.departure_city} ➔ ${listing.arrival_city} a été annulé par le transporteur.`,
+              data: { listing_id: id, request_id: req.id },
+            },
+          });
+        } catch (err) {
+          console.error("Erreur notification annulation vol GP:", err);
+        }
+      }
+    }
+
+    return updatedListing;
   }
 
   // Sinon suppression physique

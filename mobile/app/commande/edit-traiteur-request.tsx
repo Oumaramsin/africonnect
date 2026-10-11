@@ -29,14 +29,14 @@ if (Platform.OS !== "web") {
 }
 
 const EVENT_TYPES = [
-  { id: "Mariage", label: "Mariage 💍" },
-  { id: "Anniversaire", label: "Anniversaire 🎂" },
-  { id: "Baptême", label: "Baptême 👶" },
-  { id: "Buffet / Cocktail", label: "Buffet 🍢" },
-  { id: "Fête de famille", label: "Famille 👨‍👩‍👧‍👦" },
-  { id: "Dîner privé", label: "Dîner privé 🍽️" },
-  { id: "Événement pro", label: "Événement pro 💼" },
-  { id: "Autre", label: "Autre ✨" },
+  { id: "Mariage", label: "Mariage" },
+  { id: "Anniversaire", label: "Anniversaire" },
+  { id: "Baptême", label: "Baptême" },
+  { id: "Buffet / Cocktail", label: "Buffet" },
+  { id: "Fête de famille", label: "Famille" },
+  { id: "Dîner privé", label: "Dîner privé" },
+  { id: "Événement pro", label: "Événement pro" },
+  { id: "Autre", label: "Autre" },
 ];
 
 export default function EditTraiteurRequestScreen() {
@@ -397,7 +397,8 @@ export default function EditTraiteurRequestScreen() {
                   mode="date"
                   display={Platform.OS === "ios" ? "inline" : "default"}
                   minimumDate={new Date()}
-                  onChange={handleDateChange}
+                  onValueChange={handleDateChange}
+                  onDismiss={() => setShowDatePicker(false)}
                 />
               )}
 
@@ -537,7 +538,7 @@ export default function EditTraiteurRequestScreen() {
           visible={showSuccessModal}
           type="success"
           service="devis"
-          title="Annonce mise à jour ! 🎉"
+          title="Annonce mise à jour !"
           subtitle="Votre recherche de traiteur a été actualisée avec succès."
           details={modalDetails}
           confirmLabel="Retour à mes commandes"

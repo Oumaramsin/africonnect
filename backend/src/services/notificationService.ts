@@ -8,7 +8,7 @@ export const getUserNotifications = async (userId: string) => {
     orderBy: {
       created_at: "desc",
     },
-    take: 20,
+    take: 50,
   });
 
   const unreadNotifCount = await db.notification.count({
@@ -50,6 +50,7 @@ export const getUserNotifications = async (userId: string) => {
   return {
     notifications,
     unread_count: totalBadgeCount,
+    unread_notifs_only: unreadNotifCount,
     pending_received_count: pendingReceivedCount,
   };
 };
@@ -77,6 +78,26 @@ export const markAllNotificationsAsRead = async (userId: string) => {
     },
     data: {
       is_read: true,
+    },
+  });
+};
+
+export const deleteNotification = async (
+  notificationId: string,
+  userId: string,
+) => {
+  return await db.notification.deleteMany({
+    where: {
+      id: notificationId,
+      user_id: userId,
+    },
+  });
+};
+
+export const clearAllNotifications = async (userId: string) => {
+  return await db.notification.deleteMany({
+    where: {
+      user_id: userId,
     },
   });
 };

@@ -10,6 +10,7 @@ import {
   Modal,
   ActivityIndicator,
   Alert,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -30,13 +31,14 @@ export default function ProfilScreen() {
   const [fullName, setFullName] = useState("");
   const [phone, setPhone] = useState("");
   const [city, setCity] = useState("");
+  const [unreadNotifCount, setUnreadNotifCount] = useState(0);
 
-  const [showInfo, setShowInfo] = useState(false);
   const [saving, setSaving] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
   const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
 
   const getInitials = (name: string) => {
@@ -91,6 +93,17 @@ export default function ProfilScreen() {
       } catch (e) {
         console.warn("Vérification statut traiteur échouée :", e);
       }
+
+      // Fetch du compteur de notifications
+      try {
+        const notifRes = await apiFetch("/notifications");
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setUnreadNotifCount(notifData.unread_count || 0);
+        }
+      } catch (e) {
+        // Silencieux
+      }
     } catch (err) {
       console.error("Erreur chargement profil:", err);
     } finally {
@@ -101,6 +114,20 @@ export default function ProfilScreen() {
   useFocusEffect(
     useCallback(() => {
       loadProfile();
+
+      const sub1 = DeviceEventEmitter.addListener(
+        "dabari_orders_updated",
+        () => loadProfile(),
+      );
+      const sub2 = DeviceEventEmitter.addListener(
+        "dabari_notifications_updated",
+        () => loadProfile(),
+      );
+
+      return () => {
+        sub1.remove();
+        sub2.remove();
+      };
     }, []),
   );
 
@@ -175,61 +202,135 @@ export default function ProfilScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
+        {/* ── 1. HEADER HERO BANNER (STYLE WEB DABARI) ── */}
         <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.push("/accueil")}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="arrow-back"
-              size={18}
-              color="rgba(255,255,255,0.8)"
-            />
-            <Text style={styles.backBtnText}>Accueil</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.push("/accueil")}
+              activeOpacity={0.7}
+            >
+              <Ionicons
+                name="arrow-back"
+                size={18}
+                color="#FFFFFF"
+              />
+              <Text style={styles.backBtnText}>Accueil</Text>
+            </TouchableOpacity>
 
-          <View style={styles.avatarSection}>
+            <TouchableOpacity
+              style={styles.headerLogoutBtn}
+              onPress={() => setShowLogoutModal(true)}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="log-out-outline" size={15} color="#FFFFFF" />
+              <Text style={styles.headerLogoutText}>Se déconnecter</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Profil Carte Identité */}
+          <View style={styles.profileIdentityRow}>
             <View style={styles.avatarCircle}>
               <Text style={styles.avatarText}>{getInitials(fullName)}</Text>
             </View>
 
-            <View
-              style={[
-                styles.roleBadge,
-                userRole === "traiteur" || (userRole !== "admin" && isTraiteur)
-                  ? styles.roleBadgeGold
-                  : styles.roleBadgeTranslucent,
-              ]}
-            >
-              <Ionicons
-                name={
-                  userRole === "admin"
-                    ? "shield-checkmark"
-                    : userRole === "traiteur" || isTraiteur
-                      ? "restaurant"
+            <View style={styles.identityDetails}>
+              <View style={styles.nameAndBadgeRow}>
+                <Text style={styles.userNameText} numberOfLines={1}>
+                  {fullName || "Membre Dabari"}
+                </Text>
+              </View>
+
+              <View style={styles.roleBadgeWrapper}>
+                <View
+                  style={[
+                    styles.roleBadge,
+                    userRole === "traiteur" || (userRole !== "admin" && isTraiteur)
+                      ? styles.roleBadgeGold
                       : userRole === "gp"
-                        ? "airplane"
-                        : "person"
-                }
-                size={14}
-                color="#FFFFFF"
-              />
-              <Text style={styles.roleBadgeText}>
-                {userRole === "admin"
-                  ? "Admin"
-                  : userRole === "traiteur" || isTraiteur
-                    ? "Traiteur"
-                    : userRole === "gp"
-                      ? "GP Voyageur"
-                      : "Client"}
+                        ? styles.roleBadgeSky
+                        : userRole === "admin"
+                          ? styles.roleBadgePurple
+                          : styles.roleBadgeTranslucent,
+                  ]}
+                >
+                  <Ionicons
+                    name={
+                      userRole === "admin"
+                        ? "shield-checkmark"
+                        : userRole === "traiteur" || isTraiteur
+                          ? "restaurant"
+                          : userRole === "gp"
+                            ? "airplane"
+                            : "person"
+                    }
+                    size={12}
+                    color="#FFFFFF"
+                  />
+                  <Text style={styles.roleBadgeText}>
+                    {userRole === "admin"
+                      ? "Administrateur"
+                      : userRole === "traiteur" || isTraiteur
+                        ? "Traiteur Partenaire"
+                        : userRole === "gp"
+                          ? "Transporteur GP"
+                          : "Membre Client"}
+                  </Text>
+                </View>
+              </View>
+
+              <Text style={styles.userEmailText} numberOfLines={1}>
+                {userEmail || "Compte utilisateur"}
               </Text>
+
+              <View style={styles.securityCheckRow}>
+                <Ionicons name="checkmark-circle" size={12} color="#6EE7B7" />
+                <Text style={styles.securityCheckText}>
+                  Profil vérifié • Compte sécurisé
+                </Text>
+              </View>
             </View>
+          </View>
+
+          {/* Raccourcis Directs Commandes & Notifications */}
+          <View style={{ flexDirection: "row", gap: 10 }}>
+            <TouchableOpacity
+              style={[styles.quickOrderBtn, { flex: 1 }]}
+              onPress={() => router.push("/commandes")}
+              activeOpacity={0.85}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="cube-outline" size={15} color="#0B3B24" />
+                <Text style={styles.quickOrderBtnText}>Commandes</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={14} color="#0B3B24" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.quickOrderBtn, { flex: 1 }]}
+              onPress={() => router.push("/notifications" as any)}
+              activeOpacity={0.85}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="notifications-outline" size={15} color="#0B3B24" />
+                <Text style={styles.quickOrderBtnText}>Alertes</Text>
+              </View>
+              {unreadNotifCount > 0 ? (
+                <View style={styles.quickNotifBadge}>
+                  <Text style={styles.quickNotifBadgeText}>
+                    {unreadNotifCount > 9 ? "9+" : unreadNotifCount}
+                  </Text>
+                </View>
+              ) : (
+                <Ionicons name="chevron-forward" size={14} color="#0B3B24" />
+              )}
+            </TouchableOpacity>
           </View>
         </View>
 
+        {/* ── 2. CONTENU PRINCIPAL (FOND CLAIR DOUX #F8FAFC) ── */}
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
@@ -242,84 +343,206 @@ export default function ProfilScreen() {
             </View>
           )}
 
-          {/* CARTE 1: MES INFORMATIONS (Accordéon) */}
-          <View style={styles.card}>
-            <TouchableOpacity
-              style={styles.accordionHeader}
-              onPress={() => setShowInfo(!showInfo)}
-              activeOpacity={0.8}
-            >
-              <View style={styles.accordionTitleRow}>
+          {/* ── SECTION 1 : MES ESPACES MÉTIERS (STYLE WEB) ── */}
+          <View style={styles.sectionCard}>
+            <View style={styles.sectionHeaderRow}>
+              <Text style={styles.sectionTitle}>Mes espaces métiers</Text>
+              <View style={styles.servicesPill}>
+                <Text style={styles.servicesPillText}>SERVICES</Text>
+              </View>
+            </View>
+
+            <View style={styles.servicesList}>
+              {/* Espace Commandes */}
+              <TouchableOpacity
+                style={styles.serviceRow}
+                onPress={() => router.push("/commandes")}
+                activeOpacity={0.7}
+              >
+                <View style={styles.serviceLeft}>
+                  <View style={[styles.serviceIconCircle, { backgroundColor: "#ECFDF5" }]}>
+                    <Ionicons name="cube-outline" size={20} color="#059669" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.serviceTitle}>Mes commandes</Text>
+                    <Text style={styles.serviceSubtitle}>
+                      Suivi traiteur & expéditions GP
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <View style={styles.dividerLine} />
+
+              {/* Centre de Notifications */}
+              <TouchableOpacity
+                style={styles.serviceRow}
+                onPress={() => router.push("/notifications" as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.serviceLeft}>
+                  <View style={[styles.serviceIconCircle, { backgroundColor: "#FDF2F8" }]}>
+                    <Ionicons name="notifications-outline" size={20} color="#DB2777" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Text style={styles.serviceTitle}>Centre de notifications</Text>
+                      {unreadNotifCount > 0 && (
+                        <View style={styles.serviceUnreadBadge}>
+                          <Text style={styles.serviceUnreadBadgeText}>
+                            {unreadNotifCount} {unreadNotifCount > 1 ? "nouvelles" : "nouvelle"}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.serviceSubtitle}>
+                      Alertes devis, acomptes, plats & vols GP
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <View style={styles.dividerLine} />
+
+              {/* Espace Traiteur */}
+              <TouchableOpacity
+                style={styles.serviceRow}
+                onPress={() => router.push("/profil/traiteur" as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.serviceLeft}>
+                  <View style={[styles.serviceIconCircle, { backgroundColor: "#FEF3C7" }]}>
+                    <Ionicons name="restaurant-outline" size={20} color="#D97706" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.serviceTitle}>Espace Traiteur</Text>
+                    <Text style={styles.serviceSubtitle}>
+                      {isTraiteur || userRole === "traiteur"
+                        ? "Gérer ma carte, plats & devis"
+                        : "Devenir traiteur partenaire"}
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <View style={styles.dividerLine} />
+
+              {/* Espace GP */}
+              <TouchableOpacity
+                style={styles.serviceRow}
+                onPress={() => router.push("/profil/gp" as any)}
+                activeOpacity={0.7}
+              >
+                <View style={styles.serviceLeft}>
+                  <View style={[styles.serviceIconCircle, { backgroundColor: "#E0F2FE" }]}>
+                    <Ionicons name="airplane-outline" size={20} color="#0284C7" />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.serviceTitle}>Espace GP Colis</Text>
+                    <Text style={styles.serviceSubtitle}>
+                      {userRole === "gp"
+                        ? "Gérer mes vols & réservations"
+                        : "Proposer des kilos sur un vol"}
+                    </Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              </TouchableOpacity>
+
+              {/* Espace Administration si Admin */}
+              {userRole === "admin" && (
+                <>
+                  <View style={styles.dividerLine} />
+                  <TouchableOpacity
+                    style={styles.serviceRow}
+                    onPress={() => router.push("/admin" as any)}
+                    activeOpacity={0.7}
+                  >
+                    <View style={styles.serviceLeft}>
+                      <View style={[styles.serviceIconCircle, { backgroundColor: "#F3E8FF" }]}>
+                        <Ionicons name="shield-checkmark-outline" size={20} color="#7E22CE" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.serviceTitle}>Console Administration</Text>
+                        <Text style={styles.serviceSubtitle}>
+                          Gestion globale, modération & utilisateurs
+                        </Text>
+                      </View>
+                    </View>
+                    <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+                  </TouchableOpacity>
+                </>
+              )}
+            </View>
+          </View>
+
+          {/* ── SECTION 2 : INFORMATIONS PERSONNELLES (FORMULAIRE MODERNE) ── */}
+          <View style={styles.sectionCard}>
+            <View style={styles.formHeaderRow}>
+              <View style={styles.formHeaderLeft}>
                 <View style={styles.iconCircleGreen}>
                   <Ionicons name="create-outline" size={18} color="#1D6B45" />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Text style={styles.cardTitle}>Mes informations</Text>
-                  <Text style={styles.cardSubtext}>
-                    {showInfo
-                      ? "Masquer les champs d'édition"
-                      : "Consulter et modifier votre profil"}
+                  <Text style={styles.sectionTitle}>Informations personnelles</Text>
+                  <Text style={styles.sectionSubtitle}>
+                    Mettez à jour vos coordonnées pour vos commandes et livraisons.
                   </Text>
                 </View>
               </View>
+            </View>
 
-              <View style={styles.chevronCircle}>
-                <Ionicons
-                  name={showInfo ? "chevron-up" : "chevron-down"}
-                  size={18}
-                  color="#64748B"
-                />
+            {success && (
+              <View style={styles.successBanner}>
+                <Ionicons name="checkmark-circle" size={18} color="#1D6B45" />
+                <Text style={styles.successBannerText}>
+                  Modifications enregistrées avec succès !
+                </Text>
               </View>
-            </TouchableOpacity>
+            )}
 
-            {showInfo && (
-              <View style={styles.accordionBody}>
-                {success && (
-                  <View style={styles.successBanner}>
-                    <Ionicons
-                      name="checkmark-circle"
-                      size={16}
-                      color="#1D6B45"
-                    />
-                    <Text style={styles.successBannerText}>
-                      Profil mis à jour avec succès
-                    </Text>
+            <View style={styles.formFields}>
+              {/* Email (Lecture seule) */}
+              <View style={styles.inputGroup}>
+                <View style={styles.labelRow}>
+                  <Text style={styles.inputLabel}>Adresse Email</Text>
+                  <View style={styles.lockBadge}>
+                    <Ionicons name="lock-closed" size={10} color="#64748B" />
+                    <Text style={styles.lockBadgeText}>Non modifiable</Text>
                   </View>
-                )}
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    <Ionicons name="mail-outline" size={14} color="#1D6B45" />{" "}
-                    Email
-                  </Text>
-                  <View style={styles.disabledInput}>
-                    <Text style={styles.disabledInputText}>{userEmail}</Text>
-                  </View>
-                  <Text style={styles.fieldNote}>
-                    L'email ne peut pas être modifié
-                  </Text>
                 </View>
+                <View style={styles.disabledInput}>
+                  <Ionicons name="mail-outline" size={16} color="#94A3B8" />
+                  <Text style={styles.disabledInputText}>{userEmail}</Text>
+                </View>
+              </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    <Ionicons name="person-outline" size={14} color="#1D6B45" />{" "}
-                    Nom complet
-                  </Text>
+              {/* Nom complet */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>Nom complet *</Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="person-outline" size={16} color="#1D6B45" />
                   <TextInput
                     style={styles.textInput}
                     value={fullName}
                     onChangeText={setFullName}
                     placeholder="Aminata Diallo"
                     placeholderTextColor="#94A3B8"
+                    autoCapitalize="words"
                   />
                 </View>
+              </View>
 
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    <Ionicons name="call-outline" size={14} color="#1D6B45" />{" "}
-                    Téléphone{" "}
-                    <Text style={styles.optionalText}>(optionnel)</Text>
-                  </Text>
+              {/* Téléphone */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  Numéro de téléphone <Text style={styles.optionalText}>(optionnel)</Text>
+                </Text>
+                <View style={styles.inputWrapper}>
+                  <Ionicons name="call-outline" size={16} color="#1D6B45" />
                   <TextInput
                     style={styles.textInput}
                     value={phone}
@@ -339,239 +562,204 @@ export default function ProfilScreen() {
                     maxLength={16}
                   />
                 </View>
-
-                <View style={styles.inputGroup}>
-                  <Text style={styles.inputLabel}>
-                    <Ionicons
-                      name="location-outline"
-                      size={14}
-                      color="#1D6B45"
-                    />{" "}
-                    Ville ou Adresse{" "}
-                    <Text style={styles.optionalText}>(optionnel)</Text>
-                  </Text>
-
-                  <AddressAutocomplete
-                    value={city}
-                    onChangeText={setCity}
-                    onSelectAddress={(item) => {
-                      setCity(item.label);
-                    }}
-                    placeholder="Rechercher une adresse ou une ville (ex: Paris, 10 rue de...)"
-                  />
-                </View>
-
-                <TouchableOpacity
-                  style={[styles.saveBtn, saving && styles.btnDisabled]}
-                  disabled={saving}
-                  activeOpacity={0.85}
-                  onPress={() => updateProfil()}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.saveBtnText}>
-                      Sauvegarder les modifications
-                    </Text>
-                  )}
-                </TouchableOpacity>
               </View>
-            )}
-          </View>
 
-          {/* CARTE 2: MES ACTIVITÉS */}
-          <View style={styles.card}>
-            <Text style={styles.cardSectionHeader}>Mes activités</Text>
-
-            {/* Mes commandes */}
-            <TouchableOpacity
-              style={styles.activityRow}
-              onPress={() => router.push("/commandes")}
-              activeOpacity={0.7}
-            >
-              <View style={styles.activityLeft}>
-                <View style={styles.activityIconCircleGreen}>
-                  <Ionicons name="cube-outline" size={18} color="#1D6B45" />
-                </View>
-                <Text style={styles.activityText}>Mes commandes</Text>
+              {/* Ville ou Adresse de livraison principale */}
+              <View style={styles.inputGroup}>
+                <Text style={styles.inputLabel}>
+                  Ville ou Adresse de livraison principale <Text style={styles.optionalText}>(optionnel)</Text>
+                </Text>
+                <AddressAutocomplete
+                  value={city}
+                  onChangeText={setCity}
+                  onSelectAddress={(item) => {
+                    setCity(item.label);
+                  }}
+                  placeholder="Rechercher une adresse ou une ville (ex: Paris, Dakar...)"
+                />
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
 
-            <View style={styles.rowDivider} />
-
-            {/* Espace Traiteur */}
-            <TouchableOpacity
-              style={styles.activityRow}
-              onPress={() => router.push("/profil/traiteur" as any)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.activityLeft}>
-                <View style={styles.activityIconCircleGold}>
-                  <Ionicons
-                    name="restaurant-outline"
-                    size={18}
-                    color="#D4870A"
-                  />
-                </View>
-                <View>
-                  <Text style={styles.activityText}>Espace Traiteur</Text>
-                  <Text style={styles.activitySubtext}>
-                    {isTraiteur || userRole === "traiteur"
-                      ? "Gérer mes plats & devis"
-                      : "Devenir traiteur partner"}
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-
-            <View style={styles.rowDivider} />
-
-            {/* Espace GP */}
-            <TouchableOpacity
-              style={styles.activityRow}
-              onPress={() => router.push("/profil/gp" as any)}
-              activeOpacity={0.7}
-            >
-              <View style={styles.activityLeft}>
-                <View style={styles.activityIconCircleBlue}>
-                  <Ionicons name="airplane-outline" size={18} color="#2563EB" />
-                </View>
-                <View>
-                  <Text style={styles.activityText}>Espace GP Colis</Text>
-                  <Text style={styles.activitySubtext}>
-                    Publier une annonce de transport
-                  </Text>
-                </View>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-            </TouchableOpacity>
-
-            {/* Espace Administration (Visible UNIQUEMENT si Admin) */}
-            {userRole === "admin" && (
-              <>
-                <View style={styles.rowDivider} />
-                <TouchableOpacity
-                  style={styles.activityRow}
-                  onPress={() => router.push("/admin" as any)}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.activityLeft}>
-                    <View style={styles.activityIconCircleDark}>
-                      <Ionicons
-                        name="shield-checkmark-outline"
-                        size={18}
-                        color="#FBBF24"
-                      />
-                    </View>
-                    <View>
-                      <Text style={styles.activityText}>
-                        Espace Administration
-                      </Text>
-                      <Text style={styles.activitySubtext}>
-                        Gestion globale des modules & modération
-                      </Text>
-                    </View>
+              {/* Bouton de Sauvegarde */}
+              <TouchableOpacity
+                style={[styles.saveBtn, saving && styles.btnDisabled]}
+                disabled={saving}
+                activeOpacity={0.85}
+                onPress={updateProfil}
+              >
+                {saving ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#FFFFFF" />
+                    <Text style={styles.saveBtnText}>Sauvegarder les modifications</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
-                </TouchableOpacity>
-              </>
-            )}
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
 
-          {/* CARTE 3: COMPTE & SÉCURITÉ */}
-          <View style={styles.card}>
+          {/* ── SECTION 3 : GARANTIE DE SÉCURITÉ DABARI (STYLE WEB) ── */}
+          <View style={styles.securityBox}>
+            <View style={styles.securityIconBox}>
+              <Ionicons name="shield-checkmark" size={20} color="#1D6B45" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.securityBoxTitle}>Garantie de Sécurité Dabari</Text>
+              <Text style={styles.securityBoxSub}>
+                Vos informations personnelles et adresses de livraison sont protégées. Aucune donnée sensible n'est partagée sans votre accord.
+              </Text>
+            </View>
+          </View>
+
+          {/* ── SECTION CADRE LÉGAL & CGU ── */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.dangerSectionTitle}>Cadre Légal & Confiance</Text>
+
             <TouchableOpacity
-              style={styles.logoutRow}
+              style={styles.accountActionRow}
               activeOpacity={0.7}
-              onPress={() => disconnect()}
+              onPress={() => router.push("/cgu" as any)}
             >
-              <View style={styles.activityLeft}>
-                <View style={styles.logoutIconCircle}>
-                  <Ionicons name="log-out-outline" size={18} color="#475569" />
+              <View style={styles.accountActionLeft}>
+                <View style={[styles.actionIconCircle, { backgroundColor: "#DCFCE7" }]}>
+                  <Ionicons name="document-text-outline" size={17} color="#166534" />
                 </View>
-                <Text style={styles.logoutText}>Se déconnecter</Text>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountActionText}>Conditions Générales (CGU)</Text>
+                  <Text style={{ fontSize: 11, color: "#64748B", fontWeight: "500" }}>
+                    Cotransportage GP, séquestre Dabari & règles officielles
+                  </Text>
+                </View>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+          </View>
+
+          {/* ── SECTION 4 : GESTION DU COMPTE & DANGER ZONE ── */}
+          <View style={styles.sectionCard}>
+            <Text style={styles.dangerSectionTitle}>Gestion du compte</Text>
+
+            <TouchableOpacity
+              style={styles.accountActionRow}
+              activeOpacity={0.7}
+              onPress={() => setShowLogoutModal(true)}
+            >
+              <View style={styles.accountActionLeft}>
+                <View style={[styles.actionIconCircle, { backgroundColor: "#F1F5F9" }]}>
+                  <Ionicons name="log-out-outline" size={17} color="#475569" />
+                </View>
+                <Text style={styles.accountActionText}>Se déconnecter de la session</Text>
+              </View>
+              <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
             </TouchableOpacity>
 
-            <View style={styles.rowDivider} />
+            <View style={styles.dividerLine} />
 
             <TouchableOpacity
-              style={styles.logoutRow}
+              style={[styles.accountActionRow, { backgroundColor: "#FEF2F2" }]}
               activeOpacity={0.7}
               onPress={() => setShowDeleteModal(true)}
             >
-              <View style={styles.activityLeft}>
-                <View style={styles.deleteIconCircle}>
-                  <Ionicons name="trash-outline" size={18} color="#DC2626" />
+              <View style={styles.accountActionLeft}>
+                <View style={[styles.actionIconCircle, { backgroundColor: "#FEE2E2" }]}>
+                  <Ionicons name="trash-outline" size={17} color="#DC2626" />
                 </View>
-                <Text style={styles.deleteText}>Supprimer mon compte</Text>
+                <Text style={[styles.accountActionText, { color: "#DC2626", fontWeight: "700" }]}>
+                  Supprimer mon compte définitivement
+                </Text>
               </View>
-              <Ionicons name="chevron-forward" size={18} color="#DC2626" />
+              <Ionicons name="chevron-forward" size={16} color="#DC2626" />
             </TouchableOpacity>
           </View>
 
-          <Text style={styles.versionFooter}>Dabari v1.0 — MVP Mobile</Text>
+          <Text style={styles.versionFooter}>Dabari Mobile • Version 1.0 Sécurisée</Text>
         </ScrollView>
 
-        {/* MODALE CONFIRMATION SUPPRESSION DE COMPTE */}
-        {showDeleteModal && (
-          <Modal
-            visible={true}
-            transparent
-            animationType="fade"
-            onRequestClose={() => {
-              if (!deleting) setShowDeleteModal(false);
-            }}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.deleteModalCard}>
-                <View style={styles.deleteIconContainer}>
-                  <Ionicons name="warning-outline" size={32} color="#DC2626" />
-                </View>
+        {/* ── MODALE DE CONFIRMATION DE DÉCONNEXION ── */}
+        <Modal
+          visible={showLogoutModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setShowLogoutModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.dialogCard}>
+              <View style={styles.dialogIconContainer}>
+                <Ionicons name="log-out-outline" size={30} color="#0B3B24" />
+              </View>
 
-                <Text style={styles.deleteModalTitle}>
-                  Supprimer votre compte ?
-                </Text>
+              <Text style={styles.dialogTitle}>Se déconnecter ?</Text>
+              <Text style={styles.dialogSubtext}>
+                Êtes-vous sûr(e) de vouloir vous déconnecter de votre compte Dabari ?
+              </Text>
 
-                <Text style={styles.deleteModalSubtext}>
-                  Êtes-vous sûr(e) de vouloir supprimer définitivement votre compte Dabari ? Cette action est irréversible et supprimera l&apos;ensemble de vos données.
-                </Text>
+              <View style={styles.dialogButtonsRow}>
+                <TouchableOpacity
+                  style={styles.dialogCancelBtn}
+                  onPress={() => setShowLogoutModal(false)}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dialogCancelText}>Annuler</Text>
+                </TouchableOpacity>
 
-                <View style={styles.deleteModalButtonsRow}>
-                  <TouchableOpacity
-                    style={styles.deleteCancelBtn}
-                    onPress={() => setShowDeleteModal(false)}
-                    disabled={deleting}
-                    activeOpacity={0.8}
-                  >
-                    <Text style={styles.deleteCancelText}>Annuler</Text>
-                  </TouchableOpacity>
-
-                  <TouchableOpacity
-                    style={[
-                      styles.deleteConfirmBtn,
-                      deleting && { opacity: 0.7 },
-                    ]}
-                    onPress={confirmDeleteAccount}
-                    disabled={deleting}
-                    activeOpacity={0.85}
-                  >
-                    {deleting ? (
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    ) : (
-                      <Text style={styles.deleteConfirmText}>
-                        Oui, supprimer
-                      </Text>
-                    )}
-                  </TouchableOpacity>
-                </View>
+                <TouchableOpacity
+                  style={styles.dialogConfirmLogoutBtn}
+                  onPress={disconnect}
+                  activeOpacity={0.85}
+                >
+                  <Text style={styles.dialogConfirmLogoutText}>Oui, me déconnecter</Text>
+                </TouchableOpacity>
               </View>
             </View>
-          </Modal>
-        )}
+          </View>
+        </Modal>
+
+        {/* ── MODALE DE CONFIRMATION DE SUPPRESSION DE COMPTE ── */}
+        <Modal
+          visible={showDeleteModal}
+          transparent
+          animationType="fade"
+          onRequestClose={() => {
+            if (!deleting) setShowDeleteModal(false);
+          }}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.dialogCard}>
+              <View style={[styles.dialogIconContainer, { backgroundColor: "#FEE2E2" }]}>
+                <Ionicons name="warning-outline" size={32} color="#DC2626" />
+              </View>
+
+              <Text style={styles.dialogTitle}>Supprimer votre compte ?</Text>
+              <Text style={styles.dialogSubtext}>
+                Cette action est irréversible et supprimera l'ensemble de vos données, commandes et annonces Dabari.
+              </Text>
+
+              <View style={styles.dialogButtonsRow}>
+                <TouchableOpacity
+                  style={styles.dialogCancelBtn}
+                  onPress={() => setShowDeleteModal(false)}
+                  disabled={deleting}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.dialogCancelText}>Annuler</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.dialogConfirmDeleteBtn}
+                  onPress={confirmDeleteAccount}
+                  disabled={deleting}
+                  activeOpacity={0.85}
+                >
+                  {deleting ? (
+                    <ActivityIndicator size="small" color="#FFFFFF" />
+                  ) : (
+                    <Text style={styles.dialogConfirmDeleteText}>Oui, supprimer</Text>
+                  )}
+                </TouchableOpacity>
+              </View>
+            </View>
+          </View>
+        </Modal>
       </SafeAreaView>
     </View>
   );
@@ -580,90 +768,208 @@ export default function ProfilScreen() {
 const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
-    backgroundColor: "#1D6B45",
+    backgroundColor: "#0B3B24",
   },
   container: {
     flex: 1,
-    backgroundColor: "#1D6B45",
+    backgroundColor: "#0B3B24",
   },
   loadingContainer: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#F8FAFC",
     justifyContent: "center",
     alignItems: "center",
+    gap: 12,
   },
   loadingText: {
-    marginTop: 12,
     fontSize: 14,
-    color: "#1D6B45",
-    fontWeight: "600",
+    color: "#0B3B24",
+    fontWeight: "700",
   },
 
+  /* ── Header Hero Banner ── */
   headerCard: {
-    backgroundColor: "#1D6B45",
-    paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 28,
+    backgroundColor: "#0B3B24",
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 18,
+    gap: 14,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 16,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.8)",
-    fontSize: 14,
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  headerLogoutBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    paddingHorizontal: 10,
+    paddingVertical: 5.5,
+    borderRadius: 14,
+  },
+  headerLogoutText: {
+    color: "#FFFFFF",
+    fontSize: 11.5,
     fontWeight: "600",
   },
-  avatarSection: {
+
+  profileIdentityRow: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 14,
   },
   avatarCircle: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    width: 68,
+    height: 68,
+    borderRadius: 22,
+    backgroundColor: "#D4870A",
     borderWidth: 2,
     borderColor: "rgba(255, 255, 255, 0.4)",
     justifyContent: "center",
     alignItems: "center",
-    marginBottom: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 3,
   },
   avatarText: {
-    fontSize: 26,
-    fontWeight: "800",
+    fontSize: 24,
+    fontWeight: "900",
     color: "#FFFFFF",
+    letterSpacing: -0.5,
+  },
+  identityDetails: {
+    flex: 1,
+    gap: 3,
+  },
+  nameAndBadgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  userNameText: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  roleBadgeWrapper: {
+    alignSelf: "flex-start",
+    marginTop: 2,
   },
   roleBadge: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 20,
+    gap: 5,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    borderRadius: 10,
   },
   roleBadgeGold: {
     backgroundColor: "#D4870A",
   },
+  roleBadgeSky: {
+    backgroundColor: "#0284C7",
+  },
+  roleBadgePurple: {
+    backgroundColor: "#9333EA",
+  },
   roleBadgeTranslucent: {
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.25)",
   },
   roleBadgeText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "800",
     color: "#FFFFFF",
   },
+  userEmailText: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.82)",
+    fontWeight: "500",
+  },
+  securityCheckRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 2,
+  },
+  securityCheckText: {
+    fontSize: 10.5,
+    color: "rgba(255, 255, 255, 0.75)",
+    fontWeight: "600",
+  },
 
+  quickOrderBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.08,
+    shadowRadius: 3,
+    elevation: 2,
+  },
+  quickOrderBtnText: {
+    color: "#0B3B24",
+    fontSize: 12.5,
+    fontWeight: "800",
+  },
+  quickNotifBadge: {
+    backgroundColor: "#EF4444",
+    borderRadius: 8,
+    minWidth: 18,
+    height: 18,
+    paddingHorizontal: 4,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  quickNotifBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  serviceUnreadBadge: {
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  serviceUnreadBadgeText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#059669",
+  },
+
+  /* ── Main ScrollView ── */
   mainScrollView: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#F8FAFC",
   },
   scrollContent: {
     paddingHorizontal: 16,
     paddingTop: 16,
     paddingBottom: 40,
-    gap: 14,
+    gap: 16,
   },
 
   errorGlobalBox: {
@@ -678,82 +984,144 @@ const styles = StyleSheet.create({
   },
   errorGlobalText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "600",
     color: "#B91C1C",
   },
 
-  card: {
+  /* ── Section Cards ── */
+  sectionCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
+    borderRadius: 22,
+    padding: 18,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    overflow: "hidden",
+    borderColor: "#E2E8F0",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
-  accordionHeader: {
+  sectionHeaderRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    padding: 16,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    marginBottom: 6,
   },
-  accordionTitleRow: {
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+    letterSpacing: -0.2,
+  },
+  sectionSubtitle: {
+    fontSize: 12,
+    color: "#64748B",
+    marginTop: 2,
+    lineHeight: 16,
+  },
+  servicesPill: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+  },
+  servicesPillText: {
+    fontSize: 9.5,
+    fontWeight: "800",
+    color: "#64748B",
+    letterSpacing: 0.5,
+  },
+
+  servicesList: {
+    gap: 2,
+  },
+  serviceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 10,
+    paddingHorizontal: 4,
+  },
+  serviceLeft: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
     flex: 1,
   },
+  serviceIconCircle: {
+    width: 40,
+    height: 40,
+    borderRadius: 13,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  serviceTitle: {
+    fontSize: 13.5,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  serviceSubtitle: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 1,
+  },
+  dividerLine: {
+    height: 1,
+    backgroundColor: "#F1F5F9",
+    marginVertical: 4,
+  },
+
+  /* ── Formulaire Informations ── */
+  formHeaderRow: {
+    marginBottom: 14,
+    paddingBottom: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  formHeaderLeft: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+  },
   iconCircleGreen: {
     width: 38,
     height: 38,
     borderRadius: 12,
-    backgroundColor: "rgba(29, 107, 69, 0.1)",
-    justifyContent: "center",
+    backgroundColor: "#E8F5E9",
     alignItems: "center",
-  },
-  cardTitle: {
-    fontSize: 15,
-    fontWeight: "700",
-    color: "#1E293B",
-  },
-  cardSubtext: {
-    fontSize: 11,
-    color: "#64748B",
-    marginTop: 2,
-  },
-  chevronCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F1F5F9",
     justifyContent: "center",
-    alignItems: "center",
-  },
-
-  accordionBody: {
-    paddingHorizontal: 16,
-    paddingBottom: 16,
-    paddingTop: 4,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
-    gap: 14,
   },
   successBanner: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#ECFDF5",
     borderWidth: 1,
     borderColor: "#A7F3D0",
-    borderRadius: 12,
-    padding: 10,
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
   },
   successBannerText: {
-    fontSize: 13,
-    color: "#1D6B45",
-    fontWeight: "600",
+    fontSize: 12.5,
+    fontWeight: "700",
+    color: "#166534",
+  },
+
+  formFields: {
+    gap: 14,
   },
   inputGroup: {
     gap: 6,
+  },
+  labelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   inputLabel: {
     fontSize: 12,
@@ -765,171 +1133,164 @@ const styles = StyleSheet.create({
     fontWeight: "400",
     color: "#94A3B8",
   },
+  lockBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 6,
+  },
+  lockBadgeText: {
+    fontSize: 10,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+
   disabledInput: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
     backgroundColor: "#F8FAFC",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 12,
+    borderRadius: 14,
     paddingHorizontal: 14,
-    paddingVertical: 12,
+    paddingVertical: 11,
   },
   disabledInputText: {
     fontSize: 13,
-    color: "#94A3B8",
-    fontWeight: "500",
+    color: "#64748B",
+    fontWeight: "600",
   },
-  fieldNote: {
-    fontSize: 11,
-    color: "#94A3B8",
+
+  inputWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 9,
   },
   textInput: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 11,
+    flex: 1,
     fontSize: 13,
     color: "#0F172A",
+    fontWeight: "600",
+    padding: 0,
   },
-  cityPickerBtn: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
-    borderRadius: 12,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-  },
-  cityPickerBtnText: {
-    fontSize: 13,
-    color: "#0F172A",
-    fontWeight: "500",
-  },
+
   saveBtn: {
     backgroundColor: "#1D6B45",
-    borderRadius: 12,
+    borderRadius: 14,
     paddingVertical: 13,
     alignItems: "center",
-    marginTop: 4,
+    justifyContent: "center",
+    marginTop: 6,
+    shadowColor: "#1D6B45",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 4,
+    elevation: 2,
   },
   saveBtnText: {
     color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 13.5,
+    fontWeight: "800",
   },
   btnDisabled: {
     opacity: 0.6,
   },
 
-  cardSectionHeader: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#1E293B",
-    paddingHorizontal: 16,
-    paddingTop: 16,
-    paddingBottom: 8,
-  },
-  activityRow: {
+  /* ── Reassurance Box ── */
+  securityBox: {
     flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  activityLeft: {
-    flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 12,
-    flex: 1,
+    backgroundColor: "#ECFDF5",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
+    padding: 16,
   },
-  activityIconCircleGreen: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(29, 107, 69, 0.1)",
+  securityIconBox: {
+    width: 36,
+    height: 36,
+    borderRadius: 11,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
     justifyContent: "center",
-    alignItems: "center",
   },
-  activityIconCircleGold: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(212, 135, 10, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
+  securityBoxTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#166534",
   },
-  activityIconCircleBlue: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "rgba(37, 99, 235, 0.1)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  activityIconCircleDark: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#165034",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  logoutRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    paddingHorizontal: 16,
-    paddingVertical: 14,
-  },
-  logoutIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#FEF2F2",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  activityText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#1E293B",
-  },
-  activitySubtext: {
-    fontSize: 11,
-    color: "#64748B",
+  securityBoxSub: {
+    fontSize: 11.5,
+    color: "#15803D",
     marginTop: 2,
-  },
-  rowDivider: {
-    height: 1,
-    backgroundColor: "#F1F5F9",
-    marginHorizontal: 16,
-  },
-  logoutText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#475569",
-  },
-  deleteIconCircle: {
-    width: 38,
-    height: 38,
-    borderRadius: 12,
-    backgroundColor: "#FEF2F2",
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  deleteText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#DC2626",
+    lineHeight: 16,
   },
 
-  /* Modale de suppression de compte */
-  deleteModalCard: {
+  /* ── Danger Zone ── */
+  dangerSectionTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+    color: "#94A3B8",
+    marginBottom: 8,
+  },
+  accountActionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingVertical: 11,
+    paddingHorizontal: 12,
+    borderRadius: 14,
+  },
+  accountActionLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    flex: 1,
+  },
+  actionIconCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  accountActionText: {
+    fontSize: 12.5,
+    fontWeight: "600",
+    color: "#334155",
+  },
+
+  versionFooter: {
+    textAlign: "center",
+    fontSize: 11,
+    color: "#94A3B8",
+    marginTop: 4,
+  },
+
+  /* ── Dialog Modals ── */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
+  dialogCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
+    borderRadius: 26,
     padding: 24,
     width: "100%",
     maxWidth: 360,
@@ -940,35 +1301,35 @@ const styles = StyleSheet.create({
     shadowRadius: 20,
     elevation: 10,
   },
-  deleteIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#FEE2E2",
+  dialogIconContainer: {
+    width: 60,
+    height: 60,
+    borderRadius: 20,
+    backgroundColor: "#E8F5E9",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
+    marginBottom: 14,
   },
-  deleteModalTitle: {
+  dialogTitle: {
     fontSize: 18,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#0F172A",
-    marginBottom: 8,
+    marginBottom: 6,
     textAlign: "center",
   },
-  deleteModalSubtext: {
-    fontSize: 13,
+  dialogSubtext: {
+    fontSize: 12.5,
     color: "#64748B",
     textAlign: "center",
-    lineHeight: 19,
+    lineHeight: 18,
     marginBottom: 20,
   },
-  deleteModalButtonsRow: {
+  dialogButtonsRow: {
     flexDirection: "row",
     gap: 10,
     width: "100%",
   },
-  deleteCancelBtn: {
+  dialogCancelBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 14,
@@ -976,12 +1337,25 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  deleteCancelText: {
+  dialogCancelText: {
     color: "#475569",
     fontSize: 13,
     fontWeight: "700",
   },
-  deleteConfirmBtn: {
+  dialogConfirmLogoutBtn: {
+    flex: 1,
+    paddingVertical: 12,
+    borderRadius: 14,
+    backgroundColor: "#0B3B24",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  dialogConfirmLogoutText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  dialogConfirmDeleteBtn: {
     flex: 1,
     paddingVertical: 12,
     borderRadius: 14,
@@ -989,68 +1363,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  deleteConfirmText: {
+  dialogConfirmDeleteText: {
     color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "800",
-  },
-
-  versionFooter: {
-    textAlign: "center",
-    fontSize: 11,
-    color: "#94A3B8",
-    marginTop: 6,
-  },
-
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  cityModalCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    width: "100%",
-    maxWidth: 360,
-    maxHeight: "80%",
-  },
-  cityModalHeader: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 14,
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
-  },
-  cityModalTitle: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#0F172A",
-  },
-  cityOption: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 8,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F8FAFC",
-  },
-  cityOptionSelected: {
-    backgroundColor: "#E8F5E9",
-    borderRadius: 10,
-  },
-  cityOptionText: {
-    fontSize: 14,
-    color: "#334155",
-    fontWeight: "600",
-  },
-  cityOptionTextSelected: {
-    color: "#1D6B45",
     fontWeight: "800",
   },
 });

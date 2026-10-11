@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useMemo } from "react";
 import { createPortal } from "react-dom";
+import Link from "next/link";
 import {
   FileText,
   CheckCircle2,
@@ -24,6 +25,7 @@ import {
   Check,
   Percent,
   Info,
+  ExternalLink,
 } from "lucide-react";
 import { authFetch } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
@@ -184,6 +186,7 @@ export default function DevisModal({
 
   // Client deposit & refusal states
   const [showAcomptePayModal, setShowAcomptePayModal] = useState(false);
+  const [acompteModeSimule, setAcompteModeSimule] = useState<"cb" | "virement" | "especes">("cb");
   const [payingAcompte, setPayingAcompte] = useState(false);
   const [showRefusalForm, setShowRefusalForm] = useState(false);
   const [refusalMotif, setRefusalMotif] = useState("");
@@ -359,19 +362,33 @@ export default function DevisModal({
     }
   };
 
-  // Client pays deposit under Dabari escrow
-  const handleAcompteAction = async (action: "verser" | "refuser_acompte") => {
+  // Deposit escrow management (simulation / validation / réinitialisation)
+  const handleAcompteAction = async (
+    action: "verser" | "refuser_acompte" | "annuler_reglement"
+  ) => {
     setError(null);
     setPayingAcompte(true);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
-      const transactionRef = `DAB-SEC-${Date.now().toString(36).toUpperCase()}`;
+      const modeSuffix =
+        acompteModeSimule === "cb"
+          ? "CB"
+          : acompteModeSimule === "virement"
+          ? "VIR"
+          : "ESP";
+      const transactionRef =
+        action === "verser"
+          ? `DAB-${modeSuffix}-${Date.now().toString(36).toUpperCase()}`
+          : undefined;
+
+      // Compatibilité totale avec l'API déployée sur Railway (qui attend 'verser' ou 'refuser_acompte')
+      const apiAction = action === "annuler_reglement" ? "refuser_acompte" : action;
 
       const res = await authFetch(`${apiUrl}/commande/traiteur/${commande.id}/devis/acompte`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          action,
+          action: apiAction,
           transaction_ref: transactionRef,
         }),
       });
@@ -386,8 +403,10 @@ export default function DevisModal({
       setShowAcomptePayModal(false);
       setSuccessMessage(
         action === "verser"
-          ? "Acompte consigné sous séquestre Dabari avec succès. Votre réservation est garantie !"
-          : "Choix de règlement complet le jour J enregistré."
+          ? `Acompte (${displayAcompteMontant.toFixed(2)} €) consigné sous séquestre Dabari avec succès. Votre réservation est garantie !`
+          : action === "refuser_acompte"
+          ? "Choix de règlement complet le jour J enregistré."
+          : "Le statut de l'acompte a été réinitialisé en attente."
       );
     } catch (err: any) {
       setError(err.message || "Erreur réseau");
@@ -1003,14 +1022,35 @@ export default function DevisModal({
                     </p>
                   </div>
 
-                  {/* Volet 2 : ACOMPTE */}
-                  <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-0.5 print:p-2">
+                  {/* Volet 2 : ACOMPTE SÉQUESTRÉ INTERACTIF */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (displayAcompteMontant > 0) {
+                        setShowAcomptePayModal(true);
+                      }
+                    }}
+                    className={`p-3.5 rounded-xl border text-left transition-all space-y-0.5 print:p-2 w-full ${
+                      parsedMeta.acompte_paye
+                        ? "bg-emerald-50/70 border-emerald-300 hover:bg-emerald-50 hover:shadow-xs cursor-pointer"
+                        : displayAcompteMontant > 0
+                        ? "bg-white border-emerald-200 hover:border-emerald-400 hover:shadow-xs cursor-pointer group"
+                        : "bg-white border-slate-200 cursor-default"
+                    }`}
+                    title={displayAcompteMontant > 0 ? "Cliquer pour gérer ou régler l'acompte" : undefined}
+                  >
                     <div className="flex items-center justify-between">
-                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                        Acompte de Réservation
+                      <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-emerald-700 transition-colors flex items-center gap-1.5">
+                        Acompte Séquestré
+                        {displayAcompteMontant > 0 && !parsedMeta.acompte_paye && (
+                          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 print:hidden">
+                            Cliquer pour régler
+                          </span>
+                        )}
                       </span>
                       {parsedMeta.acompte_paye ? (
-                        <span className="text-[9px] font-black uppercase text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded">
+                        <span className="text-[9px] font-black uppercase text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <CheckCircle2 size={11} className="text-emerald-600" />
                           Consigné
                         </span>
                       ) : parsedMeta.acompte_type === "obligatoire" ? (
@@ -1031,13 +1071,15 @@ export default function DevisModal({
                       {displayAcompteMontant > 0 ? `${displayAcompteMontant.toFixed(2)} €` : "0.00 €"}
                     </p>
                     <p className="text-[11px] text-slate-500 font-medium print-text-compact">
-                      {parsedMeta.acompte_type === "aucun"
+                      {parsedMeta.acompte_paye
+                        ? "✓ Réglé & consigné sous séquestre Dabari"
+                        : parsedMeta.acompte_type === "aucun"
                         ? "Règlement intégral le jour J"
                         : parsedMeta.acompte_type === "obligatoire"
-                        ? `Acompte requis (${parsedMeta.acompte_pourcentage}%) pour bloquer la date`
-                        : `Acompte suggéré (${parsedMeta.acompte_pourcentage}%) au choix du client`}
+                        ? `Acompte requis (${parsedMeta.acompte_pourcentage}%) • Toucher pour régler`
+                        : `Acompte suggéré (${parsedMeta.acompte_pourcentage}%) • Toucher pour régler`}
                     </p>
-                  </div>
+                  </button>
 
                   {/* Volet 3 : SOLDE RESTANT */}
                   <div className="p-3.5 rounded-xl bg-white border border-slate-200 space-y-0.5 print:p-2">
@@ -1053,14 +1095,23 @@ export default function DevisModal({
                   </div>
                 </div>
 
-                {/* BANDEAU DE STATUT D'ACOMPTE & ACTIONS POUR LE CLIENT */}
+                {/* BANDEAU DE STATUT D'ACOMPTE & ACTIONS */}
                 <div className="pt-2 border-t border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                   <div className="text-xs text-slate-600 print-text-compact">
                     {parsedMeta.acompte_paye ? (
-                      <span className="font-bold text-emerald-800 flex items-center gap-1.5">
-                        <CheckCircle2 size={15} className="text-emerald-600" />
-                        Acompte consigné sous séquestre Dabari (Réf : {parsedMeta.acompte_transaction_ref || devisRefNumber}). Fonds sécurisés.
-                      </span>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="font-bold text-emerald-800 flex items-center gap-1.5">
+                          <CheckCircle2 size={15} className="text-emerald-600" />
+                          Acompte consigné sous séquestre Dabari (Réf : {parsedMeta.acompte_transaction_ref || devisRefNumber}). Fonds sécurisés.
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setShowAcomptePayModal(true)}
+                          className="text-xs font-bold text-emerald-700 underline hover:text-emerald-900 print:hidden"
+                        >
+                          Voir détails / Gérer
+                        </button>
+                      </div>
                     ) : parsedMeta.acompte_type === "aucun" ? (
                       <span>Aucun acompte demandé par le traiteur. Vous réglerez l&apos;intégralité lors de la prestation.</span>
                     ) : (
@@ -1070,27 +1121,40 @@ export default function DevisModal({
                     )}
                   </div>
 
-                  {/* Boutons d'action versement acompte (Client uniquement) */}
-                  {isClient && !isRefused && displayAcompteMontant > 0 && !parsedMeta.acompte_paye && (
+                  {/* Boutons d'action versement acompte */}
+                  {!isRefused && displayAcompteMontant > 0 && (
                     <div className="flex items-center gap-2 print:hidden">
-                      <button
-                        type="button"
-                        onClick={() => setShowAcomptePayModal(true)}
-                        className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm transition-all flex items-center gap-1.5"
-                      >
-                        <CreditCard size={14} />
-                        <span>Verser l&apos;acompte ({displayAcompteMontant.toFixed(2)} €)</span>
-                      </button>
-
-                      {parsedMeta.acompte_type === "optionnel" && !parsedMeta.acompte_choix_jour_j && (
+                      {parsedMeta.acompte_paye ? (
                         <button
                           type="button"
-                          onClick={() => handleAcompteAction("refuser_acompte")}
-                          disabled={payingAcompte}
-                          className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60"
+                          onClick={() => setShowAcomptePayModal(true)}
+                          className="px-3.5 py-1.5 rounded-xl bg-emerald-100 hover:bg-emerald-200 text-emerald-800 text-xs font-black transition-all flex items-center gap-1.5"
                         >
-                          Régler le jour J
+                          <ShieldCheck size={14} className="text-emerald-700" />
+                          <span>Acompte Réglé ({displayAcompteMontant.toFixed(2)} €)</span>
                         </button>
+                      ) : (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() => setShowAcomptePayModal(true)}
+                            className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-black shadow-sm transition-all flex items-center gap-1.5"
+                          >
+                            <CreditCard size={14} />
+                            <span>Régler l&apos;acompte ({displayAcompteMontant.toFixed(2)} €)</span>
+                          </button>
+
+                          {parsedMeta.acompte_type === "optionnel" && !parsedMeta.acompte_choix_jour_j && (
+                            <button
+                              type="button"
+                              onClick={() => handleAcompteAction("refuser_acompte")}
+                              disabled={payingAcompte}
+                              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60"
+                            >
+                              Régler le jour J
+                            </button>
+                          )}
+                        </>
                       )}
                     </div>
                   )}
@@ -1402,25 +1466,43 @@ export default function DevisModal({
               <p>
                 • <strong>Force probante :</strong> Signature électronique certifiée conforme aux articles 1366 et 1367 du Code civil et au règlement européen eIDAS.
               </p>
+              <div className="pt-1 border-t border-slate-200/60 flex items-center justify-between text-[9px] text-slate-500 print:hidden">
+                <span>Séquestre Dabari SAS • Prestation garantie</span>
+                <Link
+                  href="/cgu"
+                  target="_blank"
+                  className="font-bold text-emerald-700 hover:underline flex items-center gap-1"
+                >
+                  Consulter les CGU complètes <ExternalLink size={10} />
+                </Link>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── MODALE INTERACTIVE DE CONSIGNATION D'ACOMPTE CLIENT ── */}
+      {/* ── MODALE INTERACTIVE DE CONSIGNATION D'ACOMPTE CLIENT & TRAITEUR ── */}
       {showAcomptePayModal && (
         <div className="fixed inset-0 z-60 flex items-center justify-center p-3 bg-black/70 backdrop-blur-xs animate-in fade-in duration-150">
-          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-5">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
             <div className="flex items-start justify-between">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-emerald-100 text-emerald-800 flex items-center justify-center">
-                  <CreditCard size={22} />
+                <div
+                  className={`w-10 h-10 rounded-2xl flex items-center justify-center ${
+                    parsedMeta.acompte_paye
+                      ? "bg-emerald-100 text-emerald-800"
+                      : "bg-emerald-50 text-emerald-700"
+                  }`}
+                >
+                  <ShieldCheck size={22} />
                 </div>
                 <div>
                   <h3 className="text-base font-black text-slate-900">
-                    Consignation d&apos;Acompte
+                    {parsedMeta.acompte_paye
+                      ? "Acompte Réglé & Séquestré"
+                      : "Règlement de l'Acompte"}
                   </h3>
-                  <p className="text-xs text-slate-500">Protection sous séquestre Dabari</p>
+                  <p className="text-xs text-slate-500">Garantie transactionnelle Dabari SAS</p>
                 </div>
               </div>
               <button
@@ -1432,62 +1514,174 @@ export default function DevisModal({
               </button>
             </div>
 
-            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <div className="flex items-center justify-between text-xs text-slate-600">
-                <span>Montant total de la prestation :</span>
-                <span className="font-bold text-slate-900">{totalPrix.toFixed(2)} €</span>
-              </div>
-              <div className="flex items-center justify-between text-xs text-slate-600">
-                <span>Acompte à verser maintenant :</span>
-                <span className="font-black text-emerald-700 text-sm">
-                  {displayAcompteMontant.toFixed(2)} €
-                </span>
-              </div>
-              <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600">
-                <span>Solde restant le jour J :</span>
-                <span className="font-bold text-slate-900">
-                  {displaySoldeRestant.toFixed(2)} €
-                </span>
-              </div>
-            </div>
-
-            <div className="p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1.5">
-              <p className="font-bold flex items-center gap-1.5">
-                <ShieldCheck size={15} className="text-blue-700 shrink-0" />
-                Garantie de Séquestre Dabari
+            {/* Cadre Montants */}
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
+              <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
+                {parsedMeta.acompte_paye ? "Acompte sous séquestre" : "Montant de l'acompte"}
+              </span>
+              <p className="text-2xl font-black text-emerald-700">
+                {displayAcompteMontant.toFixed(2)} €
               </p>
-              <p className="text-[11px] text-blue-800 leading-snug">
-                Votre acompte est mis sous séquestre sécurisé. Le chef n&apos;en perçoit le montant qu&apos;une fois la prestation culinaire réalisée le jour convenu.
+              <p className="text-xs text-slate-500 font-medium">
+                Total prestation : {totalPrix.toFixed(2)} € • Solde restant : {displaySoldeRestant.toFixed(2)} €
               </p>
             </div>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2">
-              <button
-                type="button"
-                onClick={() => setShowAcomptePayModal(false)}
-                className="px-4 py-2.5 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-100"
-              >
-                Annuler
-              </button>
-              <button
-                type="button"
-                disabled={payingAcompte}
-                onClick={() => handleAcompteAction("verser")}
-                className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition-all flex items-center gap-2"
-              >
-                {payingAcompte ? (
-                  <>
-                    <Loader2 size={15} className="animate-spin" />
-                    <span>Sécurisation en cours...</span>
-                  </>
-                ) : (
-                  <>
-                    <Check size={16} />
-                    <span>Confirmer le versement ({displayAcompteMontant.toFixed(2)} €)</span>
-                  </>
-                )}
-              </button>
-            </div>
+            {parsedMeta.acompte_paye ? (
+              /* Vue quand l'acompte est déjà réglé */
+              <div className="space-y-3">
+                <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900 font-bold">
+                  <CheckCircle2 size={18} className="text-emerald-700 shrink-0" />
+                  <span>Acompte consigné sous séquestre sécurisé Dabari SAS</span>
+                </div>
+
+                <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2 text-slate-700">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Référence transaction :</span>
+                    <span className="font-mono font-bold text-slate-900">
+                      {parsedMeta.acompte_transaction_ref || devisRefNumber}
+                    </span>
+                  </div>
+                  {parsedMeta.acompte_paye_at && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-slate-500 font-semibold">Date de règlement :</span>
+                      <span className="font-bold text-slate-900">
+                        {new Date(parsedMeta.acompte_paye_at).toLocaleDateString("fr-FR", {
+                          day: "numeric",
+                          month: "short",
+                          year: "numeric",
+                        })}
+                      </span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-500 font-semibold">Statut des fonds :</span>
+                    <span className="font-bold text-emerald-700">Séquestrés & Garantis</span>
+                  </div>
+                </div>
+
+                <p className="text-[11px] text-slate-500 leading-snug bg-slate-100/70 p-2.5 rounded-xl">
+                  Vos fonds sont protégés sur un compte de cantonnement Dabari SAS. Le traiteur a reçu la garantie et le solde restant ({displaySoldeRestant.toFixed(2)} €) sera libéré après l&apos;exécution de la prestation.
+                </p>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowAcomptePayModal(false)}
+                    className="w-full py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition-all shadow-sm"
+                  >
+                    Fermer
+                  </button>
+                  <button
+                    type="button"
+                    disabled={payingAcompte}
+                    onClick={() => handleAcompteAction("annuler_reglement")}
+                    className="text-[11px] text-slate-400 hover:text-slate-600 underline font-semibold py-1"
+                  >
+                    {payingAcompte ? "Réinitialisation..." : "Remettre en attente (Test / Démo)"}
+                  </button>
+                </div>
+              </div>
+            ) : (
+              /* Vue formulaire pour régler l'acompte avec simulation de paiement */
+              <div className="space-y-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-2">
+                    Mode de versement (Simulation) :
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setAcompteModeSimule("cb")}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                        acompteModeSimule === "cb"
+                          ? "bg-emerald-50 border-emerald-600 text-emerald-800 shadow-xs"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                      }`}
+                    >
+                      <CreditCard size={16} />
+                      <span>Carte Bancaire</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAcompteModeSimule("virement")}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                        acompteModeSimule === "virement"
+                          ? "bg-emerald-50 border-emerald-600 text-emerald-800 shadow-xs"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                      }`}
+                    >
+                      <RotateCcw size={16} />
+                      <span>Virement</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAcompteModeSimule("especes")}
+                      className={`py-2 px-2.5 rounded-xl border text-xs font-bold flex flex-col items-center gap-1 transition-all ${
+                        acompteModeSimule === "especes"
+                          ? "bg-emerald-50 border-emerald-600 text-emerald-800 shadow-xs"
+                          : "bg-slate-50 border-slate-200 text-slate-600 hover:bg-white"
+                      }`}
+                    >
+                      <DollarSign size={16} />
+                      <span>Espèces</span>
+                    </button>
+                  </div>
+                </div>
+
+                <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1">
+                  <p className="font-bold flex items-center gap-1.5 text-blue-950">
+                    <ShieldCheck size={15} className="text-blue-700 shrink-0" />
+                    Protection sous séquestre Dabari
+                  </p>
+                  <p className="text-[11px] text-blue-800 leading-snug">
+                    L&apos;acompte garantit la réservation du chef tout en protégeant vos fonds jusqu&apos;au bon déroulement de votre événement.
+                  </p>
+                </div>
+
+                <div className="flex flex-col gap-2 pt-2">
+                  <button
+                    type="button"
+                    disabled={payingAcompte}
+                    onClick={() => handleAcompteAction("verser")}
+                    className="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-2"
+                  >
+                    {payingAcompte ? (
+                      <>
+                        <Loader2 size={15} className="animate-spin" />
+                        <span>Sécurisation sous séquestre...</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={16} />
+                        <span>Valider l&apos;acompte ({displayAcompteMontant.toFixed(2)} €)</span>
+                      </>
+                    )}
+                  </button>
+
+                  {parsedMeta.acompte_type === "optionnel" && (
+                    <button
+                      type="button"
+                      disabled={payingAcompte}
+                      onClick={() => handleAcompteAction("refuser_acompte")}
+                      className="text-xs font-bold text-slate-600 hover:text-slate-900 py-1"
+                    >
+                      Choisir de régler l&apos;intégralité le jour J (Sans acompte)
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setShowAcomptePayModal(false)}
+                    className="text-xs text-slate-400 hover:text-slate-600 py-1"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       )}

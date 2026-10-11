@@ -11,6 +11,7 @@ import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { getSecureToken, deleteSecureToken } from "../utils/storage";
+import { apiFetch } from "../utils/api";
 
 export default function BottomNav() {
   const pathname = usePathname();
@@ -50,15 +51,8 @@ export default function BottomNav() {
           }
         }
 
-        // Fetch des notifications non lues
-        const res = await fetch(
-          `${process.env.EXPO_PUBLIC_API_URL}/notifications`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          }
-        );
+        // Fetch des notifications non lues via apiFetch centralisé
+        const res = await apiFetch("/notifications");
 
         if (res.status === 401) {
           await deleteSecureToken("token");
@@ -79,11 +73,18 @@ export default function BottomNav() {
 
     fetchUserData();
 
-    const sub = DeviceEventEmitter.addListener(
+    const sub1 = DeviceEventEmitter.addListener(
       "dabari_orders_updated",
       fetchUserData,
     );
-    return () => sub.remove();
+    const sub2 = DeviceEventEmitter.addListener(
+      "dabari_notifications_updated",
+      fetchUserData,
+    );
+    return () => {
+      sub1.remove();
+      sub2.remove();
+    };
   }, [pathname]);
 
   // Masquer le BottomNav sur les pages de bienvenue, connexion et inscription

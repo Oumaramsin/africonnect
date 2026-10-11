@@ -8,13 +8,13 @@ import BottomNav from "../components/BottomNav";
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
-      <StatusBar style="dark" />
-      <View style={{ flex: 1 }}>
+      <StatusBar style="light" />
+      <View style={{ flex: 1, backgroundColor: "#0B3B24" }}>
         <Stack
           screenOptions={{
             headerShown: false,
             contentStyle: {
-              backgroundColor: "#F3F4F6",
+              backgroundColor: "#0B3B24",
             },
           }}
         />

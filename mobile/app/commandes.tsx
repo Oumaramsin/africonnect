@@ -1,4 +1,4 @@
-import React, { useState, useCallback } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import {
   StyleSheet,
   Text,
@@ -13,35 +13,23 @@ import {
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter, useFocusEffect } from "expo-router";
+import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
 import { apiFetch } from "../utils/api";
-import { TraiteurRequest, TraiteurProposal, formatWhatsAppUrl } from "../utils/types/traiteur";
+import {
+  TraiteurRequest,
+  TraiteurProposal,
+  CommandeTraiteur,
+  formatWhatsAppUrl,
+} from "../utils/types/traiteur";
 import GpTrackingTimeline, {
   getGpStatusLabel,
 } from "../components/GpTrackingTimeline";
 import SignalGpDelayModal, {
   SignalGpDelayTarget,
 } from "../components/SignalGpDelayModal";
-
-type CommandeTraiteur = {
-  id: string;
-  date_evenement: string;
-  nb_personnes: number;
-  adresse: string;
-  type_evenement: string | null;
-  notes: string | null;
-  statut: string;
-  message_traiteur: string | null;
-  created_at: string;
-  client_id: string;
-  traiteur_id: string;
-  traiteur?: { name: string; whatsapp: string | null } | null;
-  traiteurs?: { name: string; whatsapp: string | null } | null;
-  client?: { full_name: string; phone: string | null } | null;
-  profiles?: { full_name: string; phone: string | null } | null;
-};
+import DevisModal from "../components/DevisModal";
 
 type OrderPlat = {
   id: string;
@@ -130,11 +118,25 @@ type ServiceFilter = "tout" | "traiteur" | "gp";
 
 export default function CommandeScreen() {
   const router = useRouter();
+  const params = useLocalSearchParams<{
+    tab?: string;
+    sub?: string;
+    service?: string;
+    commande_id?: string;
+  }>();
 
   const [tab, setTab] = useState<Tab>("envoyees");
   const [serviceFilter, setServiceFilter] = useState<
     "tout" | "traiteur" | "gp"
   >("tout");
+
+  useEffect(() => {
+    if (params.tab === "gp" || params.service === "gp") {
+      setServiceFilter("gp");
+    } else if (params.tab === "traiteur" || params.service === "traiteur") {
+      setServiceFilter("traiteur");
+    }
+  }, [params.tab, params.service]);
   const [isTraiteur, setIsTraiteur] = useState(false);
   const [isGp, setIsGp] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -165,6 +167,21 @@ export default function CommandeScreen() {
   );
   const [ordersRecues, setOrdersRecues] = useState<OrderPlat[]>([]);
   const [gpRecues, setGpRecues] = useState<GpRequest[]>([]);
+
+  // ── Modal Devis Officiel ──
+  const [selectedDevisCommande, setSelectedDevisCommande] = useState<CommandeTraiteur | null>(null);
+  const [isTraiteurViewForDevis, setIsTraiteurViewForDevis] = useState(false);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+
+  const handleUpdateDevisCommande = (updated: CommandeTraiteur) => {
+    setSelectedDevisCommande(updated);
+    setCommandesEnvoyees((prev) =>
+      prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+    );
+    setCommandesRecues((prev) =>
+      prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
+    );
+  };
 
   // ── Navigation vers les pages dédiées de modification ──
   const openEditCommandeTraiteur = (cmd: CommandeTraiteur) => {
@@ -219,7 +236,7 @@ export default function CommandeScreen() {
         throw new Error(err.error || "Erreur lors de la mise à jour du statut GP");
       }
       Alert.alert(
-        "Étape validée 🎉",
+        "Étape validée",
         `Le colis est maintenant marqué « ${statusLabel} ». L'expéditeur a été notifié.`
       );
       setGpStatusConfirm(null);
@@ -333,6 +350,7 @@ export default function CommandeScreen() {
       }
       const profile = res.data.orders;
       if (!profile) return;
+      if (profile.id) setCurrentUserId(profile.id);
       // ── 1. Commandes envoyées (Client) ──
       setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
       setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
@@ -360,6 +378,27 @@ export default function CommandeScreen() {
         );
         setGpRecues(sortOrdersByPendingFirst(allGpRequestsReceived));
       }
+
+      // ── 5. Auto-ouverture de commande/devis ciblé par une notification ──
+      if (params.commande_id) {
+        const targetCmdEnvoyee = (profile.commandes || []).find(
+          (c: any) => c.id === params.commande_id,
+        );
+        const allCommandes = allTraiteurs.flatMap((t: any) => t.commandes || []);
+        const targetCmdRecue = allCommandes.find(
+          (c: any) => c.id === params.commande_id,
+        );
+
+        if (targetCmdEnvoyee) {
+          setTab("envoyees");
+          setSelectedDevisCommande(targetCmdEnvoyee);
+          setIsTraiteurViewForDevis(false);
+        } else if (targetCmdRecue) {
+          setTab("recues");
+          setSelectedDevisCommande(targetCmdRecue);
+          setIsTraiteurViewForDevis(true);
+        }
+      }
     } catch (error) {
       console.error("Erreur lors de la récupération des commandes:", error);
     } finally {
@@ -380,7 +419,7 @@ export default function CommandeScreen() {
         throw new Error(err.message || "Erreur acceptation proposition");
       }
       Alert.alert(
-        "Offre acceptée ! 🎉",
+        "Offre acceptée !",
         "Vous avez retenu cette offre. Vous pouvez contacter le traiteur par WhatsApp pour organiser votre événement.",
       );
       await loadAll();
@@ -488,12 +527,14 @@ export default function CommandeScreen() {
     }
   };
 
-  const formatDate = (d: string) =>
-    new Date(d).toLocaleDateString("fr-FR", {
-      day: "numeric",
-      month: "long",
-      year: "numeric",
-    });
+  const formatDate = (d?: string | null) =>
+    d
+      ? new Date(d).toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "long",
+          year: "numeric",
+        })
+      : "";
 
   async function handleStatusUpdate(
     actionType:
@@ -619,150 +660,215 @@ export default function CommandeScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
         {/* Header Vert avec Titre et Onglets */}
         <View style={styles.headerCard}>
-          <View style={styles.headerTitleRow}>
-            <Ionicons name="cube-outline" size={24} color="#FFFFFF" />
-            <Text style={styles.headerTitle}>Commandes & Réceptions</Text>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.headerBackBtn}
+              onPress={() => router.push("/accueil")}
+              activeOpacity={0.8}
+            >
+              <Ionicons name="arrow-back" size={20} color="#FFFFFF" />
+            </TouchableOpacity>
+            <View style={styles.headerTitleWrap}>
+              <View style={styles.headerBadge}>
+                <Ionicons name="cube-outline" size={12} color="#FDE68A" />
+                <Text style={styles.headerBadgeText}>Suivi Centralisé</Text>
+              </View>
+              <Text style={styles.headerTitle}>Commandes & Réceptions</Text>
+            </View>
           </View>
+          <Text style={styles.headerSubtitle}>
+            Gérez vos devis traiteur, commandes de plats et colis GP.
+          </Text>
 
-          {/* Onglets Principaux (Mes commandes / Devis & Annonces / Espace Pro) */}
-          <View style={styles.tabsRow}>
-            <TouchableOpacity
-              style={[
-                styles.tabBtn,
-                tab === "envoyees"
-                  ? styles.tabBtnActive
-                  : styles.tabBtnInactive,
-              ]}
-              onPress={() => setTab("envoyees")}
-              activeOpacity={0.8}
+          {/* Onglets Principaux défilables horizontalement (évite tout chevauchement) */}
+          <View style={styles.tabsScrollContainer}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.tabsScrollContent}
             >
-              <Ionicons
-                name="cart-outline"
-                size={16}
-                color={tab === "envoyees" ? "#1D6B45" : "#FFFFFF"}
-              />
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  tab === "envoyees"
-                    ? styles.tabBtnTextActive
-                    : styles.tabBtnTextInactive,
-                ]}
-              >
-                Mes commandes
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
-              style={[
-                styles.tabBtn,
-                tab === "receptions"
-                  ? styles.tabBtnActive
-                  : styles.tabBtnInactive,
-              ]}
-              onPress={() => setTab("receptions")}
-              activeOpacity={0.8}
-            >
-              <Ionicons
-                name="sparkles-outline"
-                size={16}
-                color={tab === "receptions" ? "#1D6B45" : "#FFFFFF"}
-              />
-              <Text
-                style={[
-                  styles.tabBtnText,
-                  tab === "receptions"
-                    ? styles.tabBtnTextActive
-                    : styles.tabBtnTextInactive,
-                ]}
-              >
-                Devis & Annonces
-              </Text>
-
-              {totalPendingProposals > 0 && (
-                <View style={styles.tabBadgeAmber}>
-                  <Text style={styles.tabBadgeAmberText}>
-                    {totalPendingProposals}
-                  </Text>
-                </View>
-              )}
-            </TouchableOpacity>
-
-            {(isTraiteur || isGp) && (
               <TouchableOpacity
                 style={[
                   styles.tabBtn,
-                  tab === "recues"
+                  tab === "envoyees"
                     ? styles.tabBtnActive
                     : styles.tabBtnInactive,
                 ]}
-                onPress={() => setTab("recues")}
+                onPress={() => setTab("envoyees")}
                 activeOpacity={0.8}
               >
                 <Ionicons
-                  name="briefcase-outline"
+                  name="cart-outline"
                   size={16}
-                  color={tab === "recues" ? "#1D6B45" : "#FFFFFF"}
+                  color={tab === "envoyees" ? "#0B3B24" : "#FFFFFF"}
                 />
                 <Text
                   style={[
                     styles.tabBtnText,
-                    tab === "recues"
+                    tab === "envoyees"
                       ? styles.tabBtnTextActive
                       : styles.tabBtnTextInactive,
                   ]}
                 >
-                  Espace Pro
+                  Mes commandes
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.tabBtn,
+                  tab === "receptions"
+                    ? styles.tabBtnActive
+                    : styles.tabBtnInactive,
+                ]}
+                onPress={() => setTab("receptions")}
+                activeOpacity={0.8}
+              >
+                <Ionicons
+                  name="sparkles-outline"
+                  size={16}
+                  color={tab === "receptions" ? "#0B3B24" : "#FFFFFF"}
+                />
+                <Text
+                  style={[
+                    styles.tabBtnText,
+                    tab === "receptions"
+                      ? styles.tabBtnTextActive
+                      : styles.tabBtnTextInactive,
+                  ]}
+                >
+                  Devis & Annonces
                 </Text>
 
-                {pendingRecues > 0 && (
-                  <View style={styles.tabBadgeRed}>
-                    <Text style={styles.tabBadgeRedText}>{pendingRecues}</Text>
+                {totalPendingProposals > 0 && (
+                  <View style={styles.tabBadgeAmberInline}>
+                    <Text style={styles.tabBadgeAmberText}>
+                      {totalPendingProposals}
+                    </Text>
                   </View>
                 )}
               </TouchableOpacity>
-            )}
+
+              {(isTraiteur || isGp) && (
+                <TouchableOpacity
+                  style={[
+                    styles.tabBtn,
+                    tab === "recues"
+                      ? styles.tabBtnActive
+                      : styles.tabBtnInactive,
+                  ]}
+                  onPress={() => setTab("recues")}
+                  activeOpacity={0.8}
+                >
+                  <Ionicons
+                    name="briefcase-outline"
+                    size={16}
+                    color={tab === "recues" ? "#0B3B24" : "#FFFFFF"}
+                  />
+                  <Text
+                    style={[
+                      styles.tabBtnText,
+                      tab === "recues"
+                        ? styles.tabBtnTextActive
+                        : styles.tabBtnTextInactive,
+                    ]}
+                  >
+                    Espace Pro
+                  </Text>
+
+                  {pendingRecues > 0 && (
+                    <View style={styles.tabBadgeRedInline}>
+                      <Text style={styles.tabBadgeRedText}>{pendingRecues}</Text>
+                    </View>
+                  )}
+                </TouchableOpacity>
+              )}
+            </ScrollView>
           </View>
 
-          {/* Sous-filtres Traiteur / GP (masqués sur l'onglet Devis & Annonces) */}
+          {/* Sous-filtres Traiteur / GP avec compteurs dynamiques */}
           {tab !== "receptions" && (
             <ScrollView
               horizontal
               showsHorizontalScrollIndicator={false}
               contentContainerStyle={styles.serviceFiltersRow}
             >
-            {[
-              { id: "tout", label: "Tout voir" },
-              { id: "traiteur", label: "Traiteur & Plats" },
-              { id: "gp", label: "GP Colis" },
-            ].map((f) => (
-              <TouchableOpacity
-                key={f.id}
-                style={[
-                  styles.filterPill,
-                  serviceFilter === f.id
-                    ? styles.filterPillActive
-                    : styles.filterPillInactive,
-                ]}
-                onPress={() => setServiceFilter(f.id as ServiceFilter)}
-                activeOpacity={0.8}
-              >
-                <Text
+              {[
+                {
+                  id: "tout",
+                  label: "Tout voir",
+                  count:
+                    tab === "envoyees"
+                      ? commandesEnvoyees.length +
+                        ordersEnvoyees.length +
+                        gpEnvoyees.length
+                      : commandesRecues.length +
+                        ordersRecues.length +
+                        gpRecues.length,
+                },
+                {
+                  id: "traiteur",
+                  label: "Traiteur & Plats",
+                  count:
+                    tab === "envoyees"
+                      ? commandesEnvoyees.length + ordersEnvoyees.length
+                      : commandesRecues.length + ordersRecues.length,
+                },
+                {
+                  id: "gp",
+                  label: "GP Colis",
+                  count:
+                    tab === "envoyees"
+                      ? gpEnvoyees.length
+                      : gpRecues.length,
+                },
+              ].map((f) => (
+                <TouchableOpacity
+                  key={f.id}
                   style={[
-                    styles.filterPillText,
+                    styles.filterPill,
                     serviceFilter === f.id
-                      ? styles.filterPillTextActive
-                      : styles.filterPillTextInactive,
+                      ? styles.filterPillActive
+                      : styles.filterPillInactive,
                   ]}
+                  onPress={() => setServiceFilter(f.id as ServiceFilter)}
+                  activeOpacity={0.8}
                 >
-                  {f.label}
-                </Text>
-              </TouchableOpacity>
-            ))}
+                  <Text
+                    style={[
+                      styles.filterPillText,
+                      serviceFilter === f.id
+                        ? styles.filterPillTextActive
+                        : styles.filterPillTextInactive,
+                    ]}
+                  >
+                    {f.label}
+                  </Text>
+                  <View
+                    style={[
+                      styles.filterCountBadge,
+                      serviceFilter === f.id
+                        ? styles.filterCountBadgeActive
+                        : styles.filterCountBadgeInactive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.filterCountText,
+                        serviceFilter === f.id
+                          ? styles.filterCountTextActive
+                          : styles.filterCountTextInactive,
+                      ]}
+                    >
+                      {f.count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
             </ScrollView>
           )}
         </View>
@@ -890,6 +996,32 @@ export default function CommandeScreen() {
                                   </View>
                                 )}
                               </View>
+
+                              {/* BOUTON CONSULTER LE DEVIS OFFICIEL */}
+                              <TouchableOpacity
+                                style={styles.openDevisBtn}
+                                activeOpacity={0.85}
+                                onPress={() => {
+                                  setSelectedDevisCommande(cmd);
+                                  setIsTraiteurViewForDevis(false);
+                                }}
+                              >
+                                <Ionicons
+                                  name="document-text-outline"
+                                  size={16}
+                                  color="#FFFFFF"
+                                />
+                                <Text style={styles.openDevisBtnText}>
+                                  {cmd.prix_devis
+                                    ? `Consulter le devis (${Number(cmd.prix_devis).toFixed(2)} €)`
+                                    : "Consulter le devis officiel"}
+                                </Text>
+                                {Boolean(cmd.prix_devis) && !cmd.client_signed_at && (
+                                  <View style={styles.actionPillAmber}>
+                                    <Text style={styles.actionPillAmberText}>À signer</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
 
                               {(cmd.statut === "en_attente" ||
                                 cmd.statut === "pending") && (
@@ -1420,15 +1552,17 @@ export default function CommandeScreen() {
                             </View>
                             {isOpen && (
                               <View style={styles.badgeSuccessSm}>
+                                <Ionicons name="ellipse" size={7} color="#059669" />
                                 <Text style={styles.badgeSuccessSmText}>
-                                  🟢 Active
+                                  Active
                                 </Text>
                               </View>
                             )}
                             {isFulfilled && (
                               <View style={styles.badgeBlueSm}>
+                                <Ionicons name="checkmark-circle" size={11} color="#2563EB" />
                                 <Text style={styles.badgeBlueSmText}>
-                                  🎉 Pourvue
+                                  Pourvue
                                 </Text>
                               </View>
                             )}
@@ -1827,6 +1961,32 @@ export default function CommandeScreen() {
                                   </View>
                                 )}
                               </View>
+
+                              {/* BOUTON GÉRER / CHIFFRER LE DEVIS (TRAITEUR) */}
+                              <TouchableOpacity
+                                style={styles.openDevisBtnTraiteur}
+                                activeOpacity={0.85}
+                                onPress={() => {
+                                  setSelectedDevisCommande(cmd);
+                                  setIsTraiteurViewForDevis(true);
+                                }}
+                              >
+                                <Ionicons
+                                  name="create-outline"
+                                  size={16}
+                                  color="#FFFFFF"
+                                />
+                                <Text style={styles.openDevisBtnText}>
+                                  {cmd.prix_devis
+                                    ? `Gérer le devis (${Number(cmd.prix_devis).toFixed(2)} €)`
+                                    : "Chiffrer le devis officiel"}
+                                </Text>
+                                {!cmd.prix_devis && (
+                                  <View style={styles.actionPillAmber}>
+                                    <Text style={styles.actionPillAmberText}>À chiffrer</Text>
+                                  </View>
+                                )}
+                              </TouchableOpacity>
 
                               {/* BOUTONS D'ACTION RECEVOIR (ACCEPTER / REFUSER) */}
                               {(cmd.statut === "en_attente" ||
@@ -2509,135 +2669,246 @@ export default function CommandeScreen() {
             </View>
           </Modal>
         )}
+
+        {/* MODALE DEVIS TRAITEUR OFFICIEL */}
+        <DevisModal
+          visible={Boolean(selectedDevisCommande)}
+          commande={selectedDevisCommande}
+          currentUserId={currentUserId}
+          isTraiteurView={isTraiteurViewForDevis}
+          onClose={() => setSelectedDevisCommande(null)}
+          onUpdate={handleUpdateDevisCommande}
+        />
       </SafeAreaView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  topGreenWrapper: {
-    flex: 1,
-    backgroundColor: "#165034",
-  },
-  container: {
-    flex: 1,
-    backgroundColor: "#165034",
-  },
-  headerCard: {
-    backgroundColor: "#165034",
-    paddingTop: 12,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-  },
-  headerTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 14,
-  },
-  headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-
-  /* Tabs */
-  tabsRow: {
-    flexDirection: "row",
-    backgroundColor: "rgba(255, 255, 255, 0.15)",
-    borderRadius: 16,
-    padding: 4,
-    gap: 6,
-    marginBottom: 12,
-  },
-  tabBtn: {
-    flex: 1,
+  openDevisBtn: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    paddingVertical: 10,
+    gap: 8,
+    backgroundColor: "#1D6B45",
+    paddingVertical: 11,
+    paddingHorizontal: 14,
     borderRadius: 12,
+    marginTop: 8,
+    shadowColor: "#1D6B45",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.15,
+    shadowRadius: 2,
+    elevation: 2,
+  },
+  openDevisBtnTraiteur: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#0D9488",
+    paddingVertical: 11,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    marginTop: 8,
+  },
+  openDevisBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#FFFFFF",
+  },
+  actionPillAmber: {
+    backgroundColor: "#FEF3C7",
+    paddingHorizontal: 7,
+    paddingVertical: 2,
+    borderRadius: 8,
+  },
+  actionPillAmberText: {
+    fontSize: 10,
+    fontWeight: "800",
+    color: "#92400E",
+  },
+  topGreenWrapper: {
+    flex: 1,
+    backgroundColor: "#0B3B24",
+  },
+  container: {
+    flex: 1,
+    backgroundColor: "#0B3B24",
+  },
+  headerCard: {
+    backgroundColor: "#0B3B24",
+    paddingTop: 8,
+    paddingBottom: 16,
+    paddingHorizontal: 16,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 6,
+  },
+  headerBackBtn: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  headerTitleWrap: {
+    flex: 1,
+  },
+  headerBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(255, 255, 255, 0.16)",
+    paddingHorizontal: 8,
+    paddingVertical: 2.5,
+    borderRadius: 8,
+    gap: 4,
+    marginBottom: 3,
+  },
+  headerBadgeText: {
+    color: "#FDE68A",
+    fontSize: 10.5,
+    fontWeight: "700",
+  },
+  headerTitle: {
+    fontSize: 20,
+    fontWeight: "900",
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+  },
+  headerSubtitle: {
+    fontSize: 12,
+    color: "rgba(255, 255, 255, 0.8)",
+    marginBottom: 12,
+    lineHeight: 16,
+  },
+
+  /* Tabs */
+  tabsScrollContainer: {
+    marginBottom: 10,
+  },
+  tabsScrollContent: {
+    flexDirection: "row",
+    gap: 8,
+    paddingVertical: 2,
+  },
+  tabBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 9,
+    paddingHorizontal: 15,
+    borderRadius: 14,
     gap: 6,
-    position: "relative",
   },
   tabBtnActive: {
     backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.12,
+    shadowRadius: 4,
+    elevation: 3,
   },
   tabBtnInactive: {
-    backgroundColor: "transparent",
+    backgroundColor: "rgba(255, 255, 255, 0.14)",
   },
   tabBtnText: {
-    fontSize: 13,
+    fontSize: 12.5,
     fontWeight: "700",
   },
   tabBtnTextActive: {
-    color: "#1D6B45",
+    color: "#0B3B24",
+    fontWeight: "800",
   },
   tabBtnTextInactive: {
     color: "#FFFFFF",
   },
-  tabBadgeRed: {
-    position: "absolute",
-    top: -4,
-    right: 8,
-    backgroundColor: "#EF4444",
+  tabBadgeAmberInline: {
+    backgroundColor: "#E5A93C",
     borderRadius: 10,
-    minWidth: 18,
-    height: 18,
+    minWidth: 19,
+    height: 19,
+    paddingHorizontal: 5,
     justifyContent: "center",
     alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#165034",
+    marginLeft: 2,
+  },
+  tabBadgeAmberText: {
+    color: "#0B3B24",
+    fontSize: 10.5,
+    fontWeight: "900",
+  },
+  tabBadgeRedInline: {
+    backgroundColor: "#EF4444",
+    borderRadius: 10,
+    minWidth: 19,
+    height: 19,
+    paddingHorizontal: 5,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 2,
   },
   tabBadgeRedText: {
     color: "#FFFFFF",
-    fontSize: 10,
-    fontWeight: "900",
-  },
-  tabBadgeAmber: {
-    position: "absolute",
-    top: -4,
-    right: 8,
-    backgroundColor: "#F59E0B",
-    borderRadius: 10,
-    minWidth: 18,
-    height: 18,
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1.5,
-    borderColor: "#165034",
-  },
-  tabBadgeAmberText: {
-    color: "#0F172A",
-    fontSize: 10,
+    fontSize: 10.5,
     fontWeight: "900",
   },
 
   /* Service Filter Pills */
   serviceFiltersRow: {
     gap: 8,
-    paddingVertical: 4,
+    paddingVertical: 2,
   },
   filterPill: {
-    paddingHorizontal: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
     paddingVertical: 6,
-    borderRadius: 14,
+    borderRadius: 12,
+    gap: 6,
   },
   filterPillActive: {
-    backgroundColor: "#FFFFFF",
+    backgroundColor: "#E5A93C",
   },
   filterPillInactive: {
-    backgroundColor: "rgba(255, 255, 255, 0.18)",
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
   },
   filterPillText: {
-    fontSize: 12,
+    fontSize: 11.5,
     fontWeight: "700",
   },
   filterPillTextActive: {
-    color: "#1D6B45",
+    color: "#0B3B24",
+    fontWeight: "800",
   },
   filterPillTextInactive: {
-    color: "#FFFFFF",
+    color: "rgba(255, 255, 255, 0.85)",
+  },
+  filterCountBadge: {
+    paddingHorizontal: 5,
+    paddingVertical: 1,
+    borderRadius: 8,
+  },
+  filterCountBadgeActive: {
+    backgroundColor: "rgba(11, 59, 36, 0.15)",
+  },
+  filterCountBadgeInactive: {
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+  },
+  filterCountText: {
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  filterCountTextActive: {
+    color: "#0B3B24",
+  },
+  filterCountTextInactive: {
+    color: "rgba(255, 255, 255, 0.8)",
   },
 
   /* Main ScrollView */
@@ -3238,6 +3509,9 @@ const styles = StyleSheet.create({
     fontWeight: "700",
   },
   badgeSuccessSm: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "#ECFDF5",
     paddingHorizontal: 7,
     paddingVertical: 2,
@@ -3251,6 +3525,9 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   badgeBlueSm: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
     backgroundColor: "#EFF6FF",
     paddingHorizontal: 7,
     paddingVertical: 2,

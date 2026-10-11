@@ -385,7 +385,8 @@ export default function EditDevisScreen() {
               mode="date"
               display={Platform.OS === "ios" ? "spinner" : "default"}
               minimumDate={new Date()}
-              onChange={handleDateChange}
+              onValueChange={handleDateChange}
+              onDismiss={() => setShowDatePicker(false)}
             />
           )}
         </View>

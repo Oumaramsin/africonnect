@@ -1,12 +1,32 @@
 import { db } from "../db";
 
 export const updateStateTraiteur = async (id: string, is_active: boolean) => {
-  return await db.traiteur.update({
+  const updated = await db.traiteur.update({
     where: { id: id },
     data: {
       is_active: is_active ? true : false,
     },
   });
+
+  if (updated.user_id) {
+    try {
+      await db.notification.create({
+        data: {
+          user_id: updated.user_id,
+          type: "statut_partenaire",
+          titre: is_active ? "Compte traiteur réactivé" : "Compte traiteur suspendu",
+          message: is_active
+            ? "Votre compte traiteur a été réactivé avec succès par l'administration."
+            : "Votre compte traiteur a été temporairement suspendu par l'administration.",
+          data: { traiteur_id: id, is_active },
+        },
+      });
+    } catch (err) {
+      console.error("Erreur notification statut traiteur:", err);
+    }
+  }
+
+  return updated;
 };
 export const deleteTraiteur = async (id: string) => {
   return await db.$transaction(async (tx) => {
@@ -84,6 +104,21 @@ export const createTraiteurFromUser = async (
         where: { id: userId },
         data: { role: "traiteur" },
       });
+    }
+
+    try {
+      await tx.notification.create({
+        data: {
+          user_id: userId,
+          type: "statut_partenaire",
+          titre: "🎉 Statut Traiteur approuvé !",
+          message:
+            "Félicitations, votre compte a été validé en tant que traiteur partenaire Dabari ! Vous pouvez dès à présent configurer vos menus et recevoir des commandes.",
+          data: { traiteur_id: traiteur.id },
+        },
+      });
+    } catch (err) {
+      console.error("Erreur notification traiteur approuvé:", err);
     }
 
     return traiteur;
@@ -211,6 +246,21 @@ export const createGpFromUser = async (
         where: { id: userId },
         data: { role: "gp" },
       });
+    }
+
+    try {
+      await tx.notification.create({
+        data: {
+          user_id: userId,
+          type: "statut_partenaire",
+          titre: "✈️ Statut GP Transporteur approuvé !",
+          message:
+            "Félicitations, votre profil de transporteur GP Dabari a été approuvé ! Votre premier trajet a été publié avec succès.",
+          data: { listing_id: gpListing.id },
+        },
+      });
+    } catch (err) {
+      console.error("Erreur notification GP approuvé:", err);
     }
 
     return gpListing;

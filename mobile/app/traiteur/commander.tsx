@@ -441,7 +441,8 @@ export default function CommanderScreen() {
                 mode="date"
                 display={Platform.OS === "ios" ? "spinner" : "default"}
                 minimumDate={new Date()}
-                onChange={handleDateChange}
+                onValueChange={handleDateChange}
+                onDismiss={() => setShowDatePicker(false)}
               />
             )}
 
@@ -450,7 +451,8 @@ export default function CommanderScreen() {
                 value={selectedDate}
                 mode="time"
                 display={Platform.OS === "ios" ? "spinner" : "default"}
-                onChange={handleTimeChange}
+                onValueChange={handleTimeChange}
+                onDismiss={() => setShowTimePicker(false)}
               />
             )}
           </View>

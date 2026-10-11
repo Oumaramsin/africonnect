@@ -119,6 +119,7 @@ export default function Navbar() {
     ...(isLoggedIn
       ? [{ href: "/commandes", label: "Mes Commandes", icon: Package, badge: unreadCount }]
       : []),
+    { href: "/cgu", label: "CGU", icon: ShieldCheck },
   ];
 
   const hideNavbarOn = ["/login", "/register", "/reset-password"];
@@ -127,6 +128,7 @@ export default function Navbar() {
   const isHomeDashboard = pathname === "/dashboard" || pathname === "/";
 
   const getMobileTitle = () => {
+    if (pathname.startsWith("/cgu")) return "Conditions d'Utilisation";
     if (pathname.startsWith("/traiteur/demande")) return "Demande de Devis";
     if (pathname.startsWith("/traiteur/commander")) return "Finaliser Commande";
     if (pathname.startsWith("/traiteur")) return "Traiteurs & Menus";
@@ -360,6 +362,15 @@ export default function Navbar() {
                           Panneau Administrateur
                         </Link>
                       )}
+
+                      <Link
+                        href="/cgu"
+                        onClick={() => setIsProfileOpen(false)}
+                        className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 hover:text-slate-900 transition-colors"
+                      >
+                        <ShieldCheck size={16} className="text-slate-400" />
+                        Conditions d&apos;Utilisation (CGU)
+                      </Link>
                     </div>
 
                     <div className="pt-1 border-t border-slate-100">

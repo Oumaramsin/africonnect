@@ -171,6 +171,26 @@ export default function ServicesScreen() {
             <Text style={styles.trustBadgeText}>Support 7j/7</Text>
           </View>
         </View>
+
+        {/* Bannière CGU & Cadre Légal */}
+        <TouchableOpacity
+          style={styles.cguBanner}
+          onPress={() => router.push("/cgu" as any)}
+          activeOpacity={0.8}
+        >
+          <View style={styles.cguBannerLeft}>
+            <View style={styles.cguBannerIcon}>
+              <Ionicons name="document-text-outline" size={20} color="#1D6B45" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.cguBannerTitle}>Conditions Générales (CGU)</Text>
+              <Text style={styles.cguBannerSub}>
+                Cotransportage solidaire, séquestre Dabari & cadre légal
+              </Text>
+            </View>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color="#94A3B8" />
+        </TouchableOpacity>
       </ScrollView>
     </SafeAreaView>
   </View>
@@ -482,5 +502,42 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "600",
     color: "#374151",
+  },
+  cguBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "#FFFFFF",
+    borderRadius: 16,
+    padding: 14,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    marginTop: 14,
+    gap: 8,
+  },
+  cguBannerLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    flex: 1,
+  },
+  cguBannerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#DCFCE7",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cguBannerTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  cguBannerSub: {
+    fontSize: 11,
+    color: "#64748B",
+    marginTop: 2,
+    lineHeight: 15,
   },
 });

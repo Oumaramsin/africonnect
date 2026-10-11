@@ -70,6 +70,17 @@ const schema = z
       message: "Le pays de départ et le pays d'arrivée doivent être différents",
       path: ["arrival_country"],
     },
+  )
+  .refine(
+    (data) => {
+      if (!data.arrival_date || !data.departure_date) return true;
+      return new Date(data.arrival_date) >= new Date(data.departure_date);
+    },
+    {
+      message:
+        "La date de départ ne peut pas être postérieure à la date d'arrivée",
+      path: ["arrival_date"],
+    },
   );
 
 type FormData = z.infer<typeof schema>;
@@ -127,6 +138,7 @@ export default function NouvelleAnnoncePage() {
   const departureCityWatch = watch("departure_city");
   const arrivalCityWatch = watch("arrival_city");
   const departureDateWatch = watch("departure_date");
+  const arrivalDateWatch = watch("arrival_date");
   const pickupAddressWatch = watch("pickup_address");
   const dropoffAddressWatch = watch("dropoff_address");
   const descriptionWatch = watch("description");
@@ -135,6 +147,12 @@ export default function NouvelleAnnoncePage() {
 
   // Calcul du revenu potentiel estimé
   const estimatedRevenue = availableKgWatch * pricePerKgWatch;
+
+  const isDateRangeInvalid = Boolean(
+    departureDateWatch &&
+      arrivalDateWatch &&
+      new Date(departureDateWatch) > new Date(arrivalDateWatch),
+  );
 
   const isFormValid =
     Boolean(departureCityWatch) &&
@@ -150,11 +168,24 @@ export default function NouvelleAnnoncePage() {
     descriptionWatch.trim().length >= 10 &&
     departureCountryWatch.trim().toLowerCase() !==
       arrivalCountryWatch.trim().toLowerCase() &&
+    !isDateRangeInvalid &&
     acceptCharter;
 
   const handlePreSubmit = async (data: FormData) => {
     setError(null);
     setLoading(true);
+
+    if (
+      data.arrival_date &&
+      data.departure_date &&
+      new Date(data.departure_date) > new Date(data.arrival_date)
+    ) {
+      setError(
+        "La date de départ ne peut pas être postérieure à la date d'arrivée.",
+      );
+      setLoading(false);
+      return;
+    }
 
     try {
       // Si le pays de départ est la France, vérifier que l'adresse de dépôt existe bien
@@ -595,13 +626,22 @@ export default function NouvelleAnnoncePage() {
                 {...register("arrival_date")}
                 type="date"
                 min={departureDateWatch || defaultDepartureDate}
-                className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm bg-white font-medium"
+                className={`w-full px-4 py-2.5 rounded-xl border ${
+                  isDateRangeInvalid
+                    ? "border-rose-400 focus:border-rose-500 bg-rose-50/20"
+                    : "border-slate-200 focus:border-[#1D6B45] bg-white"
+                } focus:outline-hidden text-sm font-medium`}
               />
-              {errors.arrival_date && (
+              {isDateRangeInvalid ? (
+                <p className="text-rose-500 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                  <AlertTriangle size={13} />
+                  La date de départ ne peut pas être postérieure à la date d'arrivée.
+                </p>
+              ) : errors.arrival_date ? (
                 <p className="text-rose-500 text-xs mt-1">
                   {errors.arrival_date.message}
                 </p>
-              )}
+              ) : null}
             </div>
 
             <div>

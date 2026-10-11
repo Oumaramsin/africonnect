@@ -19,21 +19,25 @@ import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 
 const CUISINES_PROPOSITIONS = [
-  "Ivoirienne",
   "Sénégalaise",
+  "Ivoirienne",
   "Camerounaise",
   "Congolaise",
   "Malienne",
   "Guinéenne",
+  "Burkinabé",
   "Togolaise",
   "Béninoise",
+  "Afro-Fusion",
 ];
 
 const ZONES_PROPOSITIONS = [
-  "Paris (75)",
-  "Seine-Saint-Denis (93)",
-  "Hauts-de-Seine (92)",
-  "Val-de-Marne (94)",
+  "Paris",
+  "Saint-Denis",
+  "Aubervilliers",
+  "Montreuil",
+  "Créteil",
+  "Vitry-sur-Seine",
   "Toute l'Île-de-France",
   "Lyon",
   "Marseille",
@@ -49,13 +53,12 @@ export default function CreateTraiteurScreen() {
   const [whatsapp, setWhatsapp] = useState("");
   const [imageUri, setImageUri] = useState<string | null>(null);
   const [selectedCuisines, setSelectedCuisines] = useState<string[]>([
-    "Ivoirienne",
+    "Sénégalaise",
   ]);
   const [selectedZones, setSelectedZones] = useState<string[]>([
     "Toute l'Île-de-France",
   ]);
   const [loading, setLoading] = useState(false);
-  const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   useFocusEffect(
@@ -100,31 +103,34 @@ export default function CreateTraiteurScreen() {
   };
 
   const pickImage = async () => {
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      Alert.alert(
-        "Permission refusée",
-        "Permission d'accéder à la galerie refusée !",
-      );
-      return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      setImageUri(result.assets[0].uri);
+    try {
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert(
+          "Permission requise",
+          "Veuillez autoriser l'accès à votre galerie pour ajouter une photo de profil.",
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.warn("Erreur sélection photo:", err);
     }
   };
 
-  const uploadImage = async (token: string): Promise<string | undefined> => {
+  const uploadImage = async (): Promise<string | undefined> => {
     if (!imageUri) return undefined;
-    setUploading(true);
     try {
-      const filename = imageUri.split("/").pop() || "image.jpg";
+      const filename = imageUri.split("/").pop() || "workshop_logo.jpg";
       const match = /\.(\w+)$/.exec(filename);
       const type = match ? `image/${match[1]}` : `image/jpeg`;
 
@@ -145,23 +151,21 @@ export default function CreateTraiteurScreen() {
     } catch (err) {
       console.error("Erreur upload image traiteur:", err);
       return undefined;
-    } finally {
-      setUploading(false);
     }
   };
 
   const handleCreate = async () => {
     setError(null);
     if (!name.trim()) {
-      setError("Veuillez entrer le nom de votre activité traiteur.");
+      setError("Veuillez indiquer le nom de votre atelier traiteur.");
       return;
     }
     if (!bio.trim()) {
-      setError("Veuillez rédiger une courte présentation.");
+      setError("Veuillez rédiger une présentation de votre savoir-faire.");
       return;
     }
     if (selectedCuisines.length === 0) {
-      setError("Veuillez sélectionner au moins une spécialité culinaire.");
+      setError("Sélectionnez au moins une spécialité culinaire.");
       return;
     }
 
@@ -175,7 +179,7 @@ export default function CreateTraiteurScreen() {
     try {
       let uploadedUrl: string | undefined = undefined;
       if (imageUri) {
-        uploadedUrl = await uploadImage(token);
+        uploadedUrl = await uploadImage();
       }
 
       const response = await apiFetch("/traiteur/setup", {
@@ -193,14 +197,14 @@ export default function CreateTraiteurScreen() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la création du profil.");
+        setError(data.message || "Erreur lors de la création du profil traiteur.");
         setLoading(false);
         return;
       }
 
       Alert.alert(
-        "Félicitations ! 🎉",
-        "Votre Espace Traiteur a été créé avec succès !",
+        "Félicitations !",
+        "Votre Atelier Traiteur Dabari a été créé avec succès !",
         [
           {
             text: "Accéder à mon espace",
@@ -210,7 +214,7 @@ export default function CreateTraiteurScreen() {
       );
     } catch (err: any) {
       console.error(err);
-      setError("Impossible de contacter le serveur.");
+      setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
     } finally {
       setLoading(false);
     }
@@ -219,8 +223,9 @@ export default function CreateTraiteurScreen() {
   if (checking) {
     return (
       <View style={[styles.topGreenWrapper, styles.centerLoader]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
         <ActivityIndicator size="large" color="#FFFFFF" />
+        <Text style={styles.checkingText}>Vérification de votre compte...</Text>
       </View>
     );
   }
@@ -228,49 +233,42 @@ export default function CreateTraiteurScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
-        {/* Header Bar */}
-        <View style={styles.headerCard}>
+        {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
+        <View style={styles.headerHero}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.push("/profil")}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name="arrow-back"
-              size={18}
-              color="rgba(255, 255, 255, 0.8)"
-            />
-            <Text style={styles.backBtnText}>Retour Profil</Text>
+            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+            <Text style={styles.backBtnText}>Mon compte</Text>
           </TouchableOpacity>
 
           <View style={styles.heroRow}>
             <View style={styles.heroIconBadge}>
-              <Ionicons name="restaurant" size={28} color="#1D6B45" />
+              <Ionicons name="restaurant" size={26} color="#0B3B24" />
             </View>
             <View style={{ flex: 1 }}>
               <Text style={styles.heroTitle}>Devenir Traiteur Partner</Text>
               <Text style={styles.heroSub}>
-                Faites découvrir vos spécialités et recevez des commandes !
+                Rejoignez Dabari pour valoriser votre cuisine et recevoir des commandes.
               </Text>
             </View>
           </View>
         </View>
 
-        {/* Form Content */}
+        {/* ── FORMULAIRE SCROLLABLE (#F8FAFC) ── */}
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.formCard}>
-            <Text style={styles.cardHeaderTitle}>
-              Créer mon Espace Traiteur
-            </Text>
+            <Text style={styles.cardHeaderTitle}>Activer mon Atelier Traiteur</Text>
             <Text style={styles.cardHeaderSub}>
-              Remplissez les informations principales de votre activité pour
-              commencer.
+              Renseignez les informations de base de votre activité gastronomique.
             </Text>
 
             {error && (
@@ -280,11 +278,9 @@ export default function CreateTraiteurScreen() {
               </View>
             )}
 
-            {/* Photo de profil Traiteur */}
+            {/* Photo / Logo */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                PHOTO DE PROFIL / LOGO ACTIVITÉ
-              </Text>
+              <Text style={styles.fieldLabel}>Logo ou Photo de l'atelier</Text>
               <View style={styles.avatarUploadRow}>
                 <TouchableOpacity
                   style={styles.avatarUploadCircle}
@@ -300,8 +296,8 @@ export default function CreateTraiteurScreen() {
                     <View style={styles.avatarPlaceholderCircle}>
                       <Ionicons
                         name="camera-outline"
-                        size={26}
-                        color="#1D6B45"
+                        size={28}
+                        color="#0B3B24"
                       />
                     </View>
                   )}
@@ -317,14 +313,14 @@ export default function CreateTraiteurScreen() {
                       : "Ajouter une photo de profil"}
                   </Text>
                   <Text style={styles.avatarUploadSub}>
-                    Formats JPG, PNG. Une photo attire plus de clients !
+                    Une photo soignée donne confiance et augmente les demandes !
                   </Text>
                   <TouchableOpacity
                     style={styles.selectImageBtn}
                     onPress={pickImage}
                     activeOpacity={0.8}
                   >
-                    <Ionicons name="image-outline" size={14} color="#1D6B45" />
+                    <Ionicons name="image-outline" size={14} color="#0B3B24" />
                     <Text style={styles.selectImageBtnText}>
                       {imageUri ? "Changer la photo" : "Choisir une photo"}
                     </Text>
@@ -335,22 +331,22 @@ export default function CreateTraiteurScreen() {
 
             {/* Nom de l'activité */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>NOM DE L'ACTIVITÉ *</Text>
+              <Text style={styles.fieldLabel}>Nom de l'activité *</Text>
               <TextInput
                 style={styles.input}
-                placeholder="ex: Délice d'Abidjan, Chez Fatou..."
+                placeholder="Ex : Délices de Dakar, Saveurs d'Abidjan..."
                 placeholderTextColor="#94A3B8"
                 value={name}
                 onChangeText={setName}
               />
             </View>
 
-            {/* Presentation / Bio */}
+            {/* Présentation / Bio */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>PRÉSENTATION & BIO *</Text>
+              <Text style={styles.fieldLabel}>Présentation & Histoire *</Text>
               <TextInput
                 style={[styles.input, styles.textArea]}
-                placeholder="Décrivez vos spécialités, votre savoir-faire et vos plats phares..."
+                placeholder="Décrivez votre savoir-faire, vos spécialités culinaires et vos engagements..."
                 placeholderTextColor="#94A3B8"
                 multiline
                 numberOfLines={3}
@@ -362,7 +358,12 @@ export default function CreateTraiteurScreen() {
 
             {/* Spécialités Culinaires */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>SPÉCIALITÉS CULINAIRES *</Text>
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.fieldLabel}>Spécialités culinaires *</Text>
+                <Text style={styles.fieldHint}>
+                  {selectedCuisines.length} sélectionnée(s)
+                </Text>
+              </View>
               <View style={styles.pillsContainer}>
                 {CUISINES_PROPOSITIONS.map((cuisine) => {
                   const active = selectedCuisines.includes(cuisine);
@@ -374,10 +375,8 @@ export default function CreateTraiteurScreen() {
                       activeOpacity={0.8}
                     >
                       <Ionicons
-                        name={
-                          active ? "checkmark-circle" : "add-circle-outline"
-                        }
-                        size={14}
+                        name={active ? "checkmark" : "add"}
+                        size={13}
                         color={active ? "#FFFFFF" : "#64748B"}
                       />
                       <Text
@@ -396,7 +395,12 @@ export default function CreateTraiteurScreen() {
 
             {/* Zones de livraison */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>ZONES DE LIVRAISON</Text>
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.fieldLabel}>Zones de livraison</Text>
+                <Text style={styles.fieldHint}>
+                  {selectedZones.length} sélectionnée(s)
+                </Text>
+              </View>
               <View style={styles.pillsContainer}>
                 {ZONES_PROPOSITIONS.map((zone) => {
                   const active = selectedZones.includes(zone);
@@ -405,14 +409,14 @@ export default function CreateTraiteurScreen() {
                       key={zone}
                       style={[
                         styles.chipPill,
-                        active && styles.chipPillActiveGold,
+                        active && styles.chipPillActiveGreen,
                       ]}
                       onPress={() => toggleZone(zone)}
                       activeOpacity={0.8}
                     >
                       <Ionicons
-                        name={active ? "location" : "location-outline"}
-                        size={14}
+                        name="location-outline"
+                        size={13}
                         color={active ? "#FFFFFF" : "#64748B"}
                       />
                       <Text
@@ -429,35 +433,49 @@ export default function CreateTraiteurScreen() {
               </View>
             </View>
 
-            {/* WhatsApp Professionnel */}
+            {/* Numéro WhatsApp */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>NUMÉRO WHATSAPP (OPTIONNEL)</Text>
-              <TextInput
-                style={styles.input}
-                placeholder="ex: +33612345678"
-                placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-                value={whatsapp}
-                onChangeText={setWhatsapp}
-              />
+              <Text style={styles.fieldLabel}>Numéro WhatsApp professionnel</Text>
+              <View style={styles.whatsappInputWrapper}>
+                <Ionicons
+                  name="logo-whatsapp"
+                  size={18}
+                  color="#25D366"
+                  style={{ marginLeft: 14 }}
+                />
+                <TextInput
+                  style={styles.whatsappInput}
+                  placeholder="Ex : +33 6 12 34 56 78"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="phone-pad"
+                  value={whatsapp}
+                  onChangeText={setWhatsapp}
+                />
+              </View>
+              <Text style={styles.fieldHelper}>
+                Utilisé pour échanger avec vos clients et valider les détails de devis.
+              </Text>
             </View>
 
-            {/* CTA Submit Button */}
+            {/* Bouton de validation */}
             <TouchableOpacity
-              style={styles.submitBtn}
+              style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
               onPress={handleCreate}
               disabled={loading}
               activeOpacity={0.85}
             >
               {loading ? (
-                <ActivityIndicator color="#FFFFFF" />
+                <View style={styles.savingRow}>
+                  <ActivityIndicator color="#FFFFFF" size="small" />
+                  <Text style={styles.submitBtnText}>Création en cours...</Text>
+                </View>
               ) : (
-                <>
+                <View style={styles.savingRow}>
                   <Text style={styles.submitBtnText}>
-                    Créer mon Espace Traiteur
+                    Activer mon atelier traiteur
                   </Text>
                   <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
-                </>
+                </View>
               )}
             </TouchableOpacity>
           </View>
@@ -470,32 +488,45 @@ export default function CreateTraiteurScreen() {
 const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
   centerLoader: {
     justifyContent: "center",
     alignItems: "center",
+    gap: 12,
+  },
+  checkingText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
-  headerCard: {
-    backgroundColor: "#165034",
+
+  /* Header Hero */
+  headerHero: {
+    backgroundColor: "#0B3B24",
     paddingHorizontal: 20,
-    paddingTop: 12,
-    paddingBottom: 24,
+    paddingTop: 8,
+    paddingBottom: 20,
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 16,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    marginBottom: 14,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.9)",
-    fontSize: 14,
-    fontWeight: "600",
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
   },
   heroRow: {
     flexDirection: "row",
@@ -503,65 +534,64 @@ const styles = StyleSheet.create({
     gap: 14,
   },
   heroIconBadge: {
-    width: 54,
-    height: 54,
-    borderRadius: 27,
+    width: 52,
+    height: 52,
+    borderRadius: 26,
     backgroundColor: "#FFFFFF",
     justifyContent: "center",
     alignItems: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 4,
+    borderWidth: 2,
+    borderColor: "#D4870A",
   },
   heroTitle: {
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#FFFFFF",
-    marginBottom: 2,
+    letterSpacing: -0.3,
   },
   heroSub: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.85)",
+    color: "rgba(255, 255, 255, 0.8)",
+    marginTop: 2,
     lineHeight: 16,
   },
 
+  /* Scrollable Form */
   mainScrollView: {
     flex: 1,
     backgroundColor: "#F8FAFC",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
   },
   scrollContent: {
-    padding: 20,
+    padding: 16,
     paddingBottom: 40,
   },
   formCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 22,
+    borderRadius: 22,
+    padding: 20,
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    shadowColor: "#000",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
-    elevation: 3,
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    gap: 18,
   },
   cardHeaderTitle: {
     fontSize: 18,
     fontWeight: "800",
     color: "#0F172A",
-    marginBottom: 4,
   },
   cardHeaderSub: {
     fontSize: 12,
     color: "#64748B",
-    marginBottom: 20,
-    lineHeight: 18,
+    marginTop: -12,
+    marginBottom: 4,
+    lineHeight: 17,
   },
 
+  /* Error */
   errorBox: {
     flexDirection: "row",
     alignItems: "center",
@@ -571,7 +601,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     padding: 12,
     borderRadius: 14,
-    marginBottom: 16,
   },
   errorText: {
     color: "#B91C1C",
@@ -580,159 +609,204 @@ const styles = StyleSheet.create({
     flex: 1,
   },
 
+  /* Field groups */
   fieldGroup: {
-    marginBottom: 20,
+    gap: 6,
+  },
+  fieldHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
   },
   fieldLabel: {
-    fontSize: 11,
+    fontSize: 12,
     fontWeight: "800",
-    color: "#475569",
-    letterSpacing: 0.6,
-    marginBottom: 8,
+    color: "#334155",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
+  fieldHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94A3B8",
+  },
+  fieldHelper: {
+    fontSize: 11,
+    color: "#94A3B8",
+    lineHeight: 15,
+    marginTop: 2,
+  },
+
+  /* Avatar upload */
+  avatarUploadRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginTop: 4,
+  },
+  avatarUploadCircle: {
+    position: "relative",
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    overflow: "visible",
+  },
+  avatarPreviewImage: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    borderWidth: 2,
+    borderColor: "#D4870A",
+  },
+  avatarPlaceholderCircle: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#ECFDF5",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#D4870A",
+  },
+  cameraBadgeCircle: {
+    position: "absolute",
+    bottom: -2,
+    right: -2,
+    backgroundColor: "#0B3B24",
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#FFFFFF",
+  },
+  avatarUploadInfo: {
+    flex: 1,
+    gap: 3,
+  },
+  avatarUploadTitle: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  avatarUploadSub: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 15,
+  },
+  selectImageBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 4,
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+  },
+  selectImageBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#0B3B24",
+  },
+
+  /* Inputs */
   input: {
     backgroundColor: "#F8FAFC",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 16,
-    paddingHorizontal: 16,
+    borderRadius: 14,
+    paddingHorizontal: 14,
     paddingVertical: 12,
     fontSize: 14,
+    fontWeight: "600",
     color: "#0F172A",
   },
   textArea: {
     minHeight: 80,
+    paddingTop: 12,
   },
 
+  /* Pills */
   pillsContainer: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
+    marginTop: 2,
   },
   chipPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 14,
+    gap: 5,
     backgroundColor: "#F1F5F9",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: "#E2E8F0",
   },
   chipPillActive: {
+    backgroundColor: "#0B3B24",
+    borderColor: "#0B3B24",
+  },
+  chipPillActiveGreen: {
     backgroundColor: "#1D6B45",
     borderColor: "#1D6B45",
   },
-  chipPillActiveGold: {
-    backgroundColor: "#D4870A",
-    borderColor: "#D4870A",
-  },
   chipPillText: {
     fontSize: 12,
-    fontWeight: "600",
+    fontWeight: "700",
     color: "#475569",
   },
   chipPillTextActive: {
     color: "#FFFFFF",
   },
 
-  submitBtn: {
-    backgroundColor: "#1D6B45",
-    borderRadius: 18,
-    paddingVertical: 16,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-    marginTop: 10,
-    shadowColor: "#1D6B45",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 4,
-  },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-
-  /* Avatar Photo Picker */
-  avatarUploadRow: {
+  /* WhatsApp */
+  whatsappInputWrapper: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 16,
     backgroundColor: "#F8FAFC",
-    padding: 14,
-    borderRadius: 20,
     borderWidth: 1,
     borderColor: "#E2E8F0",
+    borderRadius: 14,
   },
-  avatarUploadCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    position: "relative",
-  },
-  avatarPreviewImage: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-  },
-  avatarPlaceholderCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "#E8F5E9",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#C8E6C9",
-  },
-  cameraBadgeCircle: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    width: 22,
-    height: 22,
-    borderRadius: 11,
-    backgroundColor: "#1D6B45",
-    justifyContent: "center",
-    alignItems: "center",
-    borderWidth: 2,
-    borderColor: "#FFFFFF",
-  },
-  avatarUploadInfo: {
+  whatsappInput: {
     flex: 1,
-  },
-  avatarUploadTitle: {
-    fontSize: 13,
-    fontWeight: "700",
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: "600",
     color: "#0F172A",
-    marginBottom: 2,
   },
-  avatarUploadSub: {
-    fontSize: 11,
-    color: "#64748B",
-    marginBottom: 8,
-    lineHeight: 15,
+
+  /* Submit CTA */
+  submitBtn: {
+    backgroundColor: "#1D6B45",
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#1D6B45",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 3,
+    marginTop: 6,
   },
-  selectImageBtn: {
+  submitBtnDisabled: {
+    opacity: 0.65,
+  },
+  savingRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    alignSelf: "flex-start",
-    backgroundColor: "#FFFFFF",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#CBD5E1",
+    gap: 8,
   },
-  selectImageBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#1D6B45",
+  submitBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });

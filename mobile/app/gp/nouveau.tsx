@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -24,6 +24,15 @@ import { verifyAddressExists } from "../../utils/addressValidation";
 
 import { COMMON_CITIES_WITH_OTHER as COMMON_CITIES } from "../../utils/constants/locations";
 
+let DateTimePicker: any = null;
+if (Platform.OS !== "web") {
+  try {
+    DateTimePicker = require("@react-native-community/datetimepicker").default;
+  } catch {
+    DateTimePicker = null;
+  }
+}
+
 const CITIES_DEPARTURE = COMMON_CITIES;
 const COUNTRIES_DEPARTURE = [...GP_COUNTRIES];
 
@@ -33,8 +42,13 @@ const COUNTRIES_ARRIVAL = [...GP_COUNTRIES];
 export default function NouveauGpScreen() {
   const router = useRouter();
 
-  const tomorrow = new Date(Date.now() + 86400000);
-  const minDateStr = tomorrow.toISOString().split("T")[0];
+  const tomorrow = useMemo(() => new Date(Date.now() + 86400000), []);
+  const minDateStr = useMemo(() => tomorrow.toISOString().split("T")[0], [tomorrow]);
+  const minAllowedDate = useMemo(() => {
+    const d = new Date();
+    d.setHours(0, 0, 0, 0);
+    return d;
+  }, []);
 
   const [departureCity, setDepartureCity] = useState("Paris");
   const [isCustomDepartureCity, setIsCustomDepartureCity] = useState(false);
@@ -51,6 +65,8 @@ export default function NouveauGpScreen() {
 
   const [departureDate, setDepartureDate] = useState(minDateStr);
   const [arrivalDate, setArrivalDate] = useState("");
+  const [showDeparturePicker, setShowDeparturePicker] = useState(false);
+  const [showArrivalPicker, setShowArrivalPicker] = useState(false);
   const [flightType, setFlightType] = useState<"direct" | "escale">("direct");
   const [availableKg, setAvailableKg] = useState("");
   const [pricePerKg, setPricePerKg] = useState("");
@@ -178,6 +194,101 @@ export default function NouveauGpScreen() {
     }
   };
 
+  const parseDateSafe = (str: string, fallback: Date): Date => {
+    if (!str) return fallback;
+    const parts = str.split("-");
+    if (parts.length === 3) {
+      const y = parseInt(parts[0], 10);
+      const m = parseInt(parts[1], 10) - 1;
+      const d = parseInt(parts[2], 10);
+      const dt = new Date(y, m, d);
+      if (!isNaN(dt.getTime())) return dt;
+    }
+    return fallback;
+  };
+
+  const toDateString = (d: Date) => {
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
+  const formatDateDisplay = (dateStr: string) => {
+    if (!dateStr) return "";
+    try {
+      const parts = dateStr.split("-");
+      if (parts.length === 3) {
+        const d = new Date(
+          parseInt(parts[0], 10),
+          parseInt(parts[1], 10) - 1,
+          parseInt(parts[2], 10),
+        );
+        return d.toLocaleDateString("fr-FR", {
+          day: "numeric",
+          month: "short",
+          year: "numeric",
+        });
+      }
+      return dateStr;
+    } catch {
+      return dateStr;
+    }
+  };
+
+  const departureDateObj = useMemo(() => {
+    return parseDateSafe(departureDate, tomorrow);
+  }, [departureDate, tomorrow]);
+
+  const arrivalMinDate = useMemo(() => {
+    return parseDateSafe(departureDate, minAllowedDate);
+  }, [departureDate, minAllowedDate]);
+
+  const arrivalDateObj = useMemo(() => {
+    return parseDateSafe(arrivalDate, arrivalMinDate);
+  }, [arrivalDate, arrivalMinDate]);
+
+  const isDateRangeInvalid = useMemo(() => {
+    if (!departureDate || !arrivalDate) return false;
+    return departureDate > arrivalDate;
+  }, [departureDate, arrivalDate]);
+
+  const isDeparturePast = useMemo(() => {
+    if (!departureDate) return false;
+    const d = parseDateSafe(departureDate, new Date());
+    d.setHours(0, 0, 0, 0);
+    return d < minAllowedDate;
+  }, [departureDate, minAllowedDate]);
+
+  const dateError = isDateRangeInvalid
+    ? "La date de départ ne peut pas être postérieure à la date d'arrivée."
+    : isDeparturePast
+    ? "La date de départ ne peut pas être antérieure à aujourd'hui."
+    : null;
+
+  const handleDepartureDateChange = (event: any, selected?: Date) => {
+    if (Platform.OS === "android") setShowDeparturePicker(false);
+    if (event?.type === "dismissed") return;
+    if (selected) {
+      const nextDep = toDateString(selected);
+      setDepartureDate(nextDep);
+      if (arrivalDate && arrivalDate < nextDep) {
+        setArrivalDate("");
+      }
+      setError(null);
+    }
+  };
+
+  const handleArrivalDateChange = (event: any, selected?: Date) => {
+    if (Platform.OS === "android") setShowArrivalPicker(false);
+    if (event?.type === "dismissed") return;
+    if (selected) {
+      const nextArr = toDateString(selected);
+      setArrivalDate(nextArr);
+      setError(null);
+    }
+  };
+
   const kgNum = parseFloat(availableKg.replace(",", "."));
   const priceNum = parseFloat(pricePerKg.replace(",", "."));
   const isKgInvalid = isNaN(kgNum) || kgNum <= 0;
@@ -185,6 +296,7 @@ export default function NouveauGpScreen() {
 
   const isSubmitDisabled =
     Boolean(error) ||
+    Boolean(dateError) ||
     isKgInvalid ||
     isPriceInvalid ||
     loading ||
@@ -244,26 +356,16 @@ export default function NouveauGpScreen() {
       return;
     }
 
-    const selectedDate = new Date(departureDate);
-    const minAllowedDate = new Date();
-    minAllowedDate.setHours(0, 0, 0, 0);
-
-    if (isNaN(selectedDate.getTime()) || selectedDate < minAllowedDate) {
-      setError("La date de départ doit être ultérieure à aujourd'hui.");
+    if (isDateRangeInvalid) {
+      setError(
+        "La date de départ ne peut pas être postérieure à la date d'arrivée.",
+      );
       return;
     }
 
-    if (arrivalDate) {
-      const selectedArrivalDate = new Date(arrivalDate);
-      if (
-        isNaN(selectedArrivalDate.getTime()) ||
-        selectedArrivalDate < selectedDate
-      ) {
-        setError(
-          "La date d'arrivée doit être égale ou postérieure à la date de départ.",
-        );
-        return;
-      }
+    if (isDeparturePast) {
+      setError("La date de départ doit être égale ou ultérieure à aujourd'hui.");
+      return;
     }
 
     // Validation des adresses françaises
@@ -296,7 +398,7 @@ export default function NouveauGpScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
         <View style={styles.headerCard}>
           <TouchableOpacity
@@ -539,49 +641,170 @@ export default function NouveauGpScreen() {
 
             <View style={styles.inputGridRow}>
               <View style={styles.flexField}>
-                <Text style={styles.fieldLabel}>
-                  DATE DE DÉPART *
-                </Text>
-                <View style={styles.dateInputWrapper}>
-                  <Ionicons name="calendar" size={18} color="#1D6B45" />
-                  <TextInput
-                    style={styles.dateInput}
-                    value={departureDate}
-                    onChangeText={setDepartureDate}
-                    onChange={(e: any) => {
-                      if (e?.target?.value) setDepartureDate(e.target.value);
-                    }}
-                    placeholder="AAAA-MM-JJ"
-                    placeholderTextColor="#94A3B8"
-                    {...(Platform.OS === "web"
-                      ? ({ type: "date", min: minDateStr } as any)
-                      : {})}
-                  />
-                </View>
+                <Text style={styles.fieldLabel}>DATE DE DÉPART *</Text>
+                {Platform.OS === "web" ? (
+                  <View
+                    style={[
+                      styles.dateInputWrapper,
+                      isDateRangeInvalid && styles.dateInputWrapperError,
+                    ]}
+                  >
+                    <Ionicons
+                      name="calendar"
+                      size={18}
+                      color={isDateRangeInvalid ? "#EF4444" : "#1D6B45"}
+                    />
+                    <TextInput
+                      style={styles.dateInput}
+                      value={departureDate}
+                      onChangeText={setDepartureDate}
+                      onChange={(e: any) => {
+                        if (e?.target?.value) setDepartureDate(e.target.value);
+                      }}
+                      placeholder="AAAA-MM-JJ"
+                      placeholderTextColor="#94A3B8"
+                      {...({ type: "date", min: minDateStr } as any)}
+                    />
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.datePickerBtn,
+                      isDateRangeInvalid && styles.dateInputWrapperError,
+                    ]}
+                    onPress={() => setShowDeparturePicker(true)}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.datePickerBtnIconBox,
+                        isDateRangeInvalid && styles.datePickerBtnIconBoxError,
+                      ]}
+                    >
+                      <Ionicons
+                        name="calendar"
+                        size={18}
+                        color={isDateRangeInvalid ? "#EF4444" : "#1D6B45"}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text style={styles.datePickerBtnValText} numberOfLines={1}>
+                        {formatDateDisplay(departureDate) || "Choisir date"}
+                      </Text>
+                      <Text style={styles.datePickerBtnSubText}>
+                        {departureDate || "YYYY-MM-DD"}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                )}
               </View>
 
               <View style={styles.flexField}>
-                <Text style={styles.fieldLabel}>
-                  DATE D'ARRIVÉE
-                </Text>
-                <View style={styles.dateInputWrapper}>
-                  <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
-                  <TextInput
-                    style={styles.dateInput}
-                    value={arrivalDate}
-                    onChangeText={setArrivalDate}
-                    onChange={(e: any) => {
-                      if (e?.target?.value) setArrivalDate(e.target.value);
-                    }}
-                    placeholder="AAAA-MM-JJ"
-                    placeholderTextColor="#94A3B8"
-                    {...(Platform.OS === "web"
-                      ? ({ type: "date", min: departureDate || minDateStr } as any)
-                      : {})}
-                  />
+                <View
+                  style={{
+                    flexDirection: "row",
+                    justifyContent: "space-between",
+                    alignItems: "center",
+                  }}
+                >
+                  <Text style={styles.fieldLabel}>DATE D'ARRIVÉE</Text>
+                  {Boolean(arrivalDate) && (
+                    <TouchableOpacity
+                      onPress={() => setArrivalDate("")}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                      style={{ paddingBottom: 2 }}
+                    >
+                      <Text style={styles.clearDateText}>Effacer</Text>
+                    </TouchableOpacity>
+                  )}
                 </View>
+                {Platform.OS === "web" ? (
+                  <View
+                    style={[
+                      styles.dateInputWrapper,
+                      isDateRangeInvalid && styles.dateInputWrapperError,
+                    ]}
+                  >
+                    <Ionicons
+                      name="calendar-outline"
+                      size={18}
+                      color={isDateRangeInvalid ? "#EF4444" : "#1D6B45"}
+                    />
+                    <TextInput
+                      style={styles.dateInput}
+                      value={arrivalDate}
+                      onChangeText={setArrivalDate}
+                      onChange={(e: any) => {
+                        if (e?.target?.value) setArrivalDate(e.target.value);
+                      }}
+                      placeholder="AAAA-MM-JJ"
+                      placeholderTextColor="#94A3B8"
+                      {...({
+                        type: "date",
+                        min: departureDate || minDateStr,
+                      } as any)}
+                    />
+                  </View>
+                ) : (
+                  <TouchableOpacity
+                    style={[
+                      styles.datePickerBtn,
+                      isDateRangeInvalid && styles.dateInputWrapperError,
+                    ]}
+                    onPress={() => setShowArrivalPicker(true)}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.datePickerBtnIconBox,
+                        isDateRangeInvalid && styles.datePickerBtnIconBoxError,
+                      ]}
+                    >
+                      <Ionicons
+                        name="calendar-outline"
+                        size={18}
+                        color={isDateRangeInvalid ? "#EF4444" : "#1D6B45"}
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={[
+                          styles.datePickerBtnValText,
+                          !arrivalDate && styles.datePickerBtnPlaceholder,
+                        ]}
+                        numberOfLines={1}
+                      >
+                        {arrivalDate
+                          ? formatDateDisplay(arrivalDate)
+                          : "Optionnelle"}
+                      </Text>
+                      <Text style={styles.datePickerBtnSubText}>
+                        {arrivalDate ? arrivalDate : "Non renseignée"}
+                      </Text>
+                    </View>
+                    {Boolean(arrivalDate) && (
+                      <TouchableOpacity
+                        onPress={() => setArrivalDate("")}
+                        hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+                      >
+                        <Ionicons
+                          name="close-circle"
+                          size={18}
+                          color="#94A3B8"
+                        />
+                      </TouchableOpacity>
+                    )}
+                  </TouchableOpacity>
+                )}
               </View>
             </View>
+
+            {Boolean(dateError) && (
+              <View style={styles.dateErrorBanner}>
+                <Ionicons name="alert-circle" size={16} color="#DC2626" />
+                <Text style={styles.dateErrorBannerText}>{dateError}</Text>
+              </View>
+            )}
 
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>TYPE DE VOL *</Text>
@@ -1001,27 +1224,135 @@ export default function NouveauGpScreen() {
                 <Ionicons name="checkmark-circle" size={48} color="#1D6B45" />
               </View>
 
-              <Text style={styles.modalTitle}>Annonce publiée ! 🎉</Text>
+              <Text style={styles.modalTitle}>Annonce publiée avec succès !</Text>
               <Text style={styles.modalSub}>
                 Ton annonce est désormais en ligne. Les expéditeurs peuvent
                 réserver des kilos sur ton trajet.
               </Text>
 
               <TouchableOpacity
-                style={[styles.modalConfirmBtn, { width: "100%" }]}
+                style={[
+                  styles.modalConfirmBtn,
+                  {
+                    width: "100%",
+                    flexDirection: "row",
+                    justifyContent: "center",
+                    alignItems: "center",
+                    gap: 6,
+                  },
+                ]}
                 onPress={() => {
                   setShowSuccessModal(false);
-                  router.push("/gp");
+                  router.replace("/profil/gp");
                 }}
                 activeOpacity={0.8}
               >
                 <Text style={styles.modalConfirmBtnText}>
-                  Voir les annonces →
+                  Gérer mes vols GP
                 </Text>
+                <Ionicons name="arrow-forward" size={16} color="#FFFFFF" />
               </TouchableOpacity>
             </View>
           </View>
         </Modal>
+
+        {/* DatePicker Modals / Pickers */}
+        {Platform.OS === "ios" && DateTimePicker && (
+          <>
+            <Modal
+              visible={showDeparturePicker}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setShowDeparturePicker(false)}
+            >
+              <View style={styles.dateModalBackdrop}>
+                <View style={styles.dateModalCard}>
+                  <View style={styles.dateModalHeader}>
+                    <TouchableOpacity
+                      onPress={() => setShowDeparturePicker(false)}
+                    >
+                      <Text style={styles.dateModalCancelText}>Annuler</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateModalTitle}>Date de départ</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowDeparturePicker(false)}
+                    >
+                      <Text style={styles.dateModalConfirmText}>Valider</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={departureDateObj}
+                    mode="date"
+                    display="spinner"
+                    minimumDate={minAllowedDate}
+                    onValueChange={handleDepartureDateChange}
+                    onDismiss={() => setShowDeparturePicker(false)}
+                    textColor="#0F172A"
+                  />
+                </View>
+              </View>
+            </Modal>
+
+            <Modal
+              visible={showArrivalPicker}
+              transparent
+              animationType="fade"
+              onRequestClose={() => setShowArrivalPicker(false)}
+            >
+              <View style={styles.dateModalBackdrop}>
+                <View style={styles.dateModalCard}>
+                  <View style={styles.dateModalHeader}>
+                    <TouchableOpacity
+                      onPress={() => setShowArrivalPicker(false)}
+                    >
+                      <Text style={styles.dateModalCancelText}>Annuler</Text>
+                    </TouchableOpacity>
+                    <Text style={styles.dateModalTitle}>Date d'arrivée</Text>
+                    <TouchableOpacity
+                      onPress={() => setShowArrivalPicker(false)}
+                    >
+                      <Text style={styles.dateModalConfirmText}>Valider</Text>
+                    </TouchableOpacity>
+                  </View>
+                  <DateTimePicker
+                    value={arrivalDateObj}
+                    mode="date"
+                    display="spinner"
+                    minimumDate={arrivalMinDate}
+                    onValueChange={handleArrivalDateChange}
+                    onDismiss={() => setShowArrivalPicker(false)}
+                    textColor="#0F172A"
+                  />
+                </View>
+              </View>
+            </Modal>
+          </>
+        )}
+
+        {Platform.OS === "android" && DateTimePicker && (
+          <>
+            {showDeparturePicker && (
+              <DateTimePicker
+                value={departureDateObj}
+                mode="date"
+                display="default"
+                minimumDate={minAllowedDate}
+                onValueChange={handleDepartureDateChange}
+                onDismiss={() => setShowDeparturePicker(false)}
+              />
+            )}
+            {showArrivalPicker && (
+              <DateTimePicker
+                value={arrivalDateObj}
+                mode="date"
+                display="default"
+                minimumDate={arrivalMinDate}
+                onValueChange={handleArrivalDateChange}
+                onDismiss={() => setShowArrivalPicker(false)}
+              />
+            )}
+          </>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -1030,16 +1361,16 @@ export default function NouveauGpScreen() {
 const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
 
   /* Header Card */
   headerCard: {
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
     paddingHorizontal: 20,
     paddingTop: 12,
     paddingBottom: 20,
@@ -1189,6 +1520,112 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#0F172A",
     fontWeight: "600",
+  },
+  datePickerBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    minHeight: 46,
+  },
+  datePickerBtnIconBox: {
+    width: 32,
+    height: 32,
+    borderRadius: 8,
+    backgroundColor: "#E8F5E9",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  datePickerBtnIconBoxError: {
+    backgroundColor: "#FEE2E2",
+  },
+  datePickerBtnValText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  datePickerBtnSubText: {
+    fontSize: 10,
+    fontWeight: "500",
+    color: "#64748B",
+    marginTop: 1,
+  },
+  datePickerBtnPlaceholder: {
+    color: "#94A3B8",
+    fontWeight: "500",
+  },
+  clearDateText: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#DC2626",
+  },
+  dateErrorBanner: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginTop: 10,
+  },
+  dateErrorBannerText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#B91C1C",
+  },
+  dateInputWrapperError: {
+    borderColor: "#EF4444",
+    backgroundColor: "#FEF2F2",
+  },
+  dateModalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+    justifyContent: "flex-end",
+  },
+  dateModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingBottom: 36,
+    paddingTop: 16,
+    paddingHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: -4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 10,
+  },
+  dateModalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  dateModalTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  dateModalCancelText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#64748B",
+  },
+  dateModalConfirmText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1D6B45",
   },
   multilineInput: {
     minHeight: 80,

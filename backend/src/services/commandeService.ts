@@ -718,6 +718,7 @@ export const cancelClientOrder = async (
     if (type === "traiteur") {
       const commande = await tx.commandeTraiteur.findUnique({
         where: { id },
+        include: { traiteur: true, client: true },
       });
       if (!commande) throw new Error("Commande introuvable");
       if (commande.client_id !== user_id)
@@ -725,27 +726,64 @@ export const cancelClientOrder = async (
       if (commande.statut !== COMMANDE_TRAITEUR_STATUS.EN_ATTENTE)
         throw new Error("Impossible d'annuler une commande déjà traitée");
 
-      return await tx.commandeTraiteur.update({
+      const updated = await tx.commandeTraiteur.update({
         where: { id },
         data: { statut: COMMANDE_TRAITEUR_STATUS.ANNULEE },
       });
+
+      if (commande.traiteur?.user_id) {
+        try {
+          await tx.notification.create({
+            data: {
+              user_id: commande.traiteur.user_id,
+              type: "commande_annulee",
+              titre: "Commande annulée par le client",
+              message: `Le client ${commande.client?.full_name || ""} a annulé sa commande pour le ${new Date(commande.date_evenement).toLocaleDateString("fr-FR")}.`,
+              data: { commande_id: id },
+            },
+          });
+        } catch (notifErr) {
+          console.error("Erreur notification annulation commande:", notifErr);
+        }
+      }
+
+      return updated;
     } else if (type === "order") {
       const order = await tx.order.findUnique({
         where: { id },
+        include: { traiteur: true, client: true },
       });
       if (!order) throw new Error("Commande introuvable");
       if (order.client_id !== user_id) throw new Error("Action non autorisée");
       if (order.status !== ORDER_PLAT_STATUS.PENDING)
         throw new Error("Impossible d'annuler une commande déjà traitée");
 
-      return await tx.order.update({
+      const updated = await tx.order.update({
         where: { id },
         data: { status: ORDER_PLAT_STATUS.CANCELLED },
       });
+
+      if (order.traiteur?.user_id) {
+        try {
+          await tx.notification.create({
+            data: {
+              user_id: order.traiteur.user_id,
+              type: "order_annulee",
+              titre: "Commande de plats annulée",
+              message: `Le client ${order.client?.full_name || ""} a annulé sa commande de plats (${Number(order.total_amount).toFixed(2)} €).`,
+              data: { order_id: id },
+            },
+          });
+        } catch (notifErr) {
+          console.error("Erreur notification annulation plat:", notifErr);
+        }
+      }
+
+      return updated;
     } else if (type === "gp") {
       const request = await tx.gpRequest.findUnique({
         where: { id },
-        include: { listing: true },
+        include: { listing: true, sender: true },
       });
       if (!request) throw new Error("Demande GP introuvable");
       if (request.sender_id !== user_id)
@@ -764,10 +802,28 @@ export const cancelClientOrder = async (
         });
       }
 
-      return await tx.gpRequest.update({
+      const updated = await tx.gpRequest.update({
         where: { id },
         data: { status: GP_REQUEST_STATUS.CANCELLED },
       });
+
+      if (request.listing?.gp_id) {
+        try {
+          await tx.notification.create({
+            data: {
+              user_id: request.listing.gp_id,
+              type: "gp_demande_annulee",
+              titre: "Demande de colis annulée",
+              message: `L'expéditeur ${request.sender?.full_name || ""} a annulé sa demande (${request.weight_kg} kg) sur votre trajet. Vos kilos ont été recrédités.`,
+              data: { request_id: id, listing_id: request.listing_id },
+            },
+          });
+        } catch (notifErr) {
+          console.error("Erreur notification annulation GP:", notifErr);
+        }
+      }
+
+      return updated;
     }
     throw new Error("Type de commande inconnu");
   });
@@ -1257,7 +1313,7 @@ export const payerAcompteCommandeTraiteurDevis = async (
   commandeId: string,
   userId: string,
   isAdmin: boolean,
-  action: "verser" | "refuser_acompte",
+  action: "verser" | "refuser_acompte" | "annuler_reglement",
   transactionRef?: string,
 ) => {
   return await db.$transaction(async (tx) => {
@@ -1274,8 +1330,9 @@ export const payerAcompteCommandeTraiteurDevis = async (
     }
 
     const isClient = commande.client_id === userId;
-    if (!isClient && !isAdmin) {
-      throw new Error("Seul le client peut effectuer cette opération d'acompte.");
+    const isTraiteur = commande.traiteur?.user_id === userId;
+    if (!isClient && !isTraiteur && !isAdmin) {
+      throw new Error("Vous n'êtes pas partie prenante à ce devis.");
     }
 
     const meta = parseDevisConditionsMeta(commande.conditions_devis);
@@ -1285,9 +1342,15 @@ export const payerAcompteCommandeTraiteurDevis = async (
       meta.acompte_paye_at = new Date().toISOString();
       meta.acompte_transaction_ref =
         transactionRef || `DAB-SEC-${Date.now().toString(36).toUpperCase()}`;
-    } else {
+      meta.acompte_choix_jour_j = false;
+    } else if (action === "refuser_acompte") {
       meta.acompte_paye = false;
       meta.acompte_choix_jour_j = true;
+    } else if (action === "annuler_reglement") {
+      meta.acompte_paye = false;
+      meta.acompte_paye_at = null;
+      meta.acompte_transaction_ref = null;
+      meta.acompte_choix_jour_j = false;
     }
 
     const updated = await tx.commandeTraiteur.update({
@@ -1301,21 +1364,31 @@ export const payerAcompteCommandeTraiteurDevis = async (
       },
     });
 
-    if (commande.traiteur?.user_id) {
+    const recipientUserId = isClient ? commande.traiteur?.user_id : commande.client_id;
+    if (recipientUserId) {
       try {
         const montant = meta.acompte_montant || 0;
         await tx.notification.create({
           data: {
-            user_id: commande.traiteur.user_id,
-            type: action === "verser" ? "devis_acompte_verse" : "devis_acompte_refuse",
+            user_id: recipientUserId,
+            type:
+              action === "verser"
+                ? "devis_acompte_verse"
+                : action === "refuser_acompte"
+                ? "devis_acompte_refuse"
+                : "devis_acompte_annule",
             titre:
               action === "verser"
                 ? "Acompte sous séquestre validé !"
-                : "Choix de règlement le jour J",
+                : action === "refuser_acompte"
+                ? "Règlement prévu le jour J"
+                : "Règlement d'acompte réinitialisé",
             message:
               action === "verser"
-                ? `Le client a consigné l'acompte de ${montant} € sous séquestre sécurisé Dabari pour votre événement. Prestation confirmée !`
-                : `Le client a choisi de régler le montant total le jour de la prestation selon vos conditions.`,
+                ? `${isClient ? "Le client" : "Le traiteur"} a validé le règlement de l'acompte (${montant} €) sous séquestre Dabari. Prestation confirmée !`
+                : action === "refuser_acompte"
+                ? `${isClient ? "Le client" : "Le traiteur"} a convenu d'un règlement du solde le jour de l'événement.`
+                : "Le statut de l'acompte a été réinitialisé en attente.",
             data: {
               commande_id: commandeId,
               acompte_montant: montant,

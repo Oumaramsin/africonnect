@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -8,8 +8,8 @@ import {
   StatusBar,
   TextInput,
   Image,
-  Modal,
   ActivityIndicator,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -19,13 +19,16 @@ import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 
 const CUISINES = [
-  "sénégalais",
-  "ivoirien",
-  "camerounais",
-  "congolais",
-  "malien",
-  "guinéen",
-  "burkinabé",
+  "Sénégalais",
+  "Ivoirien",
+  "Camerounais",
+  "Congolais",
+  "Malien",
+  "Guinéen",
+  "Burkinabé",
+  "Togolais",
+  "Béninois",
+  "Afro-Fusion",
 ];
 
 const ZONES = [
@@ -35,8 +38,11 @@ const ZONES = [
   "Montreuil",
   "Créteil",
   "Vitry-sur-Seine",
+  "Toute l'Île-de-France",
   "Lyon",
   "Marseille",
+  "Bordeaux",
+  "Lille",
 ];
 
 export default function EditTraiteurProfileScreen() {
@@ -45,21 +51,33 @@ export default function EditTraiteurProfileScreen() {
 
   const [name, setName] = useState((params.name as string) || "");
   const [bio, setBio] = useState((params.bio as string) || "");
-  const [selectedCuisines, setSelectedCuisines] = useState<string[]>(
-    params.cuisines ? JSON.parse(params.cuisines as string) : [],
-  );
-  const [selectedZones, setSelectedZones] = useState<string[]>(
-    params.zones ? JSON.parse(params.zones as string) : [],
-  );
+  const [selectedCuisines, setSelectedCuisines] = useState<string[]>(() => {
+    if (params.cuisines) {
+      try {
+        return JSON.parse(params.cuisines as string);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
+  const [selectedZones, setSelectedZones] = useState<string[]>(() => {
+    if (params.zones) {
+      try {
+        return JSON.parse(params.zones as string);
+      } catch (e) {
+        return [];
+      }
+    }
+    return [];
+  });
   const [whatsapp, setWhatsapp] = useState((params.whatsapp as string) || "");
   const [imageUri, setImageUri] = useState<string | null>(
     (params.image_url as string) || null,
   );
 
   const [saving, setSaving] = useState(false);
-  const [confirmation, setConfirmAction] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
 
   const toggleCuisine = (cuisine: string) => {
     setSelectedCuisines((prev) =>
@@ -76,90 +94,119 @@ export default function EditTraiteurProfileScreen() {
   };
 
   const pickImage = async () => {
-    const permissionResult =
-      await ImagePicker.requestMediaLibraryPermissionsAsync();
-    if (!permissionResult.granted) {
-      alert("Permission d'accéder à la galerie refusée !");
-      return;
-    }
-    // Ouvrir la galerie système
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsEditing: true,
-      aspect: [1, 1],
-      quality: 0.8,
-    });
-    if (!result.canceled && result.assets[0]) {
-      const selectedUri = result.assets[0].uri;
-      setImageUri(selectedUri);
+    try {
+      const permissionResult =
+        await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (!permissionResult.granted) {
+        Alert.alert(
+          "Permission requise",
+          "Veuillez autoriser l'accès à vos photos pour changer la photo de profil.",
+        );
+        return;
+      }
+
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.8,
+      });
+
+      if (!result.canceled && result.assets && result.assets[0]) {
+        setImageUri(result.assets[0].uri);
+      }
+    } catch (err) {
+      console.warn("Erreur sélection photo:", err);
     }
   };
 
-  const uploadImage = async () => {
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-    if (!imageUri) return;
-    setUploading(true);
+  const uploadLocalImage = async (localUri: string): Promise<string | null> => {
     try {
       const formData = new FormData();
-      const filename = imageUri.split("/").pop() || "photo.jpg";
+      const filename = localUri.split("/").pop() || "workshop_logo.jpg";
       const match = /\.(\w+)$/.exec(filename);
       const type = match ? `image/${match[1]}` : `image/jpeg`;
 
       formData.append("file", {
-        uri: imageUri,
+        uri: localUri,
         name: filename,
         type: type,
       } as any);
+
       const response = await apiFetch("/upload/single", {
         method: "POST",
         body: formData,
       });
+
       const data = await response.json();
-      return data.url;
-    } catch (error) {
-      console.error("Erreur upload:", error);
-    } finally {
-      setUploading(false);
+      return data.url || null;
+    } catch (err) {
+      console.error("Erreur upload photo profil:", err);
+      return null;
     }
   };
 
   const handleSubmit = async () => {
-    setSaving(true);
     setError(null);
+
+    if (!name.trim()) {
+      setError("Veuillez indiquer le nom de votre enseigne / atelier.");
+      return;
+    }
+
+    if (selectedCuisines.length === 0) {
+      setError("Sélectionnez au moins une spécialité culinaire.");
+      return;
+    }
+
+    setSaving(true);
+
     try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
       let finalImageUrl = imageUri;
-      if (imageUri) {
-        const uploadedUrl = await uploadImage();
+
+      // Télécharger uniquement si l'image est un nouveau fichier local
+      if (imageUri && !imageUri.startsWith("http")) {
+        const uploadedUrl = await uploadLocalImage(imageUri);
         if (!uploadedUrl) {
-          setError("Échec de l'envoi de la photo de profil.");
+          setError("Échec de l'envoi de la photo de l'atelier.");
           setSaving(false);
           return;
         }
         finalImageUrl = uploadedUrl;
       }
+
       const response = await apiFetch("/traiteur/profile", {
         method: "PATCH",
         body: JSON.stringify({
-          name,
-          bio,
+          name: name.trim(),
+          bio: bio.trim(),
           cuisine_type: selectedCuisines,
           delivery_zones: selectedZones,
-          whatsapp,
+          whatsapp: whatsapp.trim(),
           image_url: finalImageUrl,
         }),
       });
+
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la sauvegarde du profil");
+        setError(
+          data.error ||
+            data.message ||
+            "Erreur lors de la sauvegarde du profil traiteur.",
+        );
         return;
       }
-      router.push("/profil/traiteur");
+
+      router.replace("/profil/traiteur");
     } catch (err: any) {
-      setError("Erreur de connexion au serveur");
+      console.error("Erreur sauvegarde:", err);
+      setError("Erreur de connexion avec le serveur.");
     } finally {
       setSaving(false);
     }
@@ -168,54 +215,43 @@ export default function EditTraiteurProfileScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
-        {/* Top Header Card Vert Émeraude */}
-        <View style={styles.headerCard}>
+        {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
+        <View style={styles.headerHero}>
           <TouchableOpacity
             style={styles.backBtn}
             onPress={() => router.push("/profil/traiteur")}
             activeOpacity={0.7}
           >
-            <Ionicons
-              name="arrow-back"
-              size={18}
-              color="rgba(255, 255, 255, 0.8)"
-            />
-            <Text style={styles.backBtnText}>Retour</Text>
+            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+            <Text style={styles.backBtnText}>Mon atelier</Text>
           </TouchableOpacity>
 
-          <Text style={styles.headerTitle}>Modifier mon profil</Text>
+          <Text style={styles.headerTitle}>Modifier mon enseigne</Text>
           <Text style={styles.headerSubtitle}>
-            Mets à jour tes informations d'activité traiteur
+            Mettez à jour les coordonnées et informations publiques de votre atelier.
           </Text>
         </View>
 
-        {/* ScrollView Principal */}
+        {/* ── CONTENU DU FORMULAIRE (#F8FAFC) ── */}
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
         >
-          {/* CARTE FORMULAIRE */}
-          <View style={styles.card}>
-            <Text style={styles.cardSectionHeader}>Mes informations</Text>
-
+          <View style={styles.formCard}>
             {/* Bannière d'erreur */}
             {Boolean(error) && (
               <View style={styles.errorBox}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={18}
-                  color="#B91C1C"
-                />
+                <Ionicons name="alert-circle" size={18} color="#B91C1C" />
                 <Text style={styles.errorText}>{error}</Text>
               </View>
             )}
 
-            {/* Photo de profil */}
+            {/* 1. Photo de l'atelier */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Photo de profil</Text>
+              <Text style={styles.fieldLabel}>Logo ou Photo de l'atelier</Text>
               <View style={styles.photoRow}>
                 <View style={styles.avatarPreviewCircle}>
                   {imageUri ? (
@@ -225,101 +261,86 @@ export default function EditTraiteurProfileScreen() {
                       resizeMode="cover"
                     />
                   ) : (
-                    <Ionicons name="camera-outline" size={28} color="#94A3B8" />
-                  )}
-
-                  {/* Overlay Spinner pendant l'upload */}
-                  {uploading && (
-                    <View style={styles.uploadingOverlay}>
-                      <ActivityIndicator size="small" color="#FFFFFF" />
-                    </View>
+                    <Ionicons name="restaurant" size={32} color="#0B3B24" />
                   )}
                 </View>
 
                 <TouchableOpacity
-                  style={[
-                    styles.changePhotoBtn,
-                    (uploading || saving) && { opacity: 0.6 },
-                  ]}
+                  style={styles.changePhotoBtn}
+                  onPress={pickImage}
                   activeOpacity={0.8}
-                  onPress={() => pickImage()}
-                  disabled={uploading || saving}
                 >
-                  {uploading ? (
-                    <ActivityIndicator size="small" color="#1D6B45" />
-                  ) : (
-                    <Ionicons name="image-outline" size={16} color="#1D6B45" />
-                  )}
+                  <Ionicons name="camera-outline" size={16} color="#0B3B24" />
                   <Text style={styles.changePhotoBtnText}>
-                    {uploading
-                      ? "Envoi en cours..."
-                      : imageUri
-                        ? "Changer la photo"
-                        : "Ajouter une photo"}
+                    {imageUri ? "Changer la photo" : "Ajouter une photo"}
                   </Text>
                 </TouchableOpacity>
               </View>
             </View>
 
-            {/* Nom de l'activité */}
+            {/* 2. Nom de l'activité */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                Nom de ton activité <Text style={styles.requiredStar}>*</Text>
-              </Text>
+              <Text style={styles.fieldLabel}>Nom de l'activité / Atelier *</Text>
               <TextInput
-                style={styles.textInput}
+                style={styles.input}
+                placeholder="Ex : Délices de Dakar, Chez Mama Africa..."
+                placeholderTextColor="#94A3B8"
                 value={name}
                 onChangeText={setName}
-                placeholder="Ex: Chez Mariama, Les Saveurs d'Abidjan..."
-                placeholderTextColor="#94A3B8"
               />
             </View>
 
-            {/* Présentation */}
+            {/* 3. Histoire & Bio */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                Présentation <Text style={styles.requiredStar}>*</Text>
-              </Text>
+              <Text style={styles.fieldLabel}>Histoire & Présentation</Text>
               <TextInput
-                style={[styles.textInput, styles.textAreaInput]}
-                value={bio}
-                onChangeText={setBio}
-                placeholder="Décris ton activité, tes spécialités, ton expérience..."
+                style={[styles.input, styles.textArea]}
+                placeholder="Partagez votre passion, votre parcours et vos spécialités culinaires..."
                 placeholderTextColor="#94A3B8"
                 multiline
-                numberOfLines={3}
+                numberOfLines={4}
+                textAlignVertical="top"
+                value={bio}
+                onChangeText={setBio}
               />
             </View>
 
-            {/* Cuisines proposées (Pills multi-sélection) */}
+            {/* 4. Spécialités culinaires (Multi-select) */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>
-                Cuisines proposées <Text style={styles.requiredStar}>*</Text>
-              </Text>
-              <View style={styles.pillsGrid}>
-                {CUISINES.map((cuisine) => {
-                  const isSelected = selectedCuisines.includes(cuisine);
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.fieldLabel}>Spécialités culinaires *</Text>
+                <Text style={styles.fieldHint}>
+                  {selectedCuisines.length} sélectionnée(s)
+                </Text>
+              </View>
+              <View style={styles.chipsCloud}>
+                {CUISINES.map((c) => {
+                  const isSelected = selectedCuisines.includes(c);
                   return (
                     <TouchableOpacity
-                      key={cuisine}
+                      key={c}
                       style={[
-                        styles.pillBtn,
-                        isSelected
-                          ? styles.pillBtnActive
-                          : styles.pillBtnInactive,
+                        styles.chipBtn,
+                        isSelected && styles.chipBtnActive,
                       ]}
-                      onPress={() => toggleCuisine(cuisine)}
+                      onPress={() => toggleCuisine(c)}
                       activeOpacity={0.8}
                     >
+                      {isSelected && (
+                        <Ionicons
+                          name="checkmark"
+                          size={13}
+                          color="#FFFFFF"
+                          style={{ marginRight: 3 }}
+                        />
+                      )}
                       <Text
                         style={[
-                          styles.pillBtnText,
-                          isSelected
-                            ? styles.pillBtnTextActive
-                            : styles.pillBtnTextInactive,
+                          styles.chipBtnText,
+                          isSelected && styles.chipBtnTextActive,
                         ]}
                       >
-                        {cuisine}
+                        {c}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -327,33 +348,40 @@ export default function EditTraiteurProfileScreen() {
               </View>
             </View>
 
-            {/* Zones de livraison */}
+            {/* 5. Zones de livraison (Multi-select) */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Zones de livraison</Text>
-              <View style={styles.pillsGrid}>
-                {ZONES.map((zone) => {
-                  const isSelected = selectedZones.includes(zone);
+              <View style={styles.fieldHeaderRow}>
+                <Text style={styles.fieldLabel}>Zones de livraison desservies</Text>
+                <Text style={styles.fieldHint}>
+                  {selectedZones.length} sélectionnée(s)
+                </Text>
+              </View>
+              <View style={styles.chipsCloud}>
+                {ZONES.map((z) => {
+                  const isSelected = selectedZones.includes(z);
                   return (
                     <TouchableOpacity
-                      key={zone}
+                      key={z}
                       style={[
-                        styles.pillBtn,
-                        isSelected
-                          ? styles.pillBtnActive
-                          : styles.pillBtnInactive,
+                        styles.chipBtn,
+                        isSelected && styles.chipBtnActiveGreen,
                       ]}
-                      onPress={() => toggleZone(zone)}
+                      onPress={() => toggleZone(z)}
                       activeOpacity={0.8}
                     >
+                      <Ionicons
+                        name="location-outline"
+                        size={13}
+                        color={isSelected ? "#FFFFFF" : "#64748B"}
+                        style={{ marginRight: 3 }}
+                      />
                       <Text
                         style={[
-                          styles.pillBtnText,
-                          isSelected
-                            ? styles.pillBtnTextActive
-                            : styles.pillBtnTextInactive,
+                          styles.chipBtnText,
+                          isSelected && styles.chipBtnTextActive,
                         ]}
                       >
-                        {zone}
+                        {z}
                       </Text>
                     </TouchableOpacity>
                   );
@@ -361,93 +389,56 @@ export default function EditTraiteurProfileScreen() {
               </View>
             </View>
 
-            {/* Numéro WhatsApp */}
+            {/* 6. Numéro WhatsApp */}
             <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Numéro WhatsApp</Text>
-              <TextInput
-                style={styles.textInput}
-                value={whatsapp}
-                onChangeText={setWhatsapp}
-                placeholder="+33612345678"
-                placeholderTextColor="#94A3B8"
-                keyboardType="phone-pad"
-              />
-              <Text style={styles.fieldSubtext}>
-                Tu recevras les commandes directement sur WhatsApp
-              </Text>
-            </View>
-          </View>
-
-          {/* Bouton de Sauvegarde */}
-          <TouchableOpacity
-            style={[styles.submitBtn, saving && { opacity: 0.6 }]}
-            activeOpacity={0.85}
-            onPress={() => setConfirmAction(true)}
-          >
-            <Text style={styles.submitBtnText}>
-              {saving ? "Modification..." : "Enregistrer les modifications"}
-            </Text>
-          </TouchableOpacity>
-        </ScrollView>
-
-        {/* Modal de Confirmation */}
-        <Modal
-          visible={confirmation}
-          transparent
-          animationType="fade"
-          onRequestClose={() => setConfirmAction(false)}
-        >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() => setConfirmAction(false)}
-          >
-            <View style={styles.modalContent}>
-              <View style={styles.modalIconCircle}>
+              <Text style={styles.fieldLabel}>Numéro WhatsApp professionnel</Text>
+              <View style={styles.whatsappInputWrapper}>
                 <Ionicons
-                  name="help-circle-outline"
-                  size={32}
-                  color="#1D6B45"
+                  name="logo-whatsapp"
+                  size={18}
+                  color="#25D366"
+                  style={{ marginLeft: 14 }}
+                />
+                <TextInput
+                  style={styles.whatsappInput}
+                  placeholder="Ex : +33 6 12 34 56 78"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="phone-pad"
+                  value={whatsapp}
+                  onChangeText={setWhatsapp}
                 />
               </View>
-
-              <Text style={styles.modalTitle}>
-                Confirmer les modifications ?
+              <Text style={styles.fieldHelper}>
+                Permet d'échanger directement avec vos clients pour ajuster les
+                détails de leurs commandes et devis.
               </Text>
-              <Text style={styles.modalDesc}>
-                Êtes-vous sûr de vouloir enregistrer les modifications de votre
-                profil traiteur ?
-              </Text>
-
-              <View style={styles.modalButtonsRow}>
-                <TouchableOpacity
-                  style={styles.modalCancelBtn}
-                  onPress={() => setConfirmAction(false)}
-                  disabled={saving}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.modalCancelText}>Annuler</Text>
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.modalConfirmBtn}
-                  onPress={() => {
-                    setConfirmAction(false);
-                    handleSubmit();
-                  }}
-                  disabled={saving}
-                  activeOpacity={0.85}
-                >
-                  {saving ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <Text style={styles.modalConfirmText}>Confirmer</Text>
-                  )}
-                </TouchableOpacity>
-              </View>
             </View>
-          </TouchableOpacity>
-        </Modal>
+
+            {/* Bouton de validation */}
+            <TouchableOpacity
+              style={[styles.saveBtn, saving && styles.saveBtnDisabled]}
+              onPress={handleSubmit}
+              disabled={saving}
+              activeOpacity={0.85}
+            >
+              {saving ? (
+                <View style={styles.savingRow}>
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                  <Text style={styles.saveBtnText}>
+                    Enregistrement en cours...
+                  </Text>
+                </View>
+              ) : (
+                <View style={styles.savingRow}>
+                  <Ionicons name="checkmark-circle-outline" size={20} color="#FFFFFF" />
+                  <Text style={styles.saveBtnText}>
+                    Enregistrer les modifications
+                  </Text>
+                </View>
+              )}
+            </TouchableOpacity>
+          </View>
+        </ScrollView>
       </SafeAreaView>
     </View>
   );
@@ -456,109 +447,119 @@ export default function EditTraiteurProfileScreen() {
 const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
 
-  /* Header Card Vert Émeraude */
-  headerCard: {
-    backgroundColor: "#165034",
-    paddingTop: 12,
-    paddingBottom: 24,
+  /* Header Hero */
+  headerHero: {
+    backgroundColor: "#0B3B24",
     paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 20,
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 14,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
+    alignSelf: "flex-start",
+    marginBottom: 12,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "#FFFFFF",
     fontSize: 13,
     fontWeight: "700",
   },
   headerTitle: {
-    fontSize: 24,
-    fontWeight: "800",
+    fontSize: 22,
+    fontWeight: "900",
     color: "#FFFFFF",
+    letterSpacing: -0.3,
   },
   headerSubtitle: {
     fontSize: 13,
     color: "rgba(255, 255, 255, 0.75)",
-    marginTop: 2,
+    marginTop: 4,
+    lineHeight: 18,
   },
 
-  /* ScrollView */
+  /* Scrollable Form */
   mainScrollView: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    backgroundColor: "#F8FAFC",
   },
   scrollContent: {
     padding: 16,
-    gap: 16,
-    paddingBottom: 36,
+    paddingBottom: 40,
   },
-
-  /* Form Card */
-  card: {
+  formCard: {
     backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 18,
+    borderRadius: 22,
+    padding: 20,
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000",
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.04,
     shadowRadius: 8,
     elevation: 2,
-    gap: 16,
-  },
-  cardSectionHeader: {
-    fontSize: 16,
-    fontWeight: "800",
-    color: "#111827",
-    paddingBottom: 10,
-    borderBottomWidth: 1,
-    borderBottomColor: "#F1F5F9",
+    gap: 18,
   },
 
-  /* Field Groups */
+  /* Feedback */
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 12,
+    padding: 12,
+  },
+  errorText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#B91C1C",
+  },
+
+  /* Fields */
   fieldGroup: {
     gap: 6,
   },
+  fieldHeaderRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   fieldLabel: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#374151",
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#334155",
+    textTransform: "uppercase",
+    letterSpacing: 0.4,
   },
-  requiredStar: {
-    color: "#EF4444",
+  fieldHint: {
+    fontSize: 11,
+    fontWeight: "600",
+    color: "#94A3B8",
   },
-  textInput: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    fontSize: 14,
-    color: "#111827",
-  },
-  textAreaInput: {
-    height: 84,
-    textAlignVertical: "top",
-  },
-  fieldSubtext: {
+  fieldHelper: {
     fontSize: 11,
     color: "#94A3B8",
+    lineHeight: 15,
     marginTop: 2,
   },
 
-  /* Photo Row */
+  /* Photo Section */
   photoRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -566,183 +567,131 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   avatarPreviewCircle: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#F1F5F9",
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#ECFDF5",
     borderWidth: 2,
-    borderColor: "#E2E8F0",
-    borderStyle: "dashed",
-    justifyContent: "center",
+    borderColor: "#D4870A",
     alignItems: "center",
+    justifyContent: "center",
     overflow: "hidden",
   },
   avatarImg: {
     width: "100%",
     height: "100%",
   },
-  uploadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(15, 23, 42, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-  },
   changePhotoBtn: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#E8F5E9",
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    borderRadius: 14,
     gap: 6,
+    backgroundColor: "#F1F5F9",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    paddingHorizontal: 14,
+    paddingVertical: 9,
+    borderRadius: 12,
   },
   changePhotoBtnText: {
-    color: "#1D6B45",
     fontSize: 13,
     fontWeight: "700",
+    color: "#0B3B24",
   },
 
-  /* Pills Multi-Selection */
-  pillsGrid: {
+  /* Inputs */
+  input: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0F172A",
+  },
+  textArea: {
+    minHeight: 90,
+    paddingTop: 12,
+  },
+
+  /* Chips */
+  chipsCloud: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
-    marginTop: 4,
+    marginTop: 2,
   },
-  pillBtn: {
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-  },
-  pillBtnActive: {
-    backgroundColor: "#1D6B45",
-  },
-  pillBtnInactive: {
+  chipBtn: {
+    flexDirection: "row",
+    alignItems: "center",
     backgroundColor: "#F1F5F9",
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
   },
-  pillBtnText: {
-    fontSize: 13,
+  chipBtnActive: {
+    backgroundColor: "#0B3B24",
+    borderColor: "#0B3B24",
+  },
+  chipBtnActiveGreen: {
+    backgroundColor: "#1D6B45",
+    borderColor: "#1D6B45",
+  },
+  chipBtnText: {
+    fontSize: 12,
     fontWeight: "700",
-    textTransform: "capitalize",
-  },
-  pillBtnTextActive: {
-    color: "#FFFFFF",
-  },
-  pillBtnTextInactive: {
     color: "#475569",
   },
+  chipBtnTextActive: {
+    color: "#FFFFFF",
+  },
 
-  /* Submit Button */
-  submitBtn: {
-    backgroundColor: "#1D6B45",
-    borderRadius: 18,
-    paddingVertical: 16,
+  /* WhatsApp Input */
+  whatsappInputWrapper: {
+    flexDirection: "row",
     alignItems: "center",
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+  },
+  whatsappInput: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0F172A",
+  },
+
+  /* Save CTA */
+  saveBtn: {
+    backgroundColor: "#1D6B45",
+    borderRadius: 16,
+    paddingVertical: 14,
+    alignItems: "center",
+    justifyContent: "center",
     shadowColor: "#1D6B45",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.2,
     shadowRadius: 8,
     elevation: 3,
+    marginTop: 6,
   },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
+  saveBtnDisabled: {
+    opacity: 0.65,
   },
-
-  /* Modal de Confirmation */
-  modalOverlay: {
-    flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 24,
-  },
-  modalContent: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 24,
-    width: "100%",
-    maxWidth: 340,
-    alignItems: "center",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
-  },
-  modalIconCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(29, 107, 69, 0.12)",
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  modalTitle: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#111827",
-    textAlign: "center",
-    marginBottom: 8,
-  },
-  modalDesc: {
-    fontSize: 13,
-    color: "#64748B",
-    textAlign: "center",
-    lineHeight: 19,
-    marginBottom: 24,
-  },
-  modalButtonsRow: {
-    flexDirection: "row",
-    gap: 12,
-    width: "100%",
-  },
-  modalCancelBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    backgroundColor: "#F8FAFC",
-    alignItems: "center",
-  },
-  modalCancelText: {
-    color: "#64748B",
-    fontSize: 14,
-    fontWeight: "700",
-  },
-  modalConfirmBtn: {
-    flex: 1,
-    paddingVertical: 13,
-    borderRadius: 14,
-    backgroundColor: "#1D6B45",
-    alignItems: "center",
-  },
-  modalConfirmText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  /* Bannière d'erreur */
-  errorBox: {
+  savingRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FEE2E2",
-    borderColor: "#FCA5A5",
-    borderWidth: 1,
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
     gap: 8,
-    marginBottom: 6,
   },
-  errorText: {
-    color: "#B91C1C",
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
+  saveBtnText: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#FFFFFF",
   },
 });

@@ -171,6 +171,17 @@ export default function GpEspacePage() {
         setIsSaving(false);
         return;
       }
+      if (
+        formData.arrival_date &&
+        formData.departure_date &&
+        new Date(formData.departure_date) > new Date(formData.arrival_date)
+      ) {
+        alert(
+          "La date de départ ne peut pas être postérieure à la date d'arrivée.",
+        );
+        setIsSaving(false);
+        return;
+      }
       if (!formData.pickup_address || !formData.pickup_address.trim()) {
         alert("L'adresse précise de dépôt est obligatoire.");
         setIsSaving(false);
@@ -971,8 +982,26 @@ export default function GpEspacePage() {
                           arrival_date: e.target.value,
                         })
                       }
-                      className="w-full px-4 py-3.5 rounded-2xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-[#1D6B45] text-sm bg-white font-medium text-slate-800"
+                      className={`w-full px-4 py-3.5 rounded-2xl border ${
+                        formData.departure_date &&
+                        formData.arrival_date &&
+                        new Date(formData.departure_date) >
+                          new Date(formData.arrival_date)
+                          ? "border-rose-400 focus:ring-rose-500 bg-rose-50/20"
+                          : "border-slate-200 focus:ring-[#1D6B45] bg-white"
+                      } focus:outline-none focus:ring-2 text-sm font-medium text-slate-800`}
                     />
+                    {Boolean(
+                      formData.departure_date &&
+                        formData.arrival_date &&
+                        new Date(formData.departure_date) >
+                          new Date(formData.arrival_date),
+                    ) && (
+                      <p className="text-rose-500 text-xs mt-1.5 font-semibold flex items-center gap-1">
+                        <AlertTriangle size={13} />
+                        La date de départ ne peut pas être postérieure à la date d'arrivée.
+                      </p>
+                    )}
                   </div>
 
                   <div>
@@ -1216,13 +1245,22 @@ export default function GpEspacePage() {
                       !initialFormData ||
                       JSON.stringify(formData) !==
                         JSON.stringify(initialFormData);
+                    const isDateRangeInvalid = Boolean(
+                      formData.departure_date &&
+                        formData.arrival_date &&
+                        new Date(formData.departure_date) >
+                          new Date(formData.arrival_date),
+                    );
+
                     return (
                       <button
                         type="button"
-                        disabled={!isFormModified || isSaving}
+                        disabled={
+                          !isFormModified || isSaving || isDateRangeInvalid
+                        }
                         onClick={handleEditGp}
                         className={`w-full py-4 rounded-2xl font-bold text-sm sm:text-base transition-all flex items-center justify-center gap-2 ${
-                          isFormModified && !isSaving
+                          isFormModified && !isSaving && !isDateRangeInvalid
                             ? "bg-[#1D6B45] text-white hover:bg-[#155235] shadow-md cursor-pointer"
                             : "bg-slate-200 text-slate-400 cursor-not-allowed shadow-none"
                         }`}
@@ -1232,6 +1270,8 @@ export default function GpEspacePage() {
                             <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
                             <span>Mise à jour en cours...</span>
                           </div>
+                        ) : isDateRangeInvalid ? (
+                          "Dates de vol invalides"
                         ) : isFormModified ? (
                           "Mettre à jour le trajet"
                         ) : (

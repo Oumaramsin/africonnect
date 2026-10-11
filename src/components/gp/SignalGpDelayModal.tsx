@@ -77,6 +77,11 @@ export default function SignalGpDelayModal({
       return;
     }
 
+    if (newArrivalDate < minDate) {
+      setError(`La date ne peut pas être antérieure au départ (${minDate}).`);
+      return;
+    }
+
     setLoading(true);
     setError(null);
 

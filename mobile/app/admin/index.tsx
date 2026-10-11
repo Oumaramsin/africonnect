@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,8 +9,6 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  Switch,
-  Platform,
   Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -69,15 +67,16 @@ type GpListing = {
 type Tab = "traiteurs" | "gp" | "utilisateurs";
 
 const CUISINES = [
-  "senegalais",
-  "ivoirien",
-  "camerounais",
-  "congolais",
-  "malien",
-  "guineen",
-  "burkinabe",
-  "togolais",
-  "beninois",
+  "Sénégalais",
+  "Ivoirien",
+  "Camerounais",
+  "Congolais",
+  "Malien",
+  "Guinéen",
+  "Burkinabé",
+  "Togolais",
+  "Béninois",
+  "Afro-Fusion",
 ];
 
 const ZONES = [
@@ -98,6 +97,7 @@ export default function AdminScreen() {
 
   const [tab, setTab] = useState<Tab>("traiteurs");
   const [view, setView] = useState<"liste" | "nouveau">("liste");
+  const [searchQuery, setSearchQuery] = useState("");
 
   const [isAuthorized, setIsAuthorized] = useState(false);
   const [traiteurs, setTraiteurs] = useState<Traiteur[]>([]);
@@ -133,7 +133,7 @@ export default function AdminScreen() {
     departure_city: "",
     departure_country: "France",
     arrival_city: "",
-    arrival_country: "",
+    arrival_country: "Sénégal",
     departure_date: "",
     available_kg: "",
     price_per_kg: "",
@@ -170,7 +170,7 @@ export default function AdminScreen() {
     setTimeout(() => setSuccess(null), 4000);
   };
 
-  // Vérification de sécurité (rôle admin) et chargement initial des données
+  // Chargement et validation du rôle admin
   const loadAdminData = async () => {
     setLoading(true);
     setError(null);
@@ -181,7 +181,6 @@ export default function AdminScreen() {
     }
 
     try {
-      // Décodage du payload JWT pour valider le rôle admin
       const base64Url = token.split(".")[1];
       const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
       const jsonPayload = decodeURIComponent(
@@ -193,7 +192,7 @@ export default function AdminScreen() {
       const decodedPayload = JSON.parse(jsonPayload);
 
       if (decodedPayload.role !== "admin") {
-        router.replace("/accueil");
+        router.replace("/profil");
         return;
       }
       setIsAuthorized(true);
@@ -202,7 +201,7 @@ export default function AdminScreen() {
       const response = await apiFetch("/admin");
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur de chargement des données");
+        setError(data.message || "Erreur de chargement des données.");
         return;
       }
 
@@ -215,6 +214,48 @@ export default function AdminScreen() {
       setLoading(false);
     }
   };
+
+  useFocusEffect(
+    useCallback(() => {
+      loadAdminData();
+    }, []),
+  );
+
+  // Filtres de recherche
+  const filteredTraiteurs = useMemo(() => {
+    if (!searchQuery.trim()) return traiteurs;
+    const q = searchQuery.toLowerCase();
+    return traiteurs.filter(
+      (t) =>
+        t.name.toLowerCase().includes(q) ||
+        (t.profile?.full_name || "").toLowerCase().includes(q) ||
+        (t.whatsapp || "").toLowerCase().includes(q) ||
+        t.cuisine_type.some((c) => c.toLowerCase().includes(q)),
+    );
+  }, [traiteurs, searchQuery]);
+
+  const filteredGpListings = useMemo(() => {
+    if (!searchQuery.trim()) return gpListings;
+    const q = searchQuery.toLowerCase();
+    return gpListings.filter(
+      (g) =>
+        g.departure_city.toLowerCase().includes(q) ||
+        g.arrival_city.toLowerCase().includes(q) ||
+        (g.gp?.full_name || "").toLowerCase().includes(q),
+    );
+  }, [gpListings, searchQuery]);
+
+  const filteredProfiles = useMemo(() => {
+    if (!searchQuery.trim()) return profiles;
+    const q = searchQuery.toLowerCase();
+    return profiles.filter(
+      (p) =>
+        p.full_name.toLowerCase().includes(q) ||
+        (p.email || "").toLowerCase().includes(q) ||
+        (p.phone || "").toLowerCase().includes(q) ||
+        p.role.toLowerCase().includes(q),
+    );
+  }, [profiles, searchQuery]);
 
   const handleToggleAdminRole = (profile: Profile) => {
     if (profile.id === currentUserId) {
@@ -230,7 +271,7 @@ export default function AdminScreen() {
       ? "Retirer les droits admin ?"
       : "Nommer administrateur ?";
     const message = isCurrentlyAdmin
-      ? `Voulez-vous retirer les droits administrateur de ${profile.full_name} ? Son rôle d'origine (Traiteur, GP ou Client) sera automatiquement restauré.`
+      ? `Voulez-vous retirer les droits administrateur de ${profile.full_name} ? Son rôle d'origine sera restauré.`
       : `Voulez-vous accorder les droits administrateur à ${profile.full_name} ? Cet utilisateur aura accès à l'ensemble du panneau d'administration.`;
 
     Alert.alert(title, message, [
@@ -271,12 +312,6 @@ export default function AdminScreen() {
       },
     ]);
   };
-
-  useFocusEffect(
-    useCallback(() => {
-      loadAdminData();
-    }, []),
-  );
 
   const handleCreateUser = async () => {
     if (!userForm.firstname.trim() || !userForm.lastname.trim()) {
@@ -319,7 +354,7 @@ export default function AdminScreen() {
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || data.message || "Erreur création utilisateur");
+        setError(data.error || data.message || "Erreur création utilisateur.");
         setActionLoading(false);
         return;
       }
@@ -338,7 +373,7 @@ export default function AdminScreen() {
       showSuccessMsg(`Utilisateur ${full_name} créé avec succès !`);
       setUserForm({ firstname: "", lastname: "", phone: "", email: "" });
     } catch (err: any) {
-      setError(err.message || "Erreur réseau");
+      setError(err.message || "Erreur réseau.");
     } finally {
       setActionLoading(false);
     }
@@ -357,17 +392,17 @@ export default function AdminScreen() {
         method: "POST",
         body: JSON.stringify({
           user_id: traiteurForm.user_id,
-          name: traiteurForm.name,
-          bio: traiteurForm.bio,
+          name: traiteurForm.name.trim(),
+          bio: traiteurForm.bio.trim(),
           cuisine_type: traiteurForm.cuisine_type,
           delivery_zones: traiteurForm.delivery_zones,
-          whatsapp: traiteurForm.whatsapp || null,
+          whatsapp: traiteurForm.whatsapp.trim() || null,
           is_active: traiteurForm.is_active,
         }),
       });
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la création du traiteur");
+        setError(data.message || "Erreur lors de la création du traiteur.");
         setActionLoading(false);
         return;
       }
@@ -409,7 +444,7 @@ export default function AdminScreen() {
         setTraiteurs((prev) =>
           prev.map((t) => (t.id === id ? { ...t, is_active: current } : t)),
         );
-        setError(data.error || "Erreur lors du changement de statut");
+        setError(data.error || "Erreur lors du changement de statut.");
         return;
       }
 
@@ -440,14 +475,14 @@ export default function AdminScreen() {
         method: "POST",
         body: JSON.stringify({
           user_id: gpForm.gp_id,
-          departure_city: gpForm.departure_city,
-          departure_country: gpForm.departure_country,
-          arrival_city: gpForm.arrival_city,
-          arrival_country: gpForm.arrival_country,
+          departure_city: gpForm.departure_city.trim(),
+          departure_country: gpForm.departure_country.trim(),
+          arrival_city: gpForm.arrival_city.trim(),
+          arrival_country: gpForm.arrival_country.trim(),
           departure_date: gpForm.departure_date,
           available_kg: parseFloat(gpForm.available_kg) || 0,
           price_per_kg: parseFloat(gpForm.price_per_kg) || 0,
-          description: gpForm.description || null,
+          description: gpForm.description.trim() || null,
           is_active: gpForm.is_active,
         }),
       });
@@ -455,7 +490,7 @@ export default function AdminScreen() {
       const data = await response.json();
       if (!response.ok) {
         throw new Error(
-          data.error || data.message || "Erreur création annonce GP",
+          data.error || data.message || "Erreur création annonce GP.",
         );
       }
 
@@ -465,7 +500,7 @@ export default function AdminScreen() {
         departure_city: "",
         departure_country: "France",
         arrival_city: "",
-        arrival_country: "",
+        arrival_country: "Sénégal",
         departure_date: "",
         available_kg: "",
         price_per_kg: "",
@@ -500,7 +535,7 @@ export default function AdminScreen() {
           prev.map((g) => (g.id === id ? { ...g, is_active: current } : g)),
         );
         const data = await response.json();
-        setError(data.error || "Erreur de mise à jour");
+        setError(data.error || "Erreur de mise à jour.");
         return;
       }
 
@@ -528,7 +563,7 @@ export default function AdminScreen() {
         });
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || "Erreur lors de la suppression");
+          throw new Error(data.error || "Erreur lors de la suppression.");
         }
         setTraiteurs((prev) => prev.filter((t) => t.id !== deleteModal.id));
         showSuccessMsg("Traiteur supprimé avec succès !");
@@ -539,7 +574,7 @@ export default function AdminScreen() {
         });
         const data = await response.json();
         if (!response.ok) {
-          throw new Error(data.error || "Erreur lors de la suppression");
+          throw new Error(data.error || "Erreur lors de la suppression.");
         }
         setGpListings((prev) => prev.filter((g) => g.id !== deleteModal.id));
         showSuccessMsg("Annonce GP supprimée avec succès !");
@@ -575,6 +610,7 @@ export default function AdminScreen() {
     return new Date(dateStr).toLocaleDateString("fr-FR", {
       day: "numeric",
       month: "short",
+      year: "numeric",
     });
   };
 
@@ -586,9 +622,9 @@ export default function AdminScreen() {
   if (loading && !isAuthorized) {
     return (
       <View style={[styles.topGreenWrapper, styles.centerLoader]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
         <ActivityIndicator size="large" color="#FFFFFF" />
-        <Text style={styles.initialLoadingText}>Vérification des accès...</Text>
+        <Text style={styles.initialLoadingText}>Vérification des accès administrateur...</Text>
       </View>
     );
   }
@@ -600,86 +636,112 @@ export default function AdminScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" />
+        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
 
+        {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
         <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.push("/accueil")}
-            activeOpacity={0.7}
-          >
-            <Ionicons
-              name="arrow-back"
-              size={18}
-              color="rgba(255, 255, 255, 0.8)"
-            />
-            <Text style={styles.backBtnText}>Dashboard</Text>
-          </TouchableOpacity>
+          <View style={styles.headerTopBar}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.push("/profil")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+              <Text style={styles.backBtnText}>Mon compte</Text>
+            </TouchableOpacity>
+
+            <View style={styles.adminBadgeTop}>
+              <Ionicons name="shield-checkmark" size={14} color="#D4870A" />
+              <Text style={styles.adminBadgeTopText}>Super Admin</Text>
+            </View>
+          </View>
 
           <View style={styles.headerTitleRow}>
-            <Ionicons name="shield-checkmark" size={26} color="#FFFFFF" />
-            <Text style={styles.headerTitle}>Admin Dabari</Text>
+            <View style={styles.shieldIconCircle}>
+              <Ionicons name="shield-checkmark" size={24} color="#0B3B24" />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.headerTitle}>Console d'Administration</Text>
+              <Text style={styles.headerSubtitle}>
+                Supervision globale, gestion des traiteurs, GP et comptes
+              </Text>
+            </View>
           </View>
-          <Text style={styles.headerSubtitle}>
-            Gérer les traiteurs, GP et utilisateurs
-          </Text>
 
+          {/* KPIs Bar */}
           <View style={styles.statsRow}>
             <TouchableOpacity
-              style={styles.statBox}
+              style={[
+                styles.statBox,
+                tab === "traiteurs" && styles.statBoxActive,
+              ]}
               activeOpacity={0.8}
               onPress={() => {
                 setTab("traiteurs");
                 setView("liste");
+                setSearchQuery("");
               }}
             >
               <Text style={styles.statNumber}>{traiteurs.length}</Text>
               <Text style={styles.statLabel}>Traiteurs</Text>
+              <Text style={styles.statSubLabel}>
+                {traiteurs.filter((t) => t.is_active).length} actifs
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.statBox}
+              style={[styles.statBox, tab === "gp" && styles.statBoxActive]}
               activeOpacity={0.8}
               onPress={() => {
                 setTab("gp");
                 setView("liste");
+                setSearchQuery("");
               }}
             >
               <Text style={styles.statNumber}>{gpListings.length}</Text>
-              <Text style={styles.statLabel}>Annonces GP</Text>
+              <Text style={styles.statLabel}>GP Colis</Text>
+              <Text style={styles.statSubLabel}>
+                {gpListings.filter((g) => g.is_active).length} actifs
+              </Text>
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={styles.statBox}
+              style={[
+                styles.statBox,
+                tab === "utilisateurs" && styles.statBoxActive,
+              ]}
               activeOpacity={0.8}
               onPress={() => {
                 setTab("utilisateurs");
                 setView("liste");
+                setSearchQuery("");
               }}
             >
               <Text style={styles.statNumber}>{profiles.length}</Text>
-              <Text style={styles.statLabel}>Utilisateurs</Text>
+              <Text style={styles.statLabel}>Comptes</Text>
+              <Text style={styles.statSubLabel}>
+                {profiles.filter((p) => p.role === "admin").length} admins
+              </Text>
             </TouchableOpacity>
           </View>
 
+          {/* Tabs Navigation */}
           <View style={styles.tabsRow}>
             <TouchableOpacity
-              style={[
-                styles.tabBtn,
-                tab === "traiteurs" && styles.tabBtnActive,
-              ]}
+              style={[styles.tabBtn, tab === "traiteurs" && styles.tabBtnActive]}
               onPress={() => {
                 setTab("traiteurs");
                 setView("liste");
                 setError(null);
                 setTempPassword(null);
+                setSearchQuery("");
               }}
               activeOpacity={0.8}
             >
               <Ionicons
                 name="restaurant-outline"
                 size={14}
-                color={tab === "traiteurs" ? "#165034" : "#FFFFFF"}
+                color={tab === "traiteurs" ? "#0B3B24" : "#FFFFFF"}
               />
               <Text
                 style={[
@@ -687,7 +749,7 @@ export default function AdminScreen() {
                   tab === "traiteurs" && styles.tabBtnTextActive,
                 ]}
               >
-                Traiteurs
+                Traiteurs ({traiteurs.length})
               </Text>
             </TouchableOpacity>
 
@@ -698,13 +760,14 @@ export default function AdminScreen() {
                 setView("liste");
                 setError(null);
                 setTempPassword(null);
+                setSearchQuery("");
               }}
               activeOpacity={0.8}
             >
               <Ionicons
                 name="airplane-outline"
                 size={14}
-                color={tab === "gp" ? "#165034" : "#FFFFFF"}
+                color={tab === "gp" ? "#0B3B24" : "#FFFFFF"}
               />
               <Text
                 style={[
@@ -712,7 +775,7 @@ export default function AdminScreen() {
                   tab === "gp" && styles.tabBtnTextActive,
                 ]}
               >
-                GP Colis
+                GP Colis ({gpListings.length})
               </Text>
             </TouchableOpacity>
 
@@ -726,13 +789,14 @@ export default function AdminScreen() {
                 setView("liste");
                 setError(null);
                 setTempPassword(null);
+                setSearchQuery("");
               }}
               activeOpacity={0.8}
             >
               <Ionicons
                 name="people-outline"
                 size={14}
-                color={tab === "utilisateurs" ? "#165034" : "#FFFFFF"}
+                color={tab === "utilisateurs" ? "#0B3B24" : "#FFFFFF"}
               />
               <Text
                 style={[
@@ -740,12 +804,13 @@ export default function AdminScreen() {
                   tab === "utilisateurs" && styles.tabBtnTextActive,
                 ]}
               >
-                Utilisateurs
+                Comptes ({profiles.length})
               </Text>
             </TouchableOpacity>
           </View>
         </View>
 
+        {/* ── CORPS SCROLLABLE (#F8FAFC) ── */}
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
@@ -753,7 +818,7 @@ export default function AdminScreen() {
         >
           {Boolean(success) && (
             <View style={styles.successBox}>
-              <Ionicons name="checkmark-circle" size={18} color="#1D6B45" />
+              <Ionicons name="checkmark-circle" size={18} color="#15803D" />
               <Text style={styles.successBoxText}>{success}</Text>
             </View>
           )}
@@ -765,6 +830,7 @@ export default function AdminScreen() {
             </View>
           )}
 
+          {/* Mot de passe temporaire généré */}
           {Boolean(tempPassword) && (
             <View style={styles.tempPwdBox}>
               <View style={styles.tempPwdHeader}>
@@ -807,42 +873,66 @@ export default function AdminScreen() {
                 </TouchableOpacity>
               </View>
               <Text style={styles.tempPwdSub}>
-                Communique ce mot de passe à l'utilisateur. Il pourra le changer
-                depuis son profil.
+                Communiquez ce mot de passe à l'utilisateur. Il pourra le changer
+                depuis son espace profil.
               </Text>
             </View>
           )}
 
-          {/* ── 1️⃣ ONGLET TRAITEURS ── */}
+          {/* ══════════════════════════════════════════
+              1️⃣ ONGLET TRAITEURS
+             ══════════════════════════════════════════ */}
           {tab === "traiteurs" && (
             <View style={styles.tabContentContainer}>
               {view === "liste" ? (
                 <>
-                  <TouchableOpacity
-                    style={styles.addPrimaryBtn}
-                    onPress={() => setView("nouveau")}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="add" size={18} color="#FFFFFF" />
-                    <Text style={styles.addPrimaryBtnText}>
-                      + Ajouter un traiteur
-                    </Text>
-                  </TouchableOpacity>
+                  <View style={styles.listHeaderActionsRow}>
+                    {/* Barre de recherche */}
+                    <View style={styles.searchBarWrapper}>
+                      <Ionicons name="search" size={16} color="#94A3B8" />
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Rechercher un atelier, chef..."
+                        placeholderTextColor="#94A3B8"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                      />
+                      {Boolean(searchQuery) && (
+                        <TouchableOpacity
+                          onPress={() => setSearchQuery("")}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
 
-                  {traiteurs.length === 0 ? (
+                    <TouchableOpacity
+                      style={styles.addPrimaryBtn}
+                      onPress={() => setView("nouveau")}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="add" size={16} color="#FFFFFF" />
+                      <Text style={styles.addPrimaryBtnText}>Créer</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {filteredTraiteurs.length === 0 ? (
                     <View style={styles.emptyBox}>
                       <Ionicons
                         name="restaurant-outline"
-                        size={48}
-                        color="#D4870A"
+                        size={44}
+                        color="#CBD5E1"
                       />
                       <Text style={styles.emptyText}>
-                        Aucun traiteur enregistré
+                        {searchQuery
+                          ? "Aucun traiteur ne correspond à votre recherche"
+                          : "Aucun traiteur enregistré"}
                       </Text>
                     </View>
                   ) : (
                     <View style={styles.listGap}>
-                      {traiteurs.map((item) => (
+                      {filteredTraiteurs.map((item) => (
                         <View key={item.id} style={styles.itemCard}>
                           <View style={styles.cardHeaderRow}>
                             <View style={{ flex: 1 }}>
@@ -853,10 +943,10 @@ export default function AdminScreen() {
                                 <Ionicons
                                   name="person-outline"
                                   size={13}
-                                  color="#165034"
+                                  color="#0B3B24"
                                 />
                                 <Text style={styles.itemCardSub}>
-                                  {item.profile?.full_name || "Utilisateur"}
+                                  {item.profile?.full_name || "Propriétaire"}
                                 </Text>
                               </View>
                               {Boolean(item.whatsapp) && (
@@ -881,6 +971,14 @@ export default function AdminScreen() {
                                   : styles.activeBadgeOff,
                               ]}
                             >
+                              <View
+                                style={[
+                                  styles.activeDot,
+                                  item.is_active
+                                    ? styles.activeDotOn
+                                    : styles.activeDotOff,
+                                ]}
+                              />
                               <Text
                                 style={[
                                   styles.activeBadgeText,
@@ -889,7 +987,7 @@ export default function AdminScreen() {
                                     : styles.activeBadgeTextOff,
                                 ]}
                               >
-                                {item.is_active ? "✓ Actif" : "Inactif"}
+                                {item.is_active ? "Actif" : "Inactif"}
                               </Text>
                             </View>
                           </View>
@@ -947,7 +1045,7 @@ export default function AdminScreen() {
                             >
                               <Ionicons
                                 name="trash-outline"
-                                size={18}
+                                size={17}
                                 color="#DC2626"
                               />
                             </TouchableOpacity>
@@ -967,14 +1065,13 @@ export default function AdminScreen() {
                     <Text style={styles.backLinkText}>Retour à la liste</Text>
                   </TouchableOpacity>
 
-                  <Text style={styles.sectionTitle}>Nouveau traiteur</Text>
+                  <Text style={styles.sectionTitle}>Nouveau Traiteur</Text>
 
                   <View style={styles.infoBannerBlue}>
                     <Ionicons name="bulb-outline" size={18} color="#1D4ED8" />
                     <Text style={styles.infoBannerBlueText}>
-                      Si l'utilisateur n'existe pas encore, crée-le d'abord dans
-                      l'onglet{" "}
-                      <Text style={{ fontWeight: "800" }}>Utilisateurs</Text>.
+                      Si l'utilisateur n'existe pas encore, créez-le d'abord dans
+                      l'onglet <Text style={{ fontWeight: "800" }}>Comptes</Text>.
                     </Text>
                   </View>
 
@@ -999,19 +1096,15 @@ export default function AdminScreen() {
                             ? `${selectedTraiteurUser.full_name} (${selectedTraiteurUser.phone || selectedTraiteurUser.email})`
                             : "Choisir un utilisateur"}
                         </Text>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color="#64748B"
-                        />
+                        <Ionicons name="chevron-down" size={16} color="#64748B" />
                       </TouchableOpacity>
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Nom du traiteur *</Text>
+                      <Text style={styles.fieldLabel}>Nom de l'atelier *</Text>
                       <TextInput
                         style={styles.input}
-                        placeholder="Ex: Chez Mariama, Les Saveurs d'Abidjan..."
+                        placeholder="Ex: Délices de Dakar"
                         placeholderTextColor="#94A3B8"
                         value={traiteurForm.name}
                         onChangeText={(val) =>
@@ -1021,13 +1114,13 @@ export default function AdminScreen() {
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Bio / Description *</Text>
+                      <Text style={styles.fieldLabel}>Bio & Description *</Text>
                       <TextInput
                         style={[styles.input, styles.multilineInput]}
+                        placeholder="Histoire, spécialités et engagements culinaires..."
+                        placeholderTextColor="#94A3B8"
                         multiline
                         numberOfLines={3}
-                        placeholder="Décris l'activité, la spécialité..."
-                        placeholderTextColor="#94A3B8"
                         value={traiteurForm.bio}
                         onChangeText={(val) =>
                           setTraiteurForm((p) => ({ ...p, bio: val }))
@@ -1036,32 +1129,7 @@ export default function AdminScreen() {
                     </View>
 
                     <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Numéro WhatsApp</Text>
-                      <TextInput
-                        style={styles.input}
-                        placeholder="+33612345678"
-                        placeholderTextColor="#94A3B8"
-                        keyboardType="phone-pad"
-                        maxLength={16}
-                        value={traiteurForm.whatsapp}
-                        onChangeText={(val) => {
-                          let cleaned = val.replace(/[^0-9+]/g, "");
-                          if (cleaned.startsWith("+")) {
-                            cleaned = "+" + cleaned.slice(1).replace(/\+/g, "");
-                          } else {
-                            cleaned = cleaned.replace(/\+/g, "");
-                          }
-                          const maxLen = cleaned.startsWith("+") ? 16 : 15;
-                          setTraiteurForm((p) => ({
-                            ...p,
-                            whatsapp: cleaned.slice(0, maxLen),
-                          }));
-                        }}
-                      />
-                    </View>
-
-                    <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Cuisines proposées</Text>
+                      <Text style={styles.fieldLabel}>Spécialités culinaires</Text>
                       <View style={styles.chipsWrap}>
                         {CUISINES.map((c) => {
                           const active = traiteurForm.cuisine_type.includes(c);
@@ -1092,8 +1160,7 @@ export default function AdminScreen() {
                       <Text style={styles.fieldLabel}>Zones de livraison</Text>
                       <View style={styles.chipsWrap}>
                         {ZONES.map((z) => {
-                          const active =
-                            traiteurForm.delivery_zones.includes(z);
+                          const active = traiteurForm.delivery_zones.includes(z);
                           return (
                             <TouchableOpacity
                               key={z}
@@ -1117,20 +1184,18 @@ export default function AdminScreen() {
                       </View>
                     </View>
 
-                    <View style={styles.checkboxRow}>
-                      <Switch
-                        value={traiteurForm.is_active}
-                        onValueChange={(val) =>
-                          setTraiteurForm((p) => ({ ...p, is_active: val }))
-                        }
-                        trackColor={{ false: "#CBD5E1", true: "#A7F3D0" }}
-                        thumbColor={
-                          traiteurForm.is_active ? "#1D6B45" : "#94A3B8"
+                    <View style={styles.fieldGroup}>
+                      <Text style={styles.fieldLabel}>Numéro WhatsApp</Text>
+                      <TextInput
+                        style={styles.input}
+                        placeholder="Ex: +33 6 12 34 56 78"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="phone-pad"
+                        value={traiteurForm.whatsapp}
+                        onChangeText={(val) =>
+                          setTraiteurForm((p) => ({ ...p, whatsapp: val }))
                         }
                       />
-                      <Text style={styles.checkboxLabel}>
-                        Publier immédiatement
-                      </Text>
                     </View>
 
                     <TouchableOpacity
@@ -1145,9 +1210,7 @@ export default function AdminScreen() {
                       {actionLoading ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
-                        <Text style={styles.submitBtnText}>
-                          Créer et publier le traiteur
-                        </Text>
+                        <Text style={styles.submitBtnText}>Créer le traiteur</Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1156,42 +1219,67 @@ export default function AdminScreen() {
             </View>
           )}
 
-          {/* ── 2️⃣ ONGLET GP COLIS ── */}
+          {/* ══════════════════════════════════════════
+              2️⃣ ONGLET GP COLIS
+             ══════════════════════════════════════════ */}
           {tab === "gp" && (
             <View style={styles.tabContentContainer}>
               {view === "liste" ? (
                 <>
-                  <TouchableOpacity
-                    style={styles.addGoldBtn}
-                    onPress={() => setView("nouveau")}
-                    activeOpacity={0.85}
-                  >
-                    <Ionicons name="add" size={18} color="#FFFFFF" />
-                    <Text style={styles.addGoldBtnText}>
-                      + Publier une annonce GP
-                    </Text>
-                  </TouchableOpacity>
+                  <View style={styles.listHeaderActionsRow}>
+                    <View style={styles.searchBarWrapper}>
+                      <Ionicons name="search" size={16} color="#94A3B8" />
+                      <TextInput
+                        style={styles.searchInput}
+                        placeholder="Rechercher une ville, GP..."
+                        placeholderTextColor="#94A3B8"
+                        value={searchQuery}
+                        onChangeText={setSearchQuery}
+                      />
+                      {Boolean(searchQuery) && (
+                        <TouchableOpacity
+                          onPress={() => setSearchQuery("")}
+                          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                        >
+                          <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                        </TouchableOpacity>
+                      )}
+                    </View>
 
-                  {gpListings.length === 0 ? (
+                    <TouchableOpacity
+                      style={styles.addGoldBtn}
+                      onPress={() => setView("nouveau")}
+                      activeOpacity={0.85}
+                    >
+                      <Ionicons name="add" size={16} color="#FFFFFF" />
+                      <Text style={styles.addGoldBtnText}>Créer</Text>
+                    </TouchableOpacity>
+                  </View>
+
+                  {filteredGpListings.length === 0 ? (
                     <View style={styles.emptyBox}>
                       <Ionicons
                         name="airplane-outline"
-                        size={48}
-                        color="#1D6B45"
+                        size={44}
+                        color="#CBD5E1"
                       />
-                      <Text style={styles.emptyText}>Aucune annonce GP</Text>
+                      <Text style={styles.emptyText}>
+                        {searchQuery
+                          ? "Aucun vol ne correspond à votre recherche"
+                          : "Aucune annonce GP enregistrée"}
+                      </Text>
                     </View>
                   ) : (
                     <View style={styles.listGap}>
-                      {gpListings.map((gp) => (
+                      {filteredGpListings.map((gp) => (
                         <View key={gp.id} style={styles.itemCard}>
                           <View style={styles.cardHeaderRow}>
                             <View style={{ flex: 1 }}>
                               <View style={styles.gpRouteRow}>
                                 <Ionicons
-                                  name="airplane-outline"
+                                  name="airplane"
                                   size={15}
-                                  color="#165034"
+                                  color="#0B3B24"
                                 />
                                 <Text style={styles.itemCardTitle}>
                                   {gp.departure_city} ({gp.departure_country}) →{" "}
@@ -1202,10 +1290,10 @@ export default function AdminScreen() {
                                 <Ionicons
                                   name="person-outline"
                                   size={13}
-                                  color="#165034"
+                                  color="#0B3B24"
                                 />
                                 <Text style={styles.itemCardSub}>
-                                  {gp.gp?.full_name || "Utilisateur"}
+                                  {gp.gp?.full_name || "Transporteur GP"}
                                 </Text>
                               </View>
                             </View>
@@ -1218,6 +1306,14 @@ export default function AdminScreen() {
                                   : styles.activeBadgeOff,
                               ]}
                             >
+                              <View
+                                style={[
+                                  styles.activeDot,
+                                  gp.is_active
+                                    ? styles.activeDotGold
+                                    : styles.activeDotOff,
+                                ]}
+                              />
                               <Text
                                 style={[
                                   styles.activeBadgeText,
@@ -1226,7 +1322,7 @@ export default function AdminScreen() {
                                     : styles.activeBadgeTextOff,
                                 ]}
                               >
-                                {gp.is_active ? "✓ Active" : "Inactive"}
+                                {gp.is_active ? "Actif" : "Inactif"}
                               </Text>
                             </View>
                           </View>
@@ -1236,7 +1332,7 @@ export default function AdminScreen() {
                               <Ionicons
                                 name="calendar-outline"
                                 size={13}
-                                color="#165034"
+                                color="#0B3B24"
                               />
                               <Text style={styles.detailLine}>
                                 Départ : {formatDate(gp.departure_date)}
@@ -1246,7 +1342,7 @@ export default function AdminScreen() {
                               <Ionicons
                                 name="cube-outline"
                                 size={13}
-                                color="#165034"
+                                color="#0B3B24"
                               />
                               <Text style={styles.detailLine}>
                                 {Number(gp.available_kg)} kg disponibles
@@ -1256,24 +1352,12 @@ export default function AdminScreen() {
                               <Ionicons
                                 name="cash-outline"
                                 size={13}
-                                color="#165034"
+                                color="#0B3B24"
                               />
                               <Text style={styles.detailLine}>
                                 {Number(gp.price_per_kg)} €/kg
                               </Text>
                             </View>
-                            {Boolean(gp.description) && (
-                              <View style={styles.detailItemRow}>
-                                <Ionicons
-                                  name="document-text-outline"
-                                  size={13}
-                                  color="#165034"
-                                />
-                                <Text style={styles.detailLine}>
-                                  {gp.description}
-                                </Text>
-                              </View>
-                            )}
                           </View>
 
                           <View style={styles.itemActionsRow}>
@@ -1284,9 +1368,7 @@ export default function AdminScreen() {
                                   ? styles.toggleBtnOff
                                   : styles.toggleBtnOn,
                               ]}
-                              onPress={() =>
-                                handleToggleGp(gp.id, gp.is_active)
-                              }
+                              onPress={() => handleToggleGp(gp.id, gp.is_active)}
                               activeOpacity={0.8}
                             >
                               <Text
@@ -1315,7 +1397,7 @@ export default function AdminScreen() {
                             >
                               <Ionicons
                                 name="trash-outline"
-                                size={18}
+                                size={17}
                                 color="#DC2626"
                               />
                             </TouchableOpacity>
@@ -1335,7 +1417,7 @@ export default function AdminScreen() {
                     <Text style={styles.backLinkText}>Retour à la liste</Text>
                   </TouchableOpacity>
 
-                  <Text style={styles.sectionTitle}>Nouveau trajet GP</Text>
+                  <Text style={styles.sectionTitle}>Nouveau Trajet GP</Text>
 
                   <View style={styles.cardForm}>
                     <View style={styles.fieldGroup}>
@@ -1356,11 +1438,7 @@ export default function AdminScreen() {
                             ? `${selectedGpUser.full_name} (${selectedGpUser.phone || selectedGpUser.email})`
                             : "Choisir un transporteur"}
                         </Text>
-                        <Ionicons
-                          name="chevron-down"
-                          size={16}
-                          color="#64748B"
-                        />
+                        <Ionicons name="chevron-down" size={16} color="#64748B" />
                       </TouchableOpacity>
                     </View>
 
@@ -1424,7 +1502,7 @@ export default function AdminScreen() {
                       <Text style={styles.fieldLabel}>Date de départ *</Text>
                       <TextInput
                         style={styles.input}
-                        placeholder="AAAA-MM-JJ"
+                        placeholder="AAAA-MM-JJ (Ex: 2026-11-20)"
                         placeholderTextColor="#94A3B8"
                         value={gpForm.departure_date}
                         onChangeText={(val) =>
@@ -1435,60 +1513,38 @@ export default function AdminScreen() {
 
                     <View style={styles.inputGridRow}>
                       <View style={styles.flexField}>
-                        <Text style={styles.fieldLabel}>
-                          Kilos disponibles *
-                        </Text>
+                        <Text style={styles.fieldLabel}>Kilos dispo *</Text>
                         <TextInput
                           style={styles.input}
-                          keyboardType="decimal-pad"
-                          placeholder="Ex: 10"
+                          placeholder="Ex: 23"
                           placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
                           value={gpForm.available_kg}
                           onChangeText={(val) =>
-                            setGpForm((p) => ({
-                              ...p,
-                              available_kg: val.replace(/[^0-9.,]/g, ""),
-                            }))
+                            setGpForm((p) => ({ ...p, available_kg: val }))
                           }
                         />
                       </View>
 
                       <View style={styles.flexField}>
-                        <Text style={styles.fieldLabel}>Prix par kg (€) *</Text>
+                        <Text style={styles.fieldLabel}>Prix au kilo (€) *</Text>
                         <TextInput
                           style={styles.input}
-                          keyboardType="decimal-pad"
-                          placeholder="Ex: 8"
+                          placeholder="Ex: 10"
                           placeholderTextColor="#94A3B8"
+                          keyboardType="numeric"
                           value={gpForm.price_per_kg}
                           onChangeText={(val) =>
-                            setGpForm((p) => ({
-                              ...p,
-                              price_per_kg: val.replace(/[^0-9.,]/g, ""),
-                            }))
+                            setGpForm((p) => ({ ...p, price_per_kg: val }))
                           }
                         />
                       </View>
                     </View>
 
-                    <View style={styles.fieldGroup}>
-                      <Text style={styles.fieldLabel}>Description</Text>
-                      <TextInput
-                        style={[styles.input, styles.multilineInput]}
-                        multiline
-                        numberOfLines={3}
-                        placeholder="Précision sur le vol..."
-                        placeholderTextColor="#94A3B8"
-                        value={gpForm.description}
-                        onChangeText={(val) =>
-                          setGpForm((p) => ({ ...p, description: val }))
-                        }
-                      />
-                    </View>
-
                     <TouchableOpacity
                       style={[
                         styles.submitBtn,
+                        styles.submitBtnGold,
                         actionLoading && styles.btnDisabled,
                       ]}
                       disabled={actionLoading}
@@ -1498,9 +1554,7 @@ export default function AdminScreen() {
                       {actionLoading ? (
                         <ActivityIndicator size="small" color="#FFFFFF" />
                       ) : (
-                        <Text style={styles.submitBtnText}>
-                          Publier le trajet GP
-                        </Text>
+                        <Text style={styles.submitBtnText}>Publier le trajet GP</Text>
                       )}
                     </TouchableOpacity>
                   </View>
@@ -1509,20 +1563,21 @@ export default function AdminScreen() {
             </View>
           )}
 
-          {/* ── 3️⃣ ONGLET UTILISATEURS ── */}
+          {/* ══════════════════════════════════════════
+              3️⃣ ONGLET COMPTES & UTILISATEURS
+             ══════════════════════════════════════════ */}
           {tab === "utilisateurs" && (
             <View style={styles.tabContentContainer}>
-              <Text style={styles.sectionTitle}>
-                Créer un nouvel utilisateur
-              </Text>
-
+              {/* Création rapide d'utilisateur */}
               <View style={styles.cardForm}>
+                <Text style={styles.cardFormTitle}>Créer un nouvel utilisateur</Text>
+
                 <View style={styles.inputGridRow}>
                   <View style={styles.flexField}>
                     <Text style={styles.fieldLabel}>Prénom *</Text>
                     <TextInput
                       style={styles.input}
-                      placeholder="Ex: Aminata"
+                      placeholder="Prénom"
                       placeholderTextColor="#94A3B8"
                       value={userForm.firstname}
                       onChangeText={(val) =>
@@ -1534,7 +1589,7 @@ export default function AdminScreen() {
                     <Text style={styles.fieldLabel}>Nom *</Text>
                     <TextInput
                       style={styles.input}
-                      placeholder="Ex: Diallo"
+                      placeholder="Nom"
                       placeholderTextColor="#94A3B8"
                       value={userForm.lastname}
                       onChangeText={(val) =>
@@ -1545,27 +1600,16 @@ export default function AdminScreen() {
                 </View>
 
                 <View style={styles.fieldGroup}>
-                  <Text style={styles.fieldLabel}>Numéro de téléphone</Text>
+                  <Text style={styles.fieldLabel}>Téléphone</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="+33612345678"
+                    placeholder="Ex: +33 6 12 34 56 78"
                     placeholderTextColor="#94A3B8"
                     keyboardType="phone-pad"
-                    maxLength={16}
                     value={userForm.phone}
-                    onChangeText={(val) => {
-                      let cleaned = val.replace(/[^0-9+]/g, "");
-                      if (cleaned.startsWith("+")) {
-                        cleaned = "+" + cleaned.slice(1).replace(/\+/g, "");
-                      } else {
-                        cleaned = cleaned.replace(/\+/g, "");
-                      }
-                      const maxLen = cleaned.startsWith("+") ? 16 : 15;
-                      setUserForm((p) => ({
-                        ...p,
-                        phone: cleaned.slice(0, maxLen),
-                      }));
-                    }}
+                    onChangeText={(val) =>
+                      setUserForm((p) => ({ ...p, phone: val }))
+                    }
                   />
                 </View>
 
@@ -1573,26 +1617,15 @@ export default function AdminScreen() {
                   <Text style={styles.fieldLabel}>Email (optionnel)</Text>
                   <TextInput
                     style={styles.input}
-                    placeholder="aminata@email.com"
+                    placeholder="utilisateur@domaine.com"
                     placeholderTextColor="#94A3B8"
                     keyboardType="email-address"
+                    autoCapitalize="none"
                     value={userForm.email}
                     onChangeText={(val) =>
                       setUserForm((p) => ({ ...p, email: val }))
                     }
                   />
-                </View>
-
-                <View style={styles.infoBannerBlue}>
-                  <Ionicons
-                    name="information-circle"
-                    size={18}
-                    color="#1D4ED8"
-                  />
-                  <Text style={styles.infoBannerBlueText}>
-                    Un mot de passe temporaire sera généré automatiquement. Si
-                    pas d'email, un email fictif sera créé avec le téléphone.
-                  </Text>
                 </View>
 
                 <TouchableOpacity
@@ -1612,11 +1645,34 @@ export default function AdminScreen() {
                 </TouchableOpacity>
               </View>
 
+              {/* Liste des utilisateurs */}
+              <View style={styles.listHeaderActionsRow}>
+                <View style={[styles.searchBarWrapper, { flex: 1 }]}>
+                  <Ionicons name="search" size={16} color="#94A3B8" />
+                  <TextInput
+                    style={styles.searchInput}
+                    placeholder="Rechercher par nom, email, rôle..."
+                    placeholderTextColor="#94A3B8"
+                    value={searchQuery}
+                    onChangeText={setSearchQuery}
+                  />
+                  {Boolean(searchQuery) && (
+                    <TouchableOpacity
+                      onPress={() => setSearchQuery("")}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Ionicons name="close-circle" size={16} color="#94A3B8" />
+                    </TouchableOpacity>
+                  )}
+                </View>
+              </View>
+
               <Text style={styles.sectionTitle}>
-                Tous les utilisateurs ({profiles.length})
+                Comptes utilisateurs ({filteredProfiles.length})
               </Text>
+
               <View style={styles.listGap}>
-                {profiles.map((profile) => (
+                {filteredProfiles.map((profile) => (
                   <View key={profile.id} style={styles.userRowCard}>
                     <View style={{ flex: 1, marginRight: 8 }}>
                       <View style={styles.userRowHeaderLine}>
@@ -1682,7 +1738,7 @@ export default function AdminScreen() {
                             }
                             size={13}
                             color={
-                              profile.role === "admin" ? "#DC2626" : "#1D6B45"
+                              profile.role === "admin" ? "#DC2626" : "#0B3B24"
                             }
                           />
                           <Text
@@ -1705,21 +1761,16 @@ export default function AdminScreen() {
           )}
         </ScrollView>
 
+        {/* ── MODALE SÉLECTION UTILISATEUR ── */}
         <Modal
           transparent
-          animationType="slide"
+          animationType="fade"
           visible={userPickerConfig.visible}
           onRequestClose={() =>
             setUserPickerConfig((prev) => ({ ...prev, visible: false }))
           }
         >
-          <TouchableOpacity
-            style={styles.modalOverlay}
-            activeOpacity={1}
-            onPress={() =>
-              setUserPickerConfig((prev) => ({ ...prev, visible: false }))
-            }
-          >
+          <View style={styles.modalOverlay}>
             <View style={styles.pickerModalCard}>
               <View style={styles.pickerModalHeader}>
                 <Text style={styles.pickerModalTitle}>
@@ -1729,12 +1780,13 @@ export default function AdminScreen() {
                   onPress={() =>
                     setUserPickerConfig((prev) => ({ ...prev, visible: false }))
                   }
+                  hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 >
-                  <Ionicons name="close" size={22} color="#64748B" />
+                  <Ionicons name="close" size={20} color="#64748B" />
                 </TouchableOpacity>
               </View>
 
-              <ScrollView style={{ maxHeight: 320 }}>
+              <ScrollView style={{ maxHeight: 320 }} showsVerticalScrollIndicator={false}>
                 {profiles.map((user) => (
                   <TouchableOpacity
                     key={user.id}
@@ -1759,15 +1811,16 @@ export default function AdminScreen() {
                     <Ionicons
                       name="chevron-forward"
                       size={14}
-                      color="#94A3B8"
+                      color="#CBD5E1"
                     />
                   </TouchableOpacity>
                 ))}
               </ScrollView>
             </View>
-          </TouchableOpacity>
+          </View>
         </Modal>
 
+        {/* ── MODALE DE CONFIRMATION DE SUPPRESSION ── */}
         <Modal
           transparent
           animationType="fade"
@@ -1787,8 +1840,8 @@ export default function AdminScreen() {
                 Supprimer {deleteModal.name} ?
               </Text>
               <Text style={styles.modalSub}>
-                Cette action est irréversible. L'élément sera définitivement
-                effacé.
+                Cette action est irréversible. L'élément sera définitivement effacé
+                de la plateforme.
               </Text>
 
               <View style={styles.modalButtonsRow}>
@@ -1817,9 +1870,7 @@ export default function AdminScreen() {
                   {actionLoading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.modalDeleteBtnText}>
-                      Oui, supprimer
-                    </Text>
+                    <Text style={styles.modalDeleteBtnText}>Supprimer</Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1834,7 +1885,7 @@ export default function AdminScreen() {
 const styles = StyleSheet.create({
   topGreenWrapper: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
   centerLoader: {
     justifyContent: "center",
@@ -1842,123 +1893,243 @@ const styles = StyleSheet.create({
     gap: 12,
   },
   initialLoadingText: {
-    color: "rgba(255, 255, 255, 0.85)",
-    fontSize: 14,
+    color: "#FFFFFF",
+    fontSize: 13,
     fontWeight: "700",
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#0B3B24",
   },
 
+  /* Header Card */
   headerCard: {
-    backgroundColor: "#165034",
-    paddingHorizontal: 18,
-    paddingTop: 12,
-    paddingBottom: 18,
+    backgroundColor: "#0B3B24",
+    paddingHorizontal: 20,
+    paddingTop: 8,
+    paddingBottom: 16,
+  },
+  headerTopBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 14,
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 10,
+    backgroundColor: "rgba(255, 255, 255, 0.12)",
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 20,
   },
   backBtnText: {
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "#FFFFFF",
     fontSize: 13,
-    fontWeight: "600",
+    fontWeight: "700",
   },
+  adminBadgeTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(212, 135, 10, 0.2)",
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: "rgba(212, 135, 10, 0.4)",
+  },
+  adminBadgeTopText: {
+    color: "#FDE68A",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+
+  /* Header Title Row */
   headerTitleRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 12,
+    marginBottom: 16,
+  },
+  shieldIconCircle: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#D4870A",
   },
   headerTitle: {
-    fontSize: 22,
-    fontWeight: "800",
+    fontSize: 20,
+    fontWeight: "900",
     color: "#FFFFFF",
+    letterSpacing: -0.3,
   },
   headerSubtitle: {
     fontSize: 12,
-    color: "rgba(255, 255, 255, 0.8)",
+    color: "rgba(255, 255, 255, 0.75)",
     marginTop: 2,
+    lineHeight: 16,
   },
 
+  /* Stats Row */
   statsRow: {
     flexDirection: "row",
     gap: 8,
-    marginTop: 14,
     marginBottom: 14,
   },
   statBox: {
     flex: 1,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.15)",
     borderRadius: 14,
     paddingVertical: 8,
     alignItems: "center",
   },
+  statBoxActive: {
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
+    borderColor: "rgba(255, 255, 255, 0.4)",
+  },
   statNumber: {
-    fontSize: 18,
-    fontWeight: "800",
+    fontSize: 17,
+    fontWeight: "900",
     color: "#FFFFFF",
   },
   statLabel: {
     fontSize: 11,
-    color: "rgba(255, 255, 255, 0.8)",
+    fontWeight: "700",
+    color: "#FFFFFF",
     marginTop: 1,
   },
+  statSubLabel: {
+    fontSize: 9,
+    color: "rgba(255, 255, 255, 0.7)",
+    fontWeight: "600",
+  },
 
+  /* Tabs Row */
   tabsRow: {
     flexDirection: "row",
-    gap: 6,
+    backgroundColor: "rgba(0, 0, 0, 0.25)",
+    borderRadius: 12,
+    padding: 3,
+    gap: 4,
   },
   tabBtn: {
+    flex: 1,
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "center",
     gap: 5,
-    paddingHorizontal: 14,
-    paddingVertical: 8,
-    borderRadius: 20,
-    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    paddingVertical: 7,
+    borderRadius: 9,
   },
   tabBtnActive: {
     backgroundColor: "#FFFFFF",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.1,
+    shadowRadius: 2,
+    elevation: 1,
   },
   tabBtnText: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "700",
-    color: "#FFFFFF",
+    color: "rgba(255, 255, 255, 0.8)",
   },
   tabBtnTextActive: {
-    color: "#165034",
+    color: "#0B3B24",
+    fontWeight: "800",
   },
 
+  /* Main ScrollView */
   mainScrollView: {
     flex: 1,
     backgroundColor: "#F8FAFC",
   },
   scrollContent: {
-    paddingHorizontal: 16,
-    paddingTop: 16,
+    padding: 16,
     paddingBottom: 40,
+  },
+  tabContentContainer: {
     gap: 14,
   },
 
+  /* Search & Actions Header */
+  listHeaderActionsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  searchBarWrapper: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FFFFFF",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  searchInput: {
+    flex: 1,
+    fontSize: 13,
+    color: "#0F172A",
+    fontWeight: "600",
+  },
+  addPrimaryBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#0B3B24",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  addPrimaryBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  addGoldBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#D4870A",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    borderRadius: 14,
+  },
+  addGoldBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+
+  /* Feedbacks */
   successBox: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#F0FDF4",
     borderWidth: 1,
-    borderColor: "#A7F3D0",
-    borderRadius: 14,
+    borderColor: "#BBF7D0",
+    borderRadius: 12,
     padding: 12,
+    marginBottom: 8,
   },
   successBoxText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
-    color: "#165034",
+    color: "#15803D",
   },
   errorBox: {
     flexDirection: "row",
@@ -1967,28 +2138,31 @@ const styles = StyleSheet.create({
     backgroundColor: "#FEF2F2",
     borderWidth: 1,
     borderColor: "#FCA5A5",
-    borderRadius: 14,
+    borderRadius: 12,
     padding: 12,
+    marginBottom: 8,
   },
   errorBoxText: {
     flex: 1,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "600",
     color: "#B91C1C",
   },
 
+  /* Temp Password Box */
   tempPwdBox: {
     backgroundColor: "#FEF3C7",
     borderWidth: 1,
     borderColor: "#FDE68A",
     borderRadius: 16,
     padding: 14,
+    marginBottom: 8,
+    gap: 6,
   },
   tempPwdHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 6,
-    marginBottom: 6,
   },
   tempPwdTitle: {
     fontSize: 13,
@@ -1999,37 +2173,34 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    backgroundColor: "#FDE68A",
-    borderRadius: 12,
+    backgroundColor: "#FFFFFF",
     paddingHorizontal: 12,
     paddingVertical: 8,
-    marginVertical: 4,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "#FCD34D",
   },
   tempPwdValue: {
-    fontSize: 17,
-    fontWeight: "800",
-    color: "#78350F",
+    fontSize: 14,
+    fontWeight: "900",
+    color: "#0F172A",
     letterSpacing: 1,
-    fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
   },
   copyBtn: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
+    gap: 4,
     backgroundColor: "#FEF3C7",
     paddingHorizontal: 10,
-    paddingVertical: 6,
+    paddingVertical: 5,
     borderRadius: 8,
-    borderWidth: 1,
-    borderColor: "#F59E0B",
   },
   copyBtnSuccess: {
-    backgroundColor: "#165034",
-    borderColor: "#165034",
+    backgroundColor: "#15803D",
   },
   copyBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
+    fontSize: 11,
+    fontWeight: "800",
     color: "#92400E",
   },
   copyBtnTextSuccess: {
@@ -2038,189 +2209,168 @@ const styles = StyleSheet.create({
   tempPwdSub: {
     fontSize: 11,
     color: "#B45309",
-    marginTop: 6,
     lineHeight: 15,
   },
 
-  tabContentContainer: {
-    gap: 14,
+  /* Lists */
+  listGap: {
+    gap: 12,
   },
-  sectionTitle: {
+  emptyBox: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 32,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 10,
+  },
+  emptyText: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "600",
+    textAlign: "center",
+  },
+
+  /* Item Cards */
+  itemCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 18,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 4,
+    elevation: 1,
+    gap: 10,
+  },
+  cardHeaderRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+  },
+  itemCardTitle: {
     fontSize: 15,
     fontWeight: "800",
     color: "#0F172A",
   },
+  itemCardSubRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    marginTop: 2,
+  },
+  itemCardSub: {
+    fontSize: 12,
+    color: "#64748B",
+  },
 
-  cardForm: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 20,
-    padding: 16,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    gap: 12,
+  /* Badges */
+  activeBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
-  fieldGroup: {
-    gap: 6,
-  },
-  fieldLabel: {
-    fontSize: 11,
-    fontWeight: "800",
+  activeBadgeOn: { backgroundColor: "#DCFCE7" },
+  activeBadgeGold: { backgroundColor: "#FEF3C7" },
+  activeBadgeOff: { backgroundColor: "#F1F5F9" },
+  activeDot: { width: 6, height: 6, borderRadius: 3 },
+  activeDotOn: { backgroundColor: "#15803D" },
+  activeDotGold: { backgroundColor: "#D4870A" },
+  activeDotOff: { backgroundColor: "#94A3B8" },
+  activeBadgeText: { fontSize: 10, fontWeight: "800" },
+  activeBadgeTextOn: { color: "#15803D" },
+  activeBadgeGoldText: { color: "#B45309" },
+  activeBadgeTextOff: { color: "#64748B" },
+
+  itemBioText: {
+    fontSize: 12,
     color: "#475569",
+    lineHeight: 17,
   },
-  input: {
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    fontSize: 13,
-    color: "#0F172A",
-  },
-  multilineInput: {
-    minHeight: 70,
-    textAlignVertical: "top",
-  },
-  inputGridRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  flexField: {
-    flex: 1,
-  },
-
-  selectBtn: {
-    backgroundColor: "#F8FAFC",
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    borderRadius: 14,
-    paddingHorizontal: 12,
-    paddingVertical: 11,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-  },
-  selectBtnText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#0F172A",
-  },
-
-  infoBannerBlue: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#EFF6FF",
-    borderWidth: 1,
-    borderColor: "#BFDBFE",
-    borderRadius: 12,
-    padding: 10,
-  },
-  infoBannerBlueText: {
-    flex: 1,
-    fontSize: 11,
-    color: "#1E40AF",
-    lineHeight: 15,
-  },
-
-  submitBtn: {
-    backgroundColor: "#165034",
-    borderRadius: 14,
-    paddingVertical: 14,
-    alignItems: "center",
-    justifyContent: "center",
-    marginTop: 4,
-  },
-  submitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-  btnDisabled: {
-    opacity: 0.6,
-  },
-
-  chipsWrap: {
+  chipsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
   },
-  multiChip: {
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 10,
-    paddingVertical: 6,
-    borderRadius: 16,
+  cuisineChip: {
+    backgroundColor: "#F0FDF4",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#DCFCE7",
   },
-  multiChipActive: {
-    backgroundColor: "#165034",
+  cuisineChipText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#15803D",
   },
-  multiChipText: {
+
+  /* Details Box */
+  detailsBox: {
+    backgroundColor: "#F8FAFC",
+    borderRadius: 12,
+    padding: 10,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "#F1F5F9",
+  },
+  detailItemRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  detailLine: {
     fontSize: 11,
-    fontWeight: "700",
     color: "#475569",
-    textTransform: "capitalize",
-  },
-  multiChipTextActive: {
-    color: "#FFFFFF",
-  },
-
-  checkboxRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 10,
-    marginTop: 4,
-  },
-  checkboxLabel: {
-    fontSize: 13,
     fontWeight: "600",
-    color: "#334155",
   },
 
-  addPrimaryBtn: {
-    backgroundColor: "#165034",
-    borderRadius: 16,
-    paddingVertical: 14,
+  /* Actions Row */
+  itemActionsRow: {
     flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingTop: 8,
+    borderTopWidth: 1,
+    borderTopColor: "#F1F5F9",
+  },
+  toggleBtn: {
+    flex: 1,
+    paddingVertical: 8,
+    borderRadius: 10,
+    alignItems: "center",
     justifyContent: "center",
+  },
+  toggleBtnOn: { backgroundColor: "#DCFCE7" },
+  toggleBtnTextOn: { color: "#15803D" },
+  toggleBtnOff: { backgroundColor: "#F1F5F9" },
+  toggleBtnTextOff: { color: "#64748B" },
+  toggleBtnText: { fontSize: 12, fontWeight: "800" },
+
+  deleteIconBtn: {
+    backgroundColor: "#FEF2F2",
+    padding: 8,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  /* GP Route Row */
+  gpRouteRow: {
+    flexDirection: "row",
     alignItems: "center",
     gap: 6,
-  },
-  addPrimaryBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
+    marginBottom: 2,
   },
 
-  addGoldBtn: {
-    backgroundColor: "#D4870A",
-    borderRadius: 16,
-    paddingVertical: 14,
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 6,
-  },
-  addGoldBtnText: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "800",
-  },
-
-  backLink: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginBottom: 4,
-  },
-  backLinkText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#64748B",
-  },
-
-  listGap: {
-    gap: 10,
-  },
+  /* User Cards */
   userRowCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 16,
@@ -2230,6 +2380,11 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     borderWidth: 1,
     borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.02,
+    shadowRadius: 3,
+    elevation: 1,
   },
   userRowHeaderLine: {
     flexDirection: "row",
@@ -2247,22 +2402,20 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   youBadge: {
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#DCFCE7",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 6,
-    borderWidth: 1,
-    borderColor: "#A7F3D0",
   },
   youBadgeText: {
     fontSize: 9,
     fontWeight: "800",
-    color: "#1D6B45",
+    color: "#15803D",
   },
   userRowRightActions: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    gap: 8,
   },
   roleTag: {
     paddingHorizontal: 8,
@@ -2274,7 +2427,7 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     textTransform: "capitalize",
   },
-  roleAdmin: { backgroundColor: "#FEF2F2" },
+  roleAdmin: { backgroundColor: "#FEE2E2" },
   roleAdminText: { color: "#DC2626" },
   roleTraiteur: { backgroundColor: "#F3E8FF" },
   roleTraiteurText: { color: "#7E22CE" },
@@ -2288,7 +2441,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 3,
     paddingHorizontal: 8,
-    paddingVertical: 4,
+    paddingVertical: 5,
     borderRadius: 8,
     borderWidth: 1,
   },
@@ -2297,11 +2450,11 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   adminActionBtnAdd: {
-    backgroundColor: "#E8F5E9",
+    backgroundColor: "#ECFDF5",
     borderColor: "#A7F3D0",
   },
   adminActionBtnAddText: {
-    color: "#1D6B45",
+    color: "#0B3B24",
   },
   adminActionBtnRemove: {
     backgroundColor: "#FEF2F2",
@@ -2311,136 +2464,156 @@ const styles = StyleSheet.create({
     color: "#DC2626",
   },
 
-  itemCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-    gap: 8,
-  },
-  cardHeaderRow: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  gpRouteRow: {
+  /* Forms */
+  backLink: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    marginBottom: 2,
+    gap: 4,
+    marginBottom: 4,
   },
-  itemCardTitle: {
-    fontSize: 15,
+  backLinkText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  infoBannerBlue: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#EFF6FF",
+    borderWidth: 1,
+    borderColor: "#BFDBFE",
+    borderRadius: 12,
+    padding: 10,
+  },
+  infoBannerBlueText: {
+    flex: 1,
+    fontSize: 11,
+    color: "#1E40AF",
+    lineHeight: 15,
+  },
+  cardForm: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 12,
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.03,
+    shadowRadius: 6,
+    elevation: 1,
+  },
+  cardFormTitle: {
+    fontSize: 14,
     fontWeight: "800",
     color: "#0F172A",
   },
-  itemCardSubRow: {
+  fieldGroup: {
+    gap: 5,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#475569",
+    textTransform: "uppercase",
+    letterSpacing: 0.3,
+  },
+  input: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0F172A",
+  },
+  multilineInput: {
+    minHeight: 70,
+    textAlignVertical: "top",
+  },
+  inputGridRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  flexField: {
+    flex: 1,
+  },
+  selectBtn: {
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 11,
     flexDirection: "row",
     alignItems: "center",
-    gap: 5,
-    marginTop: 2,
+    justifyContent: "space-between",
   },
-  itemCardSub: {
-    fontSize: 12,
-    color: "#475569",
+  selectBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#0F172A",
   },
-
-  activeBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 8,
-  },
-  activeBadgeOn: { backgroundColor: "#E8F5E9" },
-  activeBadgeTextOn: { color: "#165034" },
-  activeBadgeGold: { backgroundColor: "#FEF3C7" },
-  activeBadgeGoldText: { color: "#D4870A" },
-  activeBadgeOff: { backgroundColor: "#F1F5F9" },
-  activeBadgeTextOff: { color: "#94A3B8" },
-  activeBadgeText: { fontSize: 10, fontWeight: "800" },
-
-  itemBioText: {
-    fontSize: 12,
-    color: "#64748B",
-    lineHeight: 16,
-  },
-
-  chipsRow: {
+  chipsWrap: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
   },
-
-  cuisineChip: {
-    backgroundColor: "#E8F5E9",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 10,
+  multiChip: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
   },
-  cuisineChipText: {
-    fontSize: 10,
-    fontWeight: "700",
-    color: "#165034",
-    textTransform: "capitalize",
+  multiChipActive: {
+    backgroundColor: "#0B3B24",
   },
-
-  detailsBox: {
-    backgroundColor: "#F8FAFC",
-    borderRadius: 12,
-    padding: 10,
-    gap: 6,
-  },
-  detailItemRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  detailLine: {
+  multiChipText: {
     fontSize: 11,
+    fontWeight: "700",
     color: "#475569",
   },
-
-  itemActionsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    paddingTop: 6,
-    borderTopWidth: 1,
-    borderTopColor: "#F1F5F9",
+  multiChipTextActive: {
+    color: "#FFFFFF",
   },
-  toggleBtn: {
-    flex: 1,
-    paddingVertical: 8,
-    borderRadius: 10,
-    alignItems: "center",
-  },
-  toggleBtnOn: { backgroundColor: "#E8F5E9" },
-  toggleBtnTextOn: { color: "#165034" },
-  toggleBtnOff: { backgroundColor: "#F1F5F9" },
-  toggleBtnTextOff: { color: "#64748B" },
-  toggleBtnText: { fontSize: 12, fontWeight: "700" },
-
-  deleteIconBtn: {
-    backgroundColor: "#FEF2F2",
-    padding: 8,
-    borderRadius: 10,
-  },
-
-  emptyBox: {
-    paddingVertical: 40,
+  submitBtn: {
+    backgroundColor: "#0B3B24",
+    borderRadius: 14,
+    paddingVertical: 13,
     alignItems: "center",
     justifyContent: "center",
+    marginTop: 4,
+    shadowColor: "#0B3B24",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+    elevation: 2,
   },
-  emptyText: {
+  submitBtnGold: {
+    backgroundColor: "#D4870A",
+  },
+  submitBtnText: {
+    color: "#FFFFFF",
     fontSize: 14,
-    color: "#94A3B8",
-    fontWeight: "600",
-    marginTop: 8,
+    fontWeight: "800",
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 
+  /* Modals */
   modalOverlay: {
     flex: 1,
-    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    backgroundColor: "rgba(15, 23, 42, 0.65)",
     justifyContent: "center",
     alignItems: "center",
     padding: 20,
@@ -2485,7 +2658,6 @@ const styles = StyleSheet.create({
     color: "#64748B",
     marginTop: 2,
   },
-
   modalCard: {
     backgroundColor: "#FFFFFF",
     borderRadius: 24,
@@ -2498,7 +2670,7 @@ const styles = StyleSheet.create({
     width: 56,
     height: 56,
     borderRadius: 28,
-    backgroundColor: "#FEF2F2",
+    backgroundColor: "#FEE2E2",
     justifyContent: "center",
     alignItems: "center",
     marginBottom: 14,
@@ -2528,6 +2700,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
   },
   modalCancelBtnText: {
     fontSize: 13,
@@ -2540,6 +2713,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     borderRadius: 14,
     alignItems: "center",
+    justifyContent: "center",
   },
   modalDeleteBtnText: {
     fontSize: 13,

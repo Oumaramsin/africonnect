@@ -112,25 +112,36 @@ export default function Footer() {
                 </a>
               </li>
               <li>
+                <Link
+                  href="/cgu"
+                  className="inline-flex items-center gap-2 text-slate-300 hover:text-white transition-colors text-xs font-semibold"
+                >
+                  <ShieldCheck size={14} className="text-emerald-400" />
+                  Conditions d&apos;Utilisation (CGU)
+                </Link>
+              </li>
+              <li>
                 <span className="text-slate-400 text-xs">
                   Disponible 7j/7 pour vous assister dans vos expéditions et réservations.
                 </span>
               </li>
-            </ul>
+              </ul>
+            </div>
           </div>
-        </div>
 
-        {/* ── BAS DE PAGE : COPYRIGHT & MENTIONS ── */}
-        <div className="mt-12 pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <p>© {new Date().getFullYear()} Dabari. Tous droits réservés.</p>
-          <div className="flex items-center gap-6">
-            <span>Fait avec passion pour la diaspora africaine</span>
-            <span>•</span>
-            <span className="hover:text-slate-400 cursor-pointer">Conditions d'utilisation</span>
-            <span>•</span>
-            <span className="hover:text-slate-400 cursor-pointer">Confidentialité</span>
+          {/* ── BAS DE PAGE : COPYRIGHT & MENTIONS ── */}
+          <div className="mt-12 pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
+            <p>© {new Date().getFullYear()} Dabari. Tous droits réservés.</p>
+            <div className="flex items-center gap-6">
+              <span>Fait avec passion pour la diaspora africaine</span>
+              <span>•</span>
+              <Link href="/cgu" className="hover:text-emerald-400 transition-colors font-medium">
+                Conditions Générales (CGU)
+              </Link>
+              <span>•</span>
+              <span className="hover:text-slate-400 cursor-pointer">Confidentialité & RGPD</span>
+            </div>
           </div>
-        </div>
       </div>
     </footer>
   );

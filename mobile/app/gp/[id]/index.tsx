@@ -224,7 +224,7 @@ export default function GpBookingScreen() {
               <Ionicons name="checkmark-circle" size={64} color="#1D6B45" />
             </View>
 
-            <Text style={styles.successTitle}>Demande envoyée ! 🎉</Text>
+            <Text style={styles.successTitle}>Demande envoyée avec succès !</Text>
             <Text style={styles.successSub}>
               {gpProfile?.full_name || "Le GP"} a reçu votre demande et va vous contacter rapidement pour confirmer la prise en charge.
             </Text>
@@ -273,7 +273,7 @@ export default function GpBookingScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="light-content" />
 
-        {/* 🟢 HEADER HAUT (IDENTIQUE APP WEB) */}
+        {/* HEADER HAUT (IDENTIQUE APP WEB) */}
         <View style={styles.headerCard}>
           <TouchableOpacity
             style={styles.backBtn}

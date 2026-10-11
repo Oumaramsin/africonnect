@@ -7,6 +7,11 @@
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "light",
+    "androidStatusBar": {
+      "backgroundColor": "#0B3B24",
+      "barStyle": "light-content",
+      "translucent": false
+    },
     "splash": {
       "image": "./assets/splash.png",
       "resizeMode": "contain",
@@ -45,7 +50,9 @@
           "photosPermission": "Autorisez Dabari à accéder à vos photos pour vos annonces et plats.",
           "cameraPermission": "Autorisez Dabari à accéder à votre appareil photo."
         }
-      ]
+      ],
+      "expo-status-bar",
+      "expo-sharing"
     ]
   }
 }

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,6 +9,8 @@ import {
   TextInput,
   Platform,
   Linking,
+  Modal,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -20,62 +22,33 @@ import { apiFetch } from "../../../utils/api";
 import AddressAutocomplete from "../../../components/AddressAutocomplete";
 import { verifyAddressExists } from "../../../utils/addressValidation";
 
-let DateTimePicker: any = null;
-if (Platform.OS !== "web") {
-  try {
-    DateTimePicker = require("@react-native-community/datetimepicker").default;
-  } catch (e) {
-    DateTimePicker = null;
-  }
+interface EventTypeOption {
+  id: string;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
 }
 
-const EVENT_TYPES = [
-  {
-    id: "mariage",
-    label: "Mariage",
-    icon: "heart-outline",
-    iconActive: "heart",
-  },
-  {
-    id: "bapteme",
-    label: "Baptême",
-    icon: "footsteps-outline",
-    iconActive: "footsteps",
-  },
-  {
-    id: "anniversaire",
-    label: "Anniversaire",
-    icon: "gift-outline",
-    iconActive: "gift",
-  },
-  {
-    id: "reception",
-    label: "Réception",
-    icon: "wine-outline",
-    iconActive: "wine",
-  },
-  {
-    id: "entreprise",
-    label: "Entreprise",
-    icon: "briefcase-outline",
-    iconActive: "briefcase",
-  },
-  {
-    id: "autre",
-    label: "Autre",
-    icon: "sparkles-outline",
-    iconActive: "sparkles",
-  },
+const EVENT_TYPES: EventTypeOption[] = [
+  { id: "mariage", label: "Mariage", icon: "heart" },
+  { id: "bapteme", label: "Baptême", icon: "happy" },
+  { id: "anniversaire", label: "Anniversaire", icon: "gift" },
+  { id: "reception", label: "Réception", icon: "wine" },
+  { id: "entreprise", label: "Événement pro", icon: "briefcase" },
+  { id: "autre", label: "Autre", icon: "sparkles" },
 ];
 
 export default function DevisScreen() {
   const router = useRouter();
   const { traiteurId } = useLocalSearchParams<{ traiteurId: string }>();
 
+  const tomorrow = useMemo(() => {
+    const d = new Date(Date.now() + 86400000 * 14); // Par défaut dans 2 semaines
+    return d.toISOString().split("T")[0];
+  }, []);
+
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
 
-  // États locaux uniquement pour l'interactivité visuelle
-  const [dateEvenement, setDateEvenement] = useState("");
+  const [dateEvenement, setDateEvenement] = useState(tomorrow);
   const [nbPersonnes, setNbPersonnes] = useState("");
   const [adresse, setAdresse] = useState("");
   const [typeEvenement, setTypeEvenement] = useState("mariage");
@@ -87,6 +60,7 @@ export default function DevisScreen() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
   useEffect(() => {
+    let ignore = false;
     async function fetchTraiteur() {
       const token = await getSecureToken("token");
       if (!token) {
@@ -99,34 +73,20 @@ export default function DevisScreen() {
         const response = await apiFetch(`/traiteur/${traiteurId}`);
         if (response.ok) {
           const data = await response.json();
-          setTraiteur(data.data?.traiteur || null);
-          setIsLoggedIn(true);
+          if (!ignore) {
+            setTraiteur(data.data?.traiteur || null);
+            setIsLoggedIn(true);
+          }
         }
       } catch (err) {
         console.error("Erreur récupération traiteur pour devis:", err);
       }
     }
     fetchTraiteur();
-  }, [traiteurId]);
-
-  // Calendrier pour mobile
-  const [selectedDate, setSelectedDate] = useState<Date>(() => {
-    const nextMonth = new Date();
-    nextMonth.setDate(nextMonth.getDate() + 14);
-    return nextMonth;
-  });
-  const [showDatePicker, setShowDatePicker] = useState(false);
-
-  const handleDateChange = (event: any, date?: Date) => {
-    if (Platform.OS === "android") setShowDatePicker(false);
-    if (date) {
-      setSelectedDate(date);
-      const yyyy = date.getFullYear();
-      const mm = String(date.getMonth() + 1).padStart(2, "0");
-      const dd = String(date.getDate()).padStart(2, "0");
-      setDateEvenement(`${yyyy}-${mm}-${dd}`);
-    }
-  };
+    return () => {
+      ignore = true;
+    };
+  }, [traiteurId, router]);
 
   const parsedNbPersonnes = parseInt(nbPersonnes, 10);
   const isFormValid =
@@ -195,6 +155,7 @@ export default function DevisScreen() {
         setLoading(false);
         return;
       }
+      setShowConfirmModal(false);
       setSuccess(true);
     } catch (e: any) {
       console.error("Erreur devis:", e);
@@ -208,57 +169,65 @@ export default function DevisScreen() {
     const rawWhatsapp = traiteur?.whatsapp || (traiteur as any)?.phone || "";
     const waUrl = formatWhatsAppUrl(
       rawWhatsapp,
-      "Bonjour, je viens de demander un devis sur Dabari."
+      `Bonjour Chef ${traiteur?.name || ""}, je viens de vous envoyer une demande de devis pour un événement sur Dabari.`
     );
 
     return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.successContainer}>
-          <View style={styles.successIconCircle}>
-            <Ionicons name="checkmark-circle" size={72} color="#1D6B45" />
-          </View>
-          <Text style={styles.successTitle}>Demande de Devis Envoyée !</Text>
-          <Text style={styles.successDesc}>
-            {traiteur?.name || "Le traiteur"} a bien reçu votre demande et vous
-            recontactera très rapidement.
-          </Text>
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.container} edges={["top"]}>
+          <View style={styles.successContainer}>
+            <View style={styles.successIconCircle}>
+              <Ionicons name="checkmark-circle" size={68} color="#1D6B45" />
+            </View>
+            <Text style={styles.successTitle}>Demande de devis transmise</Text>
+            <Text style={styles.successDesc}>
+              {traiteur?.name || "Le traiteur"} a bien reçu votre demande et vous répondra sous 24h à 48h avec une proposition sur-mesure.
+            </Text>
 
-          {Boolean(waUrl) && (
+            {Boolean(waUrl) && (
+              <TouchableOpacity
+                style={styles.whatsAppBtn}
+                onPress={() => Linking.openURL(waUrl!)}
+                activeOpacity={0.88}
+              >
+                <Ionicons name="logo-whatsapp" size={18} color="#FFFFFF" />
+                <Text style={styles.whatsAppBtnText}>Contacter le chef sur WhatsApp</Text>
+              </TouchableOpacity>
+            )}
+
             <TouchableOpacity
-              style={styles.whatsAppBtn}
-              onPress={() => Linking.openURL(waUrl!)}
+              style={styles.successOrdersBtn}
+              onPress={() => router.replace("/commandes")}
+              activeOpacity={0.88}
+            >
+              <Text style={styles.successOrdersBtnText}>
+                Suivre dans Mes Commandes & Devis
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.successHomeBtn}
+              onPress={() => router.replace(`/traiteur/${traiteurId}` as any)}
               activeOpacity={0.85}
             >
-              <Ionicons name="logo-whatsapp" size={20} color="#FFFFFF" />
-              <Text style={styles.whatsAppBtnText}>Contacter sur WhatsApp</Text>
+              <Text style={styles.successHomeBtnText}>
+                Retour à la fiche du chef
+              </Text>
             </TouchableOpacity>
-          )}
-
-          <TouchableOpacity
-            style={styles.successHomeBtn}
-            onPress={() => router.replace(`/traiteur/${traiteurId}` as any)}
-            activeOpacity={0.85}
-          >
-            <Text style={styles.successHomeBtnText}>
-              Retour au profil traiteur
-            </Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
+          </View>
+        </SafeAreaView>
+      </View>
     );
   }
 
   if (!isLoggedIn) {
     return (
-      <SafeAreaView style={styles.container}>
-        <View
-          style={{ flex: 1, justifyContent: "center", alignItems: "center" }}
-        >
-          <Text style={{ color: "#1D6B45", fontWeight: "700" }}>
-            Chargement...
-          </Text>
-        </View>
-      </SafeAreaView>
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.centerLoading}>
+          <ActivityIndicator size="large" color="#FFFFFF" />
+          <Text style={styles.loadingText}>Vérification du profil...</Text>
+        </SafeAreaView>
+      </View>
     );
   }
 
@@ -267,255 +236,285 @@ export default function DevisScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="light-content" />
 
-        {/* Top Header Card */}
-        <View style={styles.headerCard}>
-          <TouchableOpacity
-            style={styles.backBtn}
-            onPress={() => router.back()}
-            activeOpacity={0.7}
-          >
-            <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
-            <Text style={styles.backBtnText}>Retour</Text>
-          </TouchableOpacity>
+        {/* ── 1. HEADER HERO DABARI ── */}
+        <View style={styles.headerHero}>
+          <View style={styles.headerTopRow}>
+            <TouchableOpacity
+              style={styles.backBtn}
+              onPress={() => router.back()}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="arrow-back" size={18} color="#FFFFFF" />
+              <Text style={styles.backBtnText}>Retour</Text>
+            </TouchableOpacity>
 
-          <View style={styles.heroRow}>
-            <View style={styles.heroIconBadge}>
-              <Ionicons name="restaurant" size={26} color="#1D6B45" />
+            <View style={styles.headerPill}>
+              <Ionicons name="sparkles" size={11} color="#D4870A" />
+              <Text style={styles.headerPillText}>Devis Direct Chef</Text>
             </View>
-            <View style={{ flex: 1 }}>
-              <Text style={styles.heroTitle}>Demande de Devis Événement</Text>
-              <Text style={styles.heroSub}>
-                Remplissez les détails de votre réception pour recevoir une
-                proposition personnalisée.
-              </Text>
+          </View>
+
+          <Text style={styles.heroTitle}>Demande de devis événement</Text>
+          <Text style={styles.heroSubtitle}>
+            Précisez vos souhaits pour votre réception. Le chef étudiera votre demande et vous transmettra son offre personnalisée.
+          </Text>
+
+          {/* Badges de réassurance */}
+          <View style={styles.reassuranceRow}>
+            <View style={styles.reassuranceBadge}>
+              <Ionicons name="shield-checkmark" size={12} color="#6EE7B7" />
+              <Text style={styles.reassuranceText}>Sans engagement</Text>
+            </View>
+            <View style={styles.reassuranceBadge}>
+              <Ionicons name="lock-closed" size={12} color="#6EE7B7" />
+              <Text style={styles.reassuranceText}>Séquestre Dabari</Text>
+            </View>
+            <View style={styles.reassuranceBadge}>
+              <Ionicons name="time" size={12} color="#FCD34D" />
+              <Text style={styles.reassuranceText}>Réponse 24h-48h</Text>
             </View>
           </View>
         </View>
 
-        {/* Scrollable Form Content */}
+        {/* ── 2. CONTENU DU FORMULAIRE ── */}
         <ScrollView
-          style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
+          style={styles.contentScroll}
+          contentContainerStyle={styles.scrollPadding}
+          keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <View style={styles.mainFormCard}>
-            {/* Traiteur info box */}
-            <View style={styles.targetTraiteurCard}>
-              <View style={styles.targetTraiteurAvatar}>
-                <Ionicons name="storefront" size={20} color="#1D6B45" />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.targetTraiteurLabel}>
-                  Traiteur sélectionné :
-                </Text>
-                <Text style={styles.targetTraiteurName}>
-                  {traiteur ? traiteur.name : "Chargement du traiteur..."}
-                </Text>
-              </View>
+          {/* Fiche récapitulative du chef ciblé */}
+          <View style={styles.targetTraiteurCard}>
+            <View style={styles.targetTraiteurAvatar}>
+              <Ionicons name="restaurant" size={20} color="#1D6B45" />
             </View>
-            
-            {/* 1. Type d'Événement */}
-            <View style={styles.formFieldGroup}>
-              <Text style={styles.fieldLabel}>Type d'événement *</Text>
-              <View style={styles.eventTypesGrid}>
-                {EVENT_TYPES.map((evt) => {
-                  const isSelected = typeEvenement === evt.id;
-                  return (
-                    <TouchableOpacity
-                      key={evt.id}
-                      style={[
-                        styles.eventTypePill,
-                        isSelected ? styles.eventTypePillActive : undefined,
-                      ]}
-                      onPress={() => setTypeEvenement(evt.id)}
-                      activeOpacity={0.8}
-                    >
-                      <Ionicons
-                        name={(isSelected ? evt.iconActive : evt.icon) as any}
-                        size={16}
-                        color={isSelected ? "#1D6B45" : "#64748B"}
-                      />
-                      <Text
-                        style={[
-                          styles.eventTypePillText,
-                          isSelected
-                            ? styles.eventTypePillTextActive
-                            : undefined,
-                        ]}
-                      >
-                        {evt.label}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                })}
-              </View>
+            <View style={{ flex: 1 }}>
+              <Text style={styles.targetTraiteurLabel}>Traiteur sollicité :</Text>
+              <Text style={styles.targetTraiteurName}>
+                {traiteur ? traiteur.name : "Chargement du chef..."}
+              </Text>
+            </View>
+            <View style={styles.verifiedMiniPill}>
+              <Ionicons name="shield-checkmark" size={12} color="#1D6B45" />
+              <Text style={styles.verifiedMiniPillText}>Partenaire</Text>
+            </View>
+          </View>
+
+          {/* 1. Type d'Événement (Tuiles Vectorielles) */}
+          <View style={styles.cardSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Ionicons name="calendar-outline" size={16} color="#1D6B45" />
+              <Text style={styles.sectionTitle}>Type d'événement</Text>
+              <Text style={styles.requiredAsterisk}>*</Text>
             </View>
 
-            {/* 2. Date de l'événement */}
-            <View style={styles.formFieldGroup}>
-              <Text style={styles.fieldLabel}>Date de l'événement *</Text>
-              {Platform.OS === "web" ? (
+            <View style={styles.eventTypeGrid}>
+              {EVENT_TYPES.map((evt) => {
+                const isSelected = typeEvenement === evt.id;
+                return (
+                  <TouchableOpacity
+                    key={evt.id}
+                    style={[
+                      styles.eventTypeTile,
+                      isSelected && styles.eventTypeTileSelected,
+                    ]}
+                    onPress={() => setTypeEvenement(evt.id)}
+                    activeOpacity={0.8}
+                  >
+                    <View
+                      style={[
+                        styles.tileIconCircle,
+                        isSelected && styles.tileIconCircleSelected,
+                      ]}
+                    >
+                      <Ionicons
+                        name={evt.icon}
+                        size={15}
+                        color={isSelected ? "#FFFFFF" : "#1D6B45"}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        styles.tileLabel,
+                        isSelected && styles.tileLabelSelected,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {evt.label}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          {/* 2. Date et Nombre de personnes */}
+          <View style={styles.cardSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Ionicons name="people-outline" size={16} color="#1D6B45" />
+              <Text style={styles.sectionTitle}>Date & Convives</Text>
+              <Text style={styles.requiredAsterisk}>*</Text>
+            </View>
+
+            <View style={styles.formGridRow}>
+              <View style={styles.formCol}>
+                <Text style={styles.fieldLabel}>Date de réception *</Text>
                 <TextInput
-                  style={styles.textInput}
+                  style={styles.inputField}
                   placeholder="AAAA-MM-JJ"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor="#94A3B8"
                   value={dateEvenement}
                   onChangeText={setDateEvenement}
                 />
-              ) : (
+              </View>
+
+              <View style={styles.formCol}>
+                <Text style={styles.fieldLabel}>Nombre de convives *</Text>
+                <TextInput
+                  style={styles.inputField}
+                  placeholder="Ex: 50"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="numeric"
+                  value={nbPersonnes}
+                  onChangeText={setNbPersonnes}
+                />
+              </View>
+            </View>
+
+            {/* Raccourcis convives */}
+            <View style={styles.guestShortcutsRow}>
+              <Text style={styles.shortcutHelperText}>Suggestions :</Text>
+              {["25", "50", "100", "200"].map((count) => (
                 <TouchableOpacity
-                  style={styles.pickerBtn}
-                  onPress={() => setShowDatePicker(true)}
-                  activeOpacity={0.8}
+                  key={count}
+                  style={styles.shortcutPill}
+                  onPress={() => setNbPersonnes(count)}
                 >
-                  <Ionicons name="calendar-outline" size={18} color="#1D6B45" />
-                  <Text style={styles.pickerBtnText}>
-                    {dateEvenement
-                      ? selectedDate.toLocaleDateString("fr-FR", {
-                          day: "2-digit",
-                          month: "long",
-                          year: "numeric",
-                        })
-                      : "Choisir la date de l'événement *"}
-                  </Text>
+                  <Text style={styles.shortcutPillText}>{count} pers.</Text>
                 </TouchableOpacity>
-              )}
-
-              {Boolean(
-                Platform.OS !== "web" && DateTimePicker && showDatePicker,
-              ) && (
-                <DateTimePicker
-                  value={selectedDate}
-                  mode="date"
-                  display={Platform.OS === "ios" ? "spinner" : "default"}
-                  minimumDate={new Date()}
-                  onChange={handleDateChange}
-                />
-              )}
+              ))}
             </View>
-
-            {/* 3. Nombre de Personnes */}
-            <View style={styles.formFieldGroup}>
-              <Text style={styles.fieldLabel}>
-                Nombre de convives (personnes) *
-              </Text>
-              <TextInput
-                style={styles.textInput}
-                placeholder="Ex: 50, 100, 250..."
-                placeholderTextColor="#9CA3AF"
-                keyboardType="number-pad"
-                value={nbPersonnes}
-                onChangeText={setNbPersonnes}
-              />
-            </View>
-
-            {/* 4. Lieu / Adresse de l'événement */}
-            <View style={[styles.formFieldGroup, { zIndex: 50 }]}>
-              <Text style={styles.fieldLabel}>
-                Lieu ou Adresse de l'événement *
-              </Text>
-              <AddressAutocomplete
-                value={adresse}
-                onChangeText={setAdresse}
-                onSelectAddress={(item) => setAdresse(item.label)}
-                placeholder="Ex: Salle des Fêtes, 75011 Paris..."
-              />
-            </View>
-
-            {/* 5. Précisions & Demandes particulières */}
-            <View style={styles.formFieldGroup}>
-              <View style={{ flexDirection: "row", alignItems: "center" }}>
-                <Text style={styles.fieldLabel}>
-                  Notes & Exigences particulières
-                </Text>
-                <Text style={styles.optionalTag}> (optionnel)</Text>
-              </View>
-              <TextInput
-                style={[styles.textInput, styles.textAreaInput]}
-                placeholder="Menu souhaité, régimes alimentaires, logistique..."
-                placeholderTextColor="#9CA3AF"
-                multiline
-                numberOfLines={4}
-                value={notes}
-                onChangeText={setNotes}
-              />
-            </View>
-
-            {/* Alert Error Box */}
-            {Boolean(error) && (
-              <View style={styles.errorBox}>
-                <Ionicons
-                  name="alert-circle-outline"
-                  size={18}
-                  color="#B91C1C"
-                />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
-            {/* Bouton d'Envoi */}
-            <TouchableOpacity
-              style={[
-                styles.submitBtn,
-                (!isFormValid || loading) && styles.submitBtnDisabled,
-              ]}
-              activeOpacity={0.85}
-              onPress={handlePreSubmit}
-              disabled={!isFormValid || loading}
-            >
-              <Ionicons
-                name="send"
-                size={16}
-                color="#FFFFFF"
-                style={{ marginRight: 6 }}
-              />
-              <Text style={styles.submitBtnText}>
-                {loading ? "Envoi en cours..." : "Envoyer ma demande de devis"}
-              </Text>
-            </TouchableOpacity>
           </View>
 
-          {/* Pop-up (Modale) de confirmation */}
-          {Boolean(showConfirmModal) && (
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalContent}>
-                <Text style={styles.modalTitle}>
-                  Confirmer la demande de devis
-                </Text>
+          {/* 3. Lieu ou Adresse de l'événement */}
+          <View style={styles.cardSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Ionicons name="location-outline" size={16} color="#1D6B45" />
+              <Text style={styles.sectionTitle}>Lieu ou Adresse de livraison</Text>
+              <Text style={styles.requiredAsterisk}>*</Text>
+            </View>
+            <Text style={styles.fieldHelper}>
+              Précisez l'adresse ou la ville de réception afin que le traiteur vérifie sa zone de livraison.
+            </Text>
+
+            <AddressAutocomplete
+              value={adresse}
+              onChangeText={setAdresse}
+              onSelectAddress={(item) => setAdresse(item.label)}
+              placeholder="Ex: 14 Rue de Paris, 75011 Paris..."
+            />
+          </View>
+
+          {/* 4. Précisions & Souhaits du menu */}
+          <View style={styles.cardSection}>
+            <View style={styles.sectionHeaderRow}>
+              <Ionicons name="create-outline" size={16} color="#1D6B45" />
+              <Text style={styles.sectionTitle}>Notes & Exigences particulières</Text>
+              <Text style={styles.optionalTag}>(optionnel)</Text>
+            </View>
+            <Text style={styles.fieldHelper}>
+              Plats préférés, formules avec service à table ou buffet chaud, régimes halal ou sans gluten...
+            </Text>
+
+            <TextInput
+              style={[styles.inputField, styles.textAreaField]}
+              placeholder="Détaillez vos souhaits culinaires ou contraintes matérielles..."
+              placeholderTextColor="#94A3B8"
+              multiline
+              numberOfLines={4}
+              textAlignVertical="top"
+              value={notes}
+              onChangeText={setNotes}
+            />
+          </View>
+
+          {/* Message d'erreur */}
+          {Boolean(error) && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="alert-circle" size={16} color="#B91C1C" />
+              <Text style={styles.errorBannerText}>{error}</Text>
+            </View>
+          )}
+
+          {/* Bouton d'Envoi */}
+          <TouchableOpacity
+            style={[
+              styles.submitBtn,
+              (!isFormValid || loading) && styles.submitBtnDisabled,
+            ]}
+            activeOpacity={0.88}
+            onPress={handlePreSubmit}
+            disabled={!isFormValid || loading}
+          >
+            {loading ? (
+              <ActivityIndicator color="#FFFFFF" size="small" />
+            ) : (
+              <>
+                <Ionicons name="send" size={15} color="#FFFFFF" />
+                <Text style={styles.submitBtnText}>Transmettre ma demande de devis</Text>
+              </>
+            )}
+          </TouchableOpacity>
+        </ScrollView>
+
+        {/* ── 3. MODALE DE CONFIRMATION AVANT ENVOI ── */}
+        {showConfirmModal && (
+          <Modal
+            transparent
+            animationType="fade"
+            visible={showConfirmModal}
+            onRequestClose={() => setShowConfirmModal(false)}
+          >
+            <View style={styles.modalBackdrop}>
+              <View style={styles.modalCard}>
+                <View style={styles.modalHeader}>
+                  <Ionicons name="checkmark-circle-outline" size={26} color="#1D6B45" />
+                  <Text style={styles.modalTitle}>Confirmer la demande</Text>
+                </View>
+
                 <Text style={styles.modalDesc}>
-                  {`Êtes-vous sûr(e) de vouloir envoyer cette demande de devis à ${
-                    traiteur?.name || "ce traiteur"
-                  } pour ${
-                    nbPersonnes ? `${nbPersonnes} personnes` : "votre événement"
-                  } ?`}
+                  Vous vous apprêtez à envoyer votre demande de devis à{" "}
+                  <Text style={{ fontWeight: "800", color: "#0F172A" }}>
+                    {traiteur?.name || "ce chef traiteur"}
+                  </Text>{" "}
+                  pour {nbPersonnes} convives à la date du {dateEvenement}.
                 </Text>
 
-                <View style={styles.modalButtonsRow}>
+                <View style={styles.modalActionsRow}>
                   <TouchableOpacity
                     style={styles.modalCancelBtn}
                     onPress={() => setShowConfirmModal(false)}
                     disabled={loading}
                   >
-                    <Text style={styles.modalCancelText}>Annuler</Text>
+                    <Text style={styles.modalCancelBtnText}>Modifier</Text>
                   </TouchableOpacity>
 
                   <TouchableOpacity
                     style={styles.modalConfirmBtn}
-                    onPress={() => {
-                      setShowConfirmModal(false);
-                      confirmOrder();
-                    }}
+                    onPress={confirmOrder}
                     disabled={loading}
                   >
-                    <Text style={styles.modalConfirmText}>
-                      {loading ? "Envoi..." : "Oui, envoyer"}
-                    </Text>
+                    {loading ? (
+                      <ActivityIndicator color="#FFFFFF" size="small" />
+                    ) : (
+                      <Text style={styles.modalConfirmBtnText}>Confirmer & Envoyer</Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
             </View>
-          )}
-        </ScrollView>
+          </Modal>
+        )}
       </SafeAreaView>
     </View>
   );
@@ -528,97 +527,130 @@ const styles = StyleSheet.create({
   },
   container: {
     flex: 1,
-    backgroundColor: "#165034",
+    backgroundColor: "#F8FAFC",
   },
-  mainScrollView: {
+  centerLoading: {
     flex: 1,
-    backgroundColor: "#F3F4F6",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 12,
   },
-  headerCard: {
+  loadingText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+
+  /* ── Hero Header ── */
+  headerHero: {
     backgroundColor: "#165034",
-    paddingTop: 12,
+    paddingTop: 8,
     paddingBottom: 20,
-    paddingHorizontal: 20,
+    paddingHorizontal: 18,
+    borderBottomLeftRadius: 28,
+    borderBottomRightRadius: 28,
+    gap: 10,
+  },
+  headerTopRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
   },
   backBtn: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 14,
-    gap: 6,
+    gap: 4,
   },
   backBtnText: {
     color: "rgba(255, 255, 255, 0.85)",
-    fontSize: 13,
-    fontWeight: "700",
+    fontSize: 12,
+    fontWeight: "600",
   },
-  heroRow: {
+  headerPill: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 14,
+    gap: 4,
+    backgroundColor: "rgba(255, 255, 255, 0.15)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.2)",
   },
-  heroIconBadge: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#FFFFFF",
-    justifyContent: "center",
-    alignItems: "center",
+  headerPillText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "700",
   },
   heroTitle: {
     fontSize: 20,
-    fontWeight: "800",
+    fontWeight: "900",
     color: "#FFFFFF",
     letterSpacing: -0.3,
-    marginBottom: 2,
   },
-  heroSub: {
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.8)",
+  heroSubtitle: {
+    fontSize: 11,
+    color: "rgba(255, 255, 255, 0.85)",
     lineHeight: 16,
   },
+  reassuranceRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+    marginTop: 4,
+  },
+  reassuranceBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "rgba(0, 0, 0, 0.2)",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 10,
+  },
+  reassuranceText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "600",
+  },
 
-  scrollContent: {
-    paddingHorizontal: 18,
-    paddingTop: 16,
+  /* ── Scroll & Content ── */
+  contentScroll: {
+    flex: 1,
+  },
+  scrollPadding: {
+    padding: 16,
     paddingBottom: 40,
-    gap: 16,
+    gap: 14,
   },
-
-  /* Unified Main Form Card */
-  mainFormCard: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 3,
-    gap: 20,
-  },
-  /* Target Traiteur Card */
   targetTraiteurCard: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F8FAFC",
+    backgroundColor: "#FFFFFF",
     borderWidth: 1,
     borderColor: "#E2E8F0",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 12,
     gap: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
   },
   targetTraiteurAvatar: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#E8F5E9",
-    justifyContent: "center",
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#ECFDF5",
+    borderWidth: 1,
+    borderColor: "#A7F3D0",
     alignItems: "center",
+    justifyContent: "center",
   },
   targetTraiteurLabel: {
-    fontSize: 11,
+    fontSize: 10,
     fontWeight: "600",
     color: "#64748B",
   },
@@ -627,279 +659,338 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#0F172A",
   },
-  targetTraiteurRating: {
+  verifiedMiniPill: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFF8E7",
+    gap: 3,
+    backgroundColor: "#ECFDF5",
     paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 10,
-    gap: 4,
+    paddingVertical: 3,
+    borderRadius: 8,
   },
-  targetTraiteurRatingText: {
-    fontSize: 12,
-    fontWeight: "800",
-    color: "#D4870A",
+  verifiedMiniPillText: {
+    fontSize: 10,
+    fontWeight: "700",
+    color: "#1D6B45",
   },
-
-  formFieldGroup: {
-    gap: 8,
+  cardSection: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    shadowColor: "#0F172A",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.04,
+    shadowRadius: 3,
+    elevation: 1,
+    gap: 10,
   },
-  fieldLabel: {
+  sectionHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  sectionTitle: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#111827",
-    marginBottom: 4,
+    color: "#0F172A",
+  },
+  requiredAsterisk: {
+    color: "#EF4444",
+    fontWeight: "800",
   },
   optionalTag: {
-    fontSize: 13,
-    fontWeight: "400",
-    color: "#9CA3AF",
-    marginBottom: 4,
+    fontSize: 11,
+    color: "#94A3B8",
+    fontWeight: "600",
+  },
+  fieldHelper: {
+    fontSize: 11,
+    color: "#64748B",
+    lineHeight: 15,
   },
 
-  /* Event Types Grid */
-  eventTypesGrid: {
+  /* ── Event Types Grid ── */
+  eventTypeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 8,
   },
-  eventTypePill: {
+  eventTypeTile: {
+    width: "48%",
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
+    backgroundColor: "#F8FAFC",
+    paddingHorizontal: 10,
+    paddingVertical: 9,
     borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 6,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    gap: 8,
   },
-  eventTypePillActive: {
+  eventTypeTileSelected: {
+    backgroundColor: "#ECFDF5",
     borderColor: "#1D6B45",
-    backgroundColor: "#E8F5E9",
   },
-  eventTypePillText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#4B5563",
+  tileIconCircle: {
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#ECFDF5",
+    alignItems: "center",
+    justifyContent: "center",
   },
-  eventTypePillTextActive: {
-    color: "#1D6B45",
+  tileIconCircleSelected: {
+    backgroundColor: "#1D6B45",
+  },
+  tileLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+    flex: 1,
+  },
+  tileLabelSelected: {
+    color: "#166534",
     fontWeight: "800",
   },
 
-  /* Inputs & Pickers */
-  textInput: {
-    backgroundColor: "#F9FAFB",
+  /* ── Forms ── */
+  formGridRow: {
+    flexDirection: "row",
+    gap: 10,
+  },
+  formCol: {
+    flex: 1,
+    gap: 4,
+  },
+  fieldLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  inputField: {
+    backgroundColor: "#F8FAFC",
+    borderColor: "#CBD5E1",
     borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
     fontSize: 13,
-    color: "#111827",
+    color: "#0F172A",
   },
-  textAreaInput: {
-    height: 90,
-    textAlignVertical: "top",
+  textAreaField: {
+    height: 80,
   },
-  pickerBtn: {
-    backgroundColor: "#F9FAFB",
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
+  guestShortcutsRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 8,
+    gap: 6,
+    flexWrap: "wrap",
+    marginTop: 2,
   },
-  pickerBtnText: {
-    fontSize: 13,
+  shortcutHelperText: {
+    fontSize: 10,
+    color: "#94A3B8",
+    fontWeight: "600",
+  },
+  shortcutPill: {
+    backgroundColor: "#F1F5F9",
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 8,
+  },
+  shortcutPillText: {
+    fontSize: 10,
+    color: "#475569",
     fontWeight: "700",
-    color: "#111827",
   },
 
-  /* Submit Button */
-  submitBtn: {
-    backgroundColor: "#1D6B45",
-    borderRadius: 20,
-    paddingVertical: 16,
-    paddingHorizontal: 20,
+  /* ── Error Banner ── */
+  errorBanner: {
     flexDirection: "row",
-    justifyContent: "center",
     alignItems: "center",
-    marginTop: 4,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 6 },
+    gap: 6,
+    backgroundColor: "#FEF2F2",
+    borderColor: "#FCA5A5",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+  },
+  errorBannerText: {
+    color: "#B91C1C",
+    fontSize: 11,
+    fontWeight: "600",
+    flex: 1,
+  },
+
+  /* ── Submit Button ── */
+  submitBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#1D6B45",
+    paddingVertical: 13,
+    borderRadius: 16,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 4,
+    shadowRadius: 4,
+    elevation: 3,
+    marginTop: 4,
   },
   submitBtnDisabled: {
-    backgroundColor: "#94A3B8",
-    opacity: 0.65,
+    backgroundColor: "#CBD5E1",
     shadowOpacity: 0,
     elevation: 0,
   },
   submitBtnText: {
     color: "#FFFFFF",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-
-  /* WhatsApp & Success Styles */
-  whatsAppBtn: {
-    backgroundColor: "#25D366",
-    borderRadius: 16,
-    paddingVertical: 14,
-    paddingHorizontal: 20,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    width: "100%",
-    marginBottom: 12,
-  },
-  whatsAppBtnText: {
-    color: "#FFFFFF",
     fontSize: 14,
     fontWeight: "800",
   },
 
-  /* Error Box */
-  errorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#FEE2E2",
-    borderColor: "#FCA5A5",
-    borderWidth: 1,
-    borderRadius: 16,
-    paddingHorizontal: 14,
-    paddingVertical: 10,
-    gap: 8,
-  },
-  errorText: {
-    color: "#B91C1C",
-    fontSize: 13,
-    fontWeight: "600",
-    flex: 1,
-  },
-
-  /* Modal Overlay */
-  modalOverlay: {
-    position: "absolute",
-    top: 0,
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: "rgba(0, 0, 0, 0.5)",
-    justifyContent: "center",
-    alignItems: "center",
-    paddingHorizontal: 20,
-    zIndex: 999,
-  },
-  modalContent: {
-    backgroundColor: "#FFFFFF",
-    borderRadius: 24,
-    padding: 22,
-    width: "100%",
-    maxWidth: 360,
-    shadowColor: "#000000",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.25,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#111827",
-    marginBottom: 8,
-  },
-  modalDesc: {
-    fontSize: 13,
-    color: "#4B5563",
-    lineHeight: 19,
-    marginBottom: 20,
-  },
-  modalPriceHighlight: {
-    fontWeight: "800",
-    color: "#1D6B45",
-  },
-  modalButtonsRow: {
-    flexDirection: "row",
-    gap: 10,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
-    borderWidth: 1,
-    borderColor: "#E5E7EB",
-    alignItems: "center",
-    backgroundColor: "#F9FAFB",
-  },
-  modalCancelText: {
-    color: "#4B5563",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  modalConfirmBtn: {
-    flex: 1,
-    paddingVertical: 12,
-    borderRadius: 14,
-    backgroundColor: "#1D6B45",
-    alignItems: "center",
-  },
-  modalConfirmText: {
-    color: "#FFFFFF",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-
-  /* Success Screen */
+  /* ── Success Screen ── */
   successContainer: {
     flex: 1,
-    justifyContent: "center",
     alignItems: "center",
-    paddingHorizontal: 24,
+    justifyContent: "center",
+    padding: 24,
+    gap: 14,
   },
   successIconCircle: {
-    width: 96,
-    height: 96,
-    borderRadius: 48,
-    backgroundColor: "#E8F5E9",
-    justifyContent: "center",
+    width: 90,
+    height: 90,
+    borderRadius: 45,
+    backgroundColor: "#ECFDF5",
     alignItems: "center",
-    marginBottom: 20,
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#A7F3D0",
+    marginBottom: 6,
   },
   successTitle: {
-    fontSize: 22,
-    fontWeight: "800",
-    color: "#1D6B45",
-    marginBottom: 8,
+    fontSize: 18,
+    fontWeight: "900",
+    color: "#0F172A",
     textAlign: "center",
   },
   successDesc: {
-    fontSize: 13,
-    color: "#6B7280",
+    fontSize: 12,
+    color: "#64748B",
     textAlign: "center",
-    lineHeight: 20,
-    marginBottom: 28,
+    lineHeight: 18,
+    maxWidth: 300,
+  },
+  whatsAppBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "#25D366",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    width: "100%",
+    maxWidth: 280,
+    marginTop: 8,
+  },
+  whatsAppBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  successOrdersBtn: {
+    backgroundColor: "#1D6B45",
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    borderRadius: 14,
+    width: "100%",
+    maxWidth: 280,
+    alignItems: "center",
+  },
+  successOrdersBtnText: {
+    color: "#FFFFFF",
+    fontSize: 13,
+    fontWeight: "800",
   },
   successHomeBtn: {
-    backgroundColor: "#1D6B45",
-    paddingHorizontal: 24,
-    paddingVertical: 14,
-    borderRadius: 16,
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 11,
+    paddingHorizontal: 20,
+    borderRadius: 14,
     width: "100%",
+    maxWidth: 280,
     alignItems: "center",
   },
   successHomeBtnText: {
+    color: "#475569",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  /* ── Modal Confirmation ── */
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.75)",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 20,
+  },
+  modalCard: {
+    backgroundColor: "#FFFFFF",
+    borderRadius: 24,
+    width: "100%",
+    maxWidth: 380,
+    padding: 20,
+    gap: 12,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  modalTitle: {
+    fontSize: 16,
+    fontWeight: "900",
+    color: "#0F172A",
+  },
+  modalDesc: {
+    fontSize: 12,
+    color: "#475569",
+    lineHeight: 18,
+  },
+  modalActionsRow: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 8,
+  },
+  modalCancelBtn: {
+    flex: 1,
+    backgroundColor: "#F1F5F9",
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalCancelBtnText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#475569",
+  },
+  modalConfirmBtn: {
+    flex: 2,
+    backgroundColor: "#1D6B45",
+    paddingVertical: 11,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  modalConfirmBtnText: {
     color: "#FFFFFF",
-    fontSize: 14,
+    fontSize: 12,
     fontWeight: "800",
   },
 });

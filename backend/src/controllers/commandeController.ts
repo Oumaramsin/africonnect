@@ -627,11 +627,20 @@ export const payerAcompteCommandeTraiteurDevisController = async (
       return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
     }
 
-    const { action, transaction_ref } = req.body;
-    if (action !== "verser" && action !== "refuser_acompte") {
+    const rawAction = req.body?.action;
+    const transaction_ref = req.body?.transaction_ref;
+    const action =
+      typeof rawAction === "string" ? rawAction.trim().toLowerCase() : "";
+
+    if (
+      action !== "verser" &&
+      action !== "refuser_acompte" &&
+      action !== "annuler_reglement"
+    ) {
       return res.status(400).json({
         success: false,
-        error: "Action d'acompte invalide. Valeurs acceptées : 'verser' ou 'refuser_acompte'.",
+        error:
+          "Action d'acompte invalide. Valeurs acceptées : 'verser' ou 'refuser_acompte'.",
       });
     }
 
@@ -654,7 +663,9 @@ export const payerAcompteCommandeTraiteurDevisController = async (
       message:
         action === "verser"
           ? "Acompte consigné sous séquestre Dabari avec succès."
-          : "Choix de règlement sans acompte enregistré.",
+          : action === "refuser_acompte"
+          ? "Choix de règlement sans acompte enregistré."
+          : "Statut de l'acompte réinitialisé.",
     });
   } catch (error: any) {
     console.error("Erreur dans payerAcompteCommandeTraiteurDevisController:", error);

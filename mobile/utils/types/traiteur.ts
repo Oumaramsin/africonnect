@@ -33,11 +33,67 @@ export type CartItem = {
 
 export type CommandeTraiteur = {
   id: string;
-  statut: string;
-  created_at: string;
+  client_id?: string;
+  traiteur_id?: string;
+  date_evenement?: string;
   nb_personnes: number;
-  traiteur?: { name: string } | null;
-  traiteurs?: { name: string } | null;
+  adresse?: string;
+  type_evenement?: string | null;
+  notes?: string | null;
+  statut: string;
+  message_traiteur?: string | null;
+  prix_devis?: number | string | null;
+  conditions_devis?: string | null;
+  devis_status?: "draft" | "en_attente" | "propose" | "signe" | "refuse" | null;
+  client_signature?: string | null;
+  client_signed_at?: string | null;
+  traiteur_signature?: string | null;
+  traiteur_signed_at?: string | null;
+  motif_refus_devis?: string | null;
+  acompte_montant?: number | string | null;
+  acompte_statut?: string | null;
+  acompte_paye_at?: string | null;
+  acompte_transaction_ref?: string | null;
+  commission_dabari?: number | string | null;
+  solde_sequestre?: number | string | null;
+  created_at: string;
+  client?: {
+    id?: string;
+    full_name?: string;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+  profiles?: {
+    id?: string;
+    full_name?: string;
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+  traiteur?: {
+    id?: string;
+    name?: string;
+    user_id?: string;
+    whatsapp?: string | null;
+    image_url?: string | null;
+  } | null;
+  traiteurs?: {
+    id?: string;
+    name?: string;
+    user_id?: string;
+    whatsapp?: string | null;
+    image_url?: string | null;
+  } | null;
+};
+
+export type DevisConditionsMeta = {
+  texte?: string;
+  acompte_type: "aucun" | "obligatoire" | "optionnel";
+  acompte_montant: number;
+  acompte_pourcentage: number;
+  acompte_paye?: boolean;
+  acompte_paye_at?: string | null;
+  acompte_transaction_ref?: string | null;
+  acompte_choix_jour_j?: boolean;
 };
 
 export type OrderPlat = {
