@@ -355,7 +355,11 @@ export default function CommandeScreen() {
     try {
       apiFetch("/notifications/read-all", {
         method: "PATCH",
-      }).catch((err) => console.error("Erreur mark-all-as-read:", err));
+      })
+        .then(() => {
+          DeviceEventEmitter.emit("dabari_notifications_updated");
+        })
+        .catch((err) => console.error("Erreur mark-all-as-read:", err));
 
       const response = await apiFetch("/commande");
       const res = await response.json();

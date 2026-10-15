@@ -13,6 +13,12 @@ import {
 import {
   sendOrderNotificationToClientMail,
   sendGpRequestStatusToSenderMail,
+  sendOrderCancelledToTraiteurMail,
+  sendGpRequestCancelledToGpMail,
+  sendDevisChiffreToClientMail,
+  sendDevisSignedToTraiteurMail,
+  sendAcompteNotificationMail,
+  sendGpDelayNotificationMail,
 } from "./emailService";
 
 export const getRecentOrderByClientId = async (client_id: string) => {
@@ -220,6 +226,33 @@ export const updateCommandeTraiteurStatus = async (
       }
     }
 
+    // Marquer les notifications non lues du traiteur concernant cette commande comme lues
+    if (existing.traiteur?.user_id) {
+      try {
+        const notifs = await tx.notification.findMany({
+          where: {
+            user_id: existing.traiteur.user_id,
+            is_read: false,
+          },
+          take: 50,
+        });
+        const notifIds = notifs
+          .filter((n) => {
+            const d = n.data as any;
+            return d && (d.commande_id === id || d.id === id);
+          })
+          .map((n) => n.id);
+        if (notifIds.length > 0) {
+          await tx.notification.updateMany({
+            where: { id: { in: notifIds } },
+            data: { is_read: true },
+          });
+        }
+      } catch (err) {
+        console.error("Erreur marquage notification traiteur lue:", err);
+      }
+    }
+
     return commande;
   });
 };
@@ -308,6 +341,33 @@ export const updateOrderPlatStatus = async (
             ? Number(order.total_amount)
             : undefined,
         }).catch((err) => console.error("Erreur envoi email client:", err));
+      }
+    }
+
+    // Marquer les notifications non lues du traiteur concernant cette commande de plats comme lues
+    if (existing.traiteur?.user_id) {
+      try {
+        const notifs = await tx.notification.findMany({
+          where: {
+            user_id: existing.traiteur.user_id,
+            is_read: false,
+          },
+          take: 50,
+        });
+        const notifIds = notifs
+          .filter((n) => {
+            const d = n.data as any;
+            return d && (d.order_id === id || d.id === id);
+          })
+          .map((n) => n.id);
+        if (notifIds.length > 0) {
+          await tx.notification.updateMany({
+            where: { id: { in: notifIds } },
+            data: { is_read: true },
+          });
+        }
+      } catch (err) {
+        console.error("Erreur marquage notification plat traiteur lue:", err);
       }
     }
 
@@ -466,6 +526,33 @@ export const updateGpRequestStatus = async (
             : undefined,
           messageGp: message,
         }).catch((err) => console.error("Erreur e-mail expéditeur:", err));
+      }
+    }
+
+    // Marquer les notifications non lues du GP concernant cette demande comme lues
+    if (oldRequest.listing?.gp_id) {
+      try {
+        const notifs = await tx.notification.findMany({
+          where: {
+            user_id: oldRequest.listing.gp_id,
+            is_read: false,
+          },
+          take: 50,
+        });
+        const notifIds = notifs
+          .filter((n) => {
+            const d = n.data as any;
+            return d && (d.request_id === id || d.id === id);
+          })
+          .map((n) => n.id);
+        if (notifIds.length > 0) {
+          await tx.notification.updateMany({
+            where: { id: { in: notifIds } },
+            data: { is_read: true },
+          });
+        }
+      } catch (err) {
+        console.error("Erreur marquage notification GP lue:", err);
       }
     }
 
@@ -745,7 +832,10 @@ export const cancelClientOrder = async (
     if (type === "traiteur") {
       const commande = await tx.commandeTraiteur.findUnique({
         where: { id },
-        include: { traiteur: true, client: true },
+        include: {
+          traiteur: { include: { profile: true } },
+          client: true,
+        },
       });
       if (!commande) throw new Error("Commande introuvable");
       if (commande.client_id !== user_id)
@@ -774,11 +864,26 @@ export const cancelClientOrder = async (
         }
       }
 
+      if (commande.traiteur?.profile?.email) {
+        sendOrderCancelledToTraiteurMail({
+          traiteurEmail: commande.traiteur.profile.email,
+          traiteurName: commande.traiteur.name || "Chef Traiteur",
+          clientName: commande.client?.full_name || "Client",
+          orderType: "DEVIS",
+          dateEvenement: new Date(commande.date_evenement).toLocaleDateString("fr-FR"),
+          details: `Type d'événement: ${commande.type_evenement || "Non spécifié"}\nNombre de personnes: ${commande.nb_personnes}`,
+        }).catch((err) => console.error("Erreur email annulation commande traiteur:", err));
+      }
+
       return updated;
     } else if (type === "order") {
       const order = await tx.order.findUnique({
         where: { id },
-        include: { traiteur: true, client: true },
+        include: {
+          traiteur: { include: { profile: true } },
+          client: true,
+          order_items: { include: { dish: true } },
+        },
       });
       if (!order) throw new Error("Commande introuvable");
       if (order.client_id !== user_id) throw new Error("Action non autorisée");
@@ -806,11 +911,25 @@ export const cancelClientOrder = async (
         }
       }
 
+      if (order.traiteur?.profile?.email) {
+        sendOrderCancelledToTraiteurMail({
+          traiteurEmail: order.traiteur.profile.email,
+          traiteurName: order.traiteur.name || "Chef Traiteur",
+          clientName: order.client?.full_name || "Client",
+          orderType: "PLAT",
+          totalAmount: order.total_amount ? Number(order.total_amount) : undefined,
+          details: `Commande de plats (${order.order_items.length} produit(s))`,
+        }).catch((err) => console.error("Erreur email annulation commande plats:", err));
+      }
+
       return updated;
     } else if (type === "gp") {
       const request = await tx.gpRequest.findUnique({
         where: { id },
-        include: { listing: true, sender: true },
+        include: {
+          listing: { include: { gp: true } },
+          sender: true,
+        },
       });
       if (!request) throw new Error("Demande GP introuvable");
       if (request.sender_id !== user_id)
@@ -848,6 +967,17 @@ export const cancelClientOrder = async (
         } catch (notifErr) {
           console.error("Erreur notification annulation GP:", notifErr);
         }
+      }
+
+      if (request.listing?.gp?.email) {
+        sendGpRequestCancelledToGpMail({
+          gpEmail: request.listing.gp.email,
+          gpName: request.listing.gp.full_name || "Transporteur GP",
+          senderName: request.sender?.full_name || "Expéditeur",
+          weightKg: Number(request.weight_kg),
+          departureCity: request.listing.departure_city,
+          arrivalCity: request.listing.arrival_city,
+        }).catch((err) => console.error("Erreur email annulation GP:", err));
       }
 
       return updated;
@@ -999,6 +1129,18 @@ export const updateGpRequestDelay = async (
       } catch (notifErr) {
         console.error("Erreur notification retard GP:", notifErr);
       }
+
+      if (existing.sender?.email) {
+        sendGpDelayNotificationMail({
+          senderEmail: existing.sender.email,
+          senderName: existing.sender.full_name || "Expéditeur",
+          gpName: existing.listing?.gp?.full_name || "Transporteur GP",
+          newArrivalDate: dateFormatted,
+          delayReason: data.delay_reason,
+          departureCity: existing.listing?.departure_city,
+          arrivalCity: existing.listing?.arrival_city,
+        }).catch((err) => console.error("Erreur email retard GP colis:", err));
+      }
     }
 
     return updatedRequest;
@@ -1015,6 +1157,7 @@ export const updateGpListingDelay = async (
     const listing = await tx.gpListing.findUnique({
       where: { id: listingId },
       include: {
+        gp: true,
         requests: {
           include: { sender: true },
         },
@@ -1081,6 +1224,18 @@ export const updateGpListingDelay = async (
           });
         } catch (notifErr) {
           console.error("Erreur notification retard listing:", notifErr);
+        }
+
+        if (req.sender?.email) {
+          sendGpDelayNotificationMail({
+            senderEmail: req.sender.email,
+            senderName: req.sender.full_name || "Expéditeur",
+            gpName: listing.gp?.full_name || "Transporteur GP",
+            newArrivalDate: dateFormatted,
+            delayReason: data.delay_reason,
+            departureCity: listing.departure_city,
+            arrivalCity: listing.arrival_city,
+          }).catch((err) => console.error("Erreur email retard listing GP:", err));
         }
       }
     }
@@ -1160,6 +1315,19 @@ export const setupCommandeTraiteurDevis = async (
       } catch (err) {
         console.error("Erreur notification devis:", err);
       }
+
+      if (commande.client?.email) {
+        sendDevisChiffreToClientMail({
+          clientEmail: commande.client.email,
+          clientName: commande.client.full_name || "Client",
+          traiteurName: commande.traiteur?.name || "Chef Traiteur",
+          prixDevis: data.prix_devis,
+          dateEvenement: commande.date_evenement
+            ? new Date(commande.date_evenement).toLocaleDateString("fr-FR")
+            : undefined,
+          shouldAutoSign,
+        }).catch((err) => console.error("Erreur email devis chiffré client:", err));
+      }
     }
 
     return updated;
@@ -1238,7 +1406,7 @@ export const signCommandeTraiteurDevis = async (
     const commande = await tx.commandeTraiteur.findUnique({
       where: { id: commandeId },
       include: {
-        traiteur: true,
+        traiteur: { include: { profile: true } },
         client: true,
       },
     });
@@ -1332,6 +1500,46 @@ export const signCommandeTraiteurDevis = async (
       }
     }
 
+    // Marquer les notifications non lues de l'utilisateur qui signe comme lues pour cette commande
+    if (userId) {
+      try {
+        const notifs = await tx.notification.findMany({
+          where: {
+            user_id: userId,
+            is_read: false,
+          },
+          take: 50,
+        });
+        const notifIds = notifs
+          .filter((n) => {
+            const d = n.data as any;
+            return d && (d.commande_id === commandeId || d.id === commandeId);
+          })
+          .map((n) => n.id);
+        if (notifIds.length > 0) {
+          await tx.notification.updateMany({
+            where: { id: { in: notifIds } },
+            data: { is_read: true },
+          });
+        }
+      } catch (err) {
+        console.error("Erreur marquage notification signature lue:", err);
+      }
+    }
+
+    // Si le client a signé le devis, avertir le traiteur par email
+    if (isClient && commande.traiteur?.profile?.email) {
+      sendDevisSignedToTraiteurMail({
+        traiteurEmail: commande.traiteur.profile.email,
+        traiteurName: commande.traiteur.name,
+        clientName: commande.client?.full_name || "Client",
+        prixDevis: Number(commande.prix_devis),
+        dateEvenement: commande.date_evenement
+          ? new Date(commande.date_evenement).toLocaleDateString("fr-FR")
+          : undefined,
+      }).catch((err) => console.error("Erreur email signature traiteur:", err));
+    }
+
     return updated;
   });
 };
@@ -1347,7 +1555,7 @@ export const payerAcompteCommandeTraiteurDevis = async (
     const commande = await tx.commandeTraiteur.findUnique({
       where: { id: commandeId },
       include: {
-        traiteur: true,
+        traiteur: { include: { profile: true } },
         client: true,
       },
     });
@@ -1426,6 +1634,20 @@ export const payerAcompteCommandeTraiteurDevis = async (
       } catch (notifErr) {
         console.error("Erreur notification acompte:", notifErr);
       }
+    }
+
+    // Si acompte versé, envoyer email au traiteur
+    if (action === "verser" && commande.traiteur?.profile?.email) {
+      sendAcompteNotificationMail({
+        traiteurEmail: commande.traiteur.profile.email,
+        traiteurName: commande.traiteur.name,
+        clientName: commande.client?.full_name || "Client",
+        acompteMontant: meta.acompte_montant || 0,
+        dateEvenement: commande.date_evenement
+          ? new Date(commande.date_evenement).toLocaleDateString("fr-FR")
+          : undefined,
+        transactionRef: meta.acompte_transaction_ref || undefined,
+      }).catch((err) => console.error("Erreur email acompte traiteur:", err));
     }
 
     return updated;

@@ -37,9 +37,13 @@ app.use("/uploads", express.static(path.join(__dirname, "../uploads")));
 // Application du Rate Limiting Général sur toutes les requêtes API
 app.use("/api", generalLimiter);
 
-// Application du Rate Limiting Strict sur les routes d'authentification
+// Application du Rate Limiting Strict sur les routes d'authentification et de vérification
 app.use("/api/auth/login", authLimiter);
 app.use("/api/auth/register", authLimiter);
+app.use("/api/auth/verify-email", authLimiter);
+app.use("/api/auth/resend-code", authLimiter);
+app.use("/api/auth/forgot-password", authLimiter);
+app.use("/api/auth/reset-password", authLimiter);
 
 // Mount API routes
 app.use("/api/auth", authRouter);

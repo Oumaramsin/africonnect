@@ -305,12 +305,19 @@ export default function CommandesPage() {
       return;
     }
     try {
-      authFetch(`${process.env.NEXT_PUBLIC_API_URL}/notifications/read-all`, {
+      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+      authFetch(`${apiUrl}/notifications/read-all`, {
         method: "PATCH",
-      }).catch((err) => console.error("Erreur mark-all-as-read:", err));
+      })
+        .then(() => {
+          if (typeof window !== "undefined") {
+            window.dispatchEvent(new CustomEvent("notifications-updated"));
+          }
+        })
+        .catch((err) => console.error("Erreur mark-all-as-read:", err));
 
       const response = await authFetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/commande`,
+        `${apiUrl}/commande`,
         {
           headers: {
             "Content-Type": "application/json",
@@ -425,6 +432,9 @@ export default function CommandesPage() {
           ),
         ),
       );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
+      }
     } catch (e: any) {
       alert(e.message || "Erreur réseau");
     }
@@ -457,6 +467,9 @@ export default function CommandesPage() {
           ),
         ),
       );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
+      }
     } catch (e: any) {
       alert(e.message || "Erreur réseau");
     }
@@ -484,6 +497,9 @@ export default function CommandesPage() {
           prev.map((o) => (o.id === order.id ? { ...o, status: "accepted" } : o)),
         ),
       );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
+      }
     } catch (e: any) {
       alert(e.message || "Erreur réseau");
     }
@@ -511,6 +527,9 @@ export default function CommandesPage() {
           prev.map((o) => (o.id === order.id ? { ...o, status: "rejected" } : o)),
         ),
       );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
+      }
     } catch (e: any) {
       alert(e.message || "Erreur réseau");
     }
@@ -540,6 +559,9 @@ export default function CommandesPage() {
           ),
         ),
       );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
+      }
     } catch (e: any) {
       alert(e.message || "Erreur réseau");
     }
@@ -570,6 +592,9 @@ export default function CommandesPage() {
           ),
         ),
       );
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
+      }
     } catch (e: any) {
       alert(e.message || "Erreur réseau");
     }
@@ -607,6 +632,9 @@ export default function CommandesPage() {
           ),
         );
         setGpStatusConfirm(null);
+        if (typeof window !== "undefined") {
+          window.dispatchEvent(new CustomEvent("notifications-updated"));
+        }
       }
     } catch (e) {
       console.error("Erreur mise à jour statut GP:", e);

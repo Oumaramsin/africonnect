@@ -9,11 +9,12 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getSecureToken } from "../../utils/storage";
+import { getSecureToken, saveSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
 
 export default function RegisterScreen() {
@@ -29,6 +30,13 @@ export default function RegisterScreen() {
   const [showPassword, setShowPassword] = useState(false);
   const [showConfirm, setShowConfirm] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  // Étape de vérification OTP email
+  const [verifyStep, setVerifyStep] = useState(false);
+  const [otpCode, setOtpCode] = useState("");
+  const [resending, setResending] = useState(false);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
 
   useEffect(() => {
     async function checkAuth() {
@@ -46,6 +54,7 @@ export default function RegisterScreen() {
 
   async function handleSubmit() {
     setError(null);
+    setInfoMessage(null);
     if (!firstName.trim() || !lastName.trim()) {
       setError("Veuillez saisir votre prénom et votre nom.");
       return;
@@ -65,12 +74,8 @@ export default function RegisterScreen() {
       setError("Les mots de passe ne correspondent pas.");
       return;
     }
+    setLoading(true);
     try {
-      const authEmail =
-        method === "email"
-          ? email
-          : `${phone.replace(/\+/g, "").replace(/\s/g, "")}@dabari.app`;
-
       const response = await apiFetch("/auth/register", {
         method: "POST",
         skipAuth: true,
@@ -84,15 +89,82 @@ export default function RegisterScreen() {
         }),
       });
       const data = await response.json();
+      setLoading(false);
       if (!response.ok) {
         setError(data.message || "Erreur lors de l'inscription");
         return;
       }
-      router.replace("/login");
+      if (method === "email" && data.requiresVerification) {
+        setVerifyStep(true);
+        setInfoMessage("Un code de vérification à 6 chiffres a été envoyé à votre adresse e-mail.");
+      } else {
+        router.replace("/login");
+      }
     } catch (err: any) {
+      setLoading(false);
       setError(
         `Impossible de contacter le serveur (${err.message || "Erreur réseau"}).`,
       );
+    }
+  }
+
+  async function handleVerifyOtp() {
+    setError(null);
+    setInfoMessage(null);
+    if (!otpCode || otpCode.trim().length !== 6) {
+      setError("Veuillez saisir le code à 6 chiffres reçu par e-mail.");
+      return;
+    }
+    setLoading(true);
+    try {
+      const response = await apiFetch("/auth/verify-email", {
+        method: "POST",
+        skipAuth: true,
+        body: JSON.stringify({
+          email: email.trim(),
+          code: otpCode.trim(),
+        }),
+      });
+      const data = await response.json();
+      setLoading(false);
+      if (!response.ok) {
+        setError(data.message || "Code de vérification incorrect.");
+        return;
+      }
+      if (data.token) {
+        await saveSecureToken("token", data.token);
+        router.replace("/accueil");
+      } else {
+        router.replace("/login");
+      }
+    } catch (err: any) {
+      setLoading(false);
+      setError("Impossible de vérifier le code.");
+    }
+  }
+
+  async function handleResendCode() {
+    setError(null);
+    setInfoMessage(null);
+    setResending(true);
+    try {
+      const response = await apiFetch("/auth/resend-code", {
+        method: "POST",
+        skipAuth: true,
+        body: JSON.stringify({
+          email: email.trim(),
+        }),
+      });
+      const data = await response.json();
+      setResending(false);
+      if (!response.ok) {
+        setError(data.message || "Impossible de renvoyer le code.");
+        return;
+      }
+      setInfoMessage("Un nouveau code a été envoyé à votre adresse e-mail.");
+    } catch (err: any) {
+      setResending(false);
+      setError("Erreur de connexion avec le serveur.");
     }
   }
 
@@ -130,19 +202,124 @@ export default function RegisterScreen() {
 
           {/* Main Auth Card */}
           <View style={styles.authCard}>
-            {/* Pill Switcher Email / Téléphone */}
-            <View style={styles.switcherContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.switcherBtn,
-                  method === "email" && styles.switcherBtnActive,
-                ]}
-                onPress={() => {
-                  setMethod("email");
-                  setError(null);
-                }}
-                activeOpacity={0.8}
-              >
+            {verifyStep ? (
+              /* ── ÉTAPE VÉRIFICATION EMAIL ── */
+              <View>
+                <View style={styles.verifyHeaderRow}>
+                  <View style={styles.verifyIconWrapper}>
+                    <Ionicons name="mail-unread-outline" size={26} color="#1D6B45" />
+                  </View>
+                  <Text style={styles.cardTitle}>Validation du compte</Text>
+                  <Text style={styles.verifySubtitle}>
+                    Un code à 6 chiffres a été envoyé à{"\n"}
+                    <Text style={{ fontWeight: "700", color: "#111827" }}>{email}</Text>
+                  </Text>
+                </View>
+
+                {/* Info message */}
+                {infoMessage && (
+                  <View style={styles.infoBox}>
+                    <Ionicons name="checkmark-circle-outline" size={18} color="#1D6B45" />
+                    <Text style={styles.infoText}>{infoMessage}</Text>
+                  </View>
+                )}
+
+                {/* Error Box */}
+                {error && (
+                  <View style={styles.errorBox}>
+                    <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
+
+                <View style={styles.formContainer}>
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>CODE À 6 CHIFFRES</Text>
+                    <View style={styles.inputWrapper}>
+                      <Ionicons
+                        name="shield-checkmark-outline"
+                        size={18}
+                        color="#9CA3AF"
+                        style={styles.leftIcon}
+                      />
+                      <TextInput
+                        style={[styles.input, styles.codeInput]}
+                        placeholder="123456"
+                        placeholderTextColor="#9CA3AF"
+                        value={otpCode}
+                        onChangeText={(val) =>
+                          setOtpCode(val.replace(/[^0-9]/g, "").slice(0, 6))
+                        }
+                        keyboardType="number-pad"
+                        maxLength={6}
+                      />
+                    </View>
+                    <Text style={styles.helperText}>
+                      Code valable pendant 15 minutes.
+                    </Text>
+                  </View>
+
+                  <TouchableOpacity
+                    style={[styles.submitBtn, loading && styles.submitBtnDisabled]}
+                    onPress={handleVerifyOtp}
+                    disabled={loading}
+                    activeOpacity={0.85}
+                  >
+                    {loading ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <>
+                        <Text style={styles.submitBtnText}>Confirmer mon compte</Text>
+                        <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.resendBtn}
+                    onPress={handleResendCode}
+                    disabled={resending}
+                    activeOpacity={0.7}
+                  >
+                    {resending ? (
+                      <ActivityIndicator size="small" color="#1D6B45" />
+                    ) : (
+                      <>
+                        <Ionicons name="refresh-outline" size={15} color="#1D6B45" />
+                        <Text style={styles.resendBtnText}>Renvoyer un nouveau code</Text>
+                      </>
+                    )}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.editInfoBtn}
+                    onPress={() => {
+                      setVerifyStep(false);
+                      setError(null);
+                      setInfoMessage(null);
+                    }}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.editInfoBtnText}>Modifier mes informations</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              /* ── ÉTAPE INSCRIPTION STANDARD ── */
+              <View>
+                {/* Pill Switcher Email / Téléphone */}
+                <View style={styles.switcherContainer}>
+                  <TouchableOpacity
+                    style={[
+                      styles.switcherBtn,
+                      method === "email" && styles.switcherBtnActive,
+                    ]}
+                    onPress={() => {
+                      setMethod("email");
+                      setError(null);
+                    }}
+                    activeOpacity={0.8}
+                  >
                 <Ionicons
                   name="mail-outline"
                   size={15}
@@ -386,9 +563,11 @@ export default function RegisterScreen() {
               </Link>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+        )}
+      </View>
+    </ScrollView>
+  </KeyboardAvoidingView>
+</SafeAreaView>
   );
 }
 
@@ -586,5 +765,74 @@ const styles = StyleSheet.create({
     color: "#1D6B45",
     fontSize: 13,
     fontWeight: "700",
+  },
+  verifyHeaderRow: {
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  verifyIconWrapper: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#E8F5E9",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 12,
+  },
+  verifySubtitle: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E8F5E9",
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 16,
+    gap: 8,
+  },
+  infoText: {
+    color: "#1D6B45",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
+  codeInput: {
+    fontSize: 20,
+    fontWeight: "700",
+    letterSpacing: 6,
+    textAlign: "center",
+    paddingLeft: 16,
+  },
+  submitBtnDisabled: {
+    opacity: 0.6,
+  },
+  resendBtn: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 12,
+    backgroundColor: "#E8F5E9",
+    borderRadius: 14,
+    marginTop: 4,
+  },
+  resendBtnText: {
+    color: "#1D6B45",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  editInfoBtn: {
+    paddingVertical: 10,
+    alignItems: "center",
+  },
+  editInfoBtnText: {
+    color: "#6B7280",
+    fontSize: 13,
+    textDecorationLine: "underline",
   },
 });

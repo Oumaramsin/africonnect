@@ -6,7 +6,25 @@ interface SendEmailParams {
   html: string;
 }
 
+const FRONTEND_URL = process.env.FRONTEND_URL || "https://www.dabari.fr";
+
+export const escapeHtml = (str?: string | number | null): string => {
+  if (str === undefined || str === null) return "";
+  return String(str)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
+};
+
+export const sanitizeDigits = (str?: string | null): string => {
+  if (!str) return "";
+  return str.replace(/\D/g, "");
+};
+
 let testAccountTransporter: nodemailer.Transporter | null = null;
+let productionTransporter: nodemailer.Transporter | null = null;
 
 const getTransporter = async () => {
   const host = process.env.SMTP_HOST || "ssl0.ovh.net";
@@ -32,8 +50,8 @@ const getTransporter = async () => {
     return { transporter: testAccountTransporter, isEthereal: true };
   }
 
-  return {
-    transporter: nodemailer.createTransport({
+  if (!productionTransporter) {
+    productionTransporter = nodemailer.createTransport({
       host,
       port,
       secure: port === 465,
@@ -42,9 +60,13 @@ const getTransporter = async () => {
         pass,
       },
       tls: {
-        rejectUnauthorized: false,
+        rejectUnauthorized: process.env.NODE_ENV === "production",
       },
-    }),
+    });
+  }
+
+  return {
+    transporter: productionTransporter,
     isEthereal: false,
   };
 };
@@ -176,11 +198,11 @@ export const sendNewOrderToTraiteurMail = async (data: {
         
         <div style="padding: 30px 24px;">
           <h2 style="color: #1A202C; margin-top: 0; font-size: 20px;">
-            Bonjour ${data.traiteurName},
+            Bonjour ${escapeHtml(data.traiteurName)},
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6;">
-            Vous avez reçu une <strong>${isDevis ? "demande de devis" : "nouvelle commande"}</strong> de la part de <span style="color: #1D6B45; font-weight: 600;">${data.clientName}</span> !
+            Vous avez reçu une <strong>${isDevis ? "demande de devis" : "nouvelle commande"}</strong> de la part de <span style="color: #1D6B45; font-weight: 600;">${escapeHtml(data.clientName)}</span> !
           </p>
 
           <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0;">
@@ -189,22 +211,22 @@ export const sendNewOrderToTraiteurMail = async (data: {
             </h3>
             
             <p style="margin: 4px 0; color: #2D3748; font-size: 14px;">
-              <strong>Client :</strong> ${data.clientName}
+              <strong>Client :</strong> ${escapeHtml(data.clientName)}
             </p>
-            ${data.clientPhone ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Téléphone / WhatsApp :</strong> <a href="https://wa.me/${data.clientPhone.replace(/\+/g, '').replace(/\s/g, '')}" style="color: #1D6B45; text-decoration: none; font-weight: bold;">${data.clientPhone}</a></p>` : ''}
-            ${data.clientEmail ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>E-mail client :</strong> ${data.clientEmail}</p>` : ''}
-            ${data.dateEvenement ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Date souhaitée :</strong> ${data.dateEvenement}</p>` : ''}
+            ${data.clientPhone ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Téléphone / WhatsApp :</strong> <a href="https://wa.me/${sanitizeDigits(data.clientPhone)}" style="color: #1D6B45; text-decoration: none; font-weight: bold;">${escapeHtml(data.clientPhone)}</a></p>` : ''}
+            ${data.clientEmail ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>E-mail client :</strong> ${escapeHtml(data.clientEmail)}</p>` : ''}
+            ${data.dateEvenement ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Date souhaitée :</strong> ${escapeHtml(data.dateEvenement)}</p>` : ''}
             ${data.totalAmount ? `<p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;"><strong>Montant Total :</strong> ${data.totalAmount.toFixed(2)} €</p>` : ''}
             
             <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 12px 0;" />
             
             <p style="margin: 4px 0; color: #4A5568; font-size: 14px; white-space: pre-line;">
-              <strong>Détails / Plats :</strong><br />${data.details}
+              <strong>Détails / Plats :</strong><br />${escapeHtml(data.details)}
             </p>
           </div>
 
           <div style="text-align: center; margin-top: 30px;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profil/traiteur" 
+            <a href="${FRONTEND_URL}/profil/traiteur" 
                style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 14px 28px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 15px; box-shadow: 0 4px 6px rgba(29,107,69,0.2);">
               Gérer mes commandes sur Dabari
             </a>
@@ -258,7 +280,7 @@ export const sendOrderNotificationToClientMail = async (data: {
           </div>
 
           <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
-            Bonjour ${data.clientName},
+            Bonjour ${escapeHtml(data.clientName)},
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
@@ -271,22 +293,22 @@ export const sendOrderNotificationToClientMail = async (data: {
             </h3>
             
             <p style="margin: 4px 0; color: #2D3748; font-size: 14px;">
-              <strong>Traiteur :</strong> ${data.traiteurName}
+              <strong>Traiteur :</strong> ${escapeHtml(data.traiteurName)}
             </p>
             ${data.totalAmount ? `<p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;"><strong>Total :</strong> ${data.totalAmount.toFixed(2)} €</p>` : ''}
             
-            ${data.messageTraiteur ? `<div style="background-color: #ffffff; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #E2E8F0; font-size: 13px; color: #4A5568;"><strong>Message du traiteur :</strong> ${data.messageTraiteur}</div>` : ''}
+            ${data.messageTraiteur ? `<div style="background-color: #ffffff; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #E2E8F0; font-size: 13px; color: #4A5568;"><strong>Message du traiteur :</strong> ${escapeHtml(data.messageTraiteur)}</div>` : ''}
 
             <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 12px 0;" />
             
             <p style="margin: 4px 0; color: #4A5568; font-size: 14px; white-space: pre-line;">
-              <strong>Détails :</strong><br />${data.details}
+              <strong>Détails :</strong><br />${escapeHtml(data.details)}
             </p>
           </div>
 
           ${isAccepted && data.traiteurWhatsapp ? `
             <div style="text-align: center; margin: 24px 0;">
-              <a href="https://wa.me/${data.traiteurWhatsapp.replace(/\+/g, '').replace(/\s/g, '')}" 
+              <a href="https://wa.me/${sanitizeDigits(data.traiteurWhatsapp)}" 
                  style="background-color: #25D366; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
                 ${SVG_WHATSAPP} Contacter le traiteur sur WhatsApp
               </a>
@@ -294,7 +316,7 @@ export const sendOrderNotificationToClientMail = async (data: {
           ` : ''}
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/commandes" 
+            <a href="${FRONTEND_URL}/dashboard" 
                style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
               Suivre mes commandes sur Dabari
             </a>
@@ -340,35 +362,35 @@ export const sendNewGpRequestToGpMail = async (data: {
         
         <div style="padding: 30px 24px;">
           <h2 style="color: #1A202C; margin-top: 0; font-size: 20px;">
-            Bonjour ${data.gpName},
+            Bonjour ${escapeHtml(data.gpName)},
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6;">
-            Vous avez reçu une nouvelle <strong>demande d'expédition de colis</strong> de la part de <span style="color: #1D6B45; font-weight: 600;">${data.senderName}</span> !
+            Vous avez reçu une nouvelle <strong>demande d'expédition de colis</strong> de la part de <span style="color: #1D6B45; font-weight: 600;">${escapeHtml(data.senderName)}</span> !
           </p>
 
           <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0;">
             <h3 style="color: #1D6B45; margin: 0 0 10px 0; font-size: 16px; display: flex; align-items: center;">
-              ${SVG_PLANE} Trajet : ${data.departureCity || 'Départ'} ➔ ${data.arrivalCity || 'Arrivée'}
+              ${SVG_PLANE} Trajet : ${escapeHtml(data.departureCity || 'Départ')} ➔ ${escapeHtml(data.arrivalCity || 'Arrivée')}
             </h3>
             
             <p style="margin: 4px 0; color: #2D3748; font-size: 14px;">
-              <strong>Expéditeur :</strong> ${data.senderName}
+              <strong>Expéditeur :</strong> ${escapeHtml(data.senderName)}
             </p>
-            ${data.senderPhone ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Téléphone / WhatsApp :</strong> <a href="https://wa.me/${data.senderPhone.replace(/\+/g, '').replace(/\s/g, '')}" style="color: #1D6B45; text-decoration: none; font-weight: bold;">${data.senderPhone}</a></p>` : ''}
-            ${data.senderEmail ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>E-mail :</strong> ${data.senderEmail}</p>` : ''}
+            ${data.senderPhone ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Téléphone / WhatsApp :</strong> <a href="https://wa.me/${sanitizeDigits(data.senderPhone)}" style="color: #1D6B45; text-decoration: none; font-weight: bold;">${escapeHtml(data.senderPhone)}</a></p>` : ''}
+            ${data.senderEmail ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>E-mail :</strong> ${escapeHtml(data.senderEmail)}</p>` : ''}
             <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Poids estimé :</strong> ${data.weightKg} kg</p>
             ${data.totalAmount ? `<p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;"><strong>Prix total estimé :</strong> ${data.totalAmount.toFixed(2)} €</p>` : ''}
             
             <hr style="border: none; border-top: 1px solid #E2E8F0; margin: 12px 0;" />
             
             <p style="margin: 4px 0; color: #4A5568; font-size: 14px;">
-              <strong>Description du colis :</strong><br />${data.contentDesc}
+              <strong>Description du colis :</strong><br />${escapeHtml(data.contentDesc)}
             </p>
           </div>
 
           <div style="text-align: center; margin-top: 30px;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/profil/gp" 
+            <a href="${FRONTEND_URL}/profil/gp" 
                style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 14px 28px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 15px; box-shadow: 0 4px 6px rgba(29,107,69,0.2);">
               Gérer mes demandes GP sur Dabari
             </a>
@@ -424,7 +446,7 @@ export const sendGpRequestStatusToSenderMail = async (data: {
           </div>
 
           <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
-            Bonjour ${data.senderName},
+            Bonjour ${escapeHtml(data.senderName)},
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
@@ -433,21 +455,21 @@ export const sendGpRequestStatusToSenderMail = async (data: {
 
           <div style="background-color: #FAF7F2; border-left: 4px solid ${isRefused ? '#C62828' : '#1D6B45'}; border-radius: 8px; padding: 18px; margin: 20px 0;">
             <h3 style="color: #1D6B45; margin: 0 0 10px 0; font-size: 16px; display: flex; align-items: center;">
-              ${SVG_PLANE} Trajet : ${data.departureCity || 'Départ'} ➔ ${data.arrivalCity || 'Arrivée'}
+              ${SVG_PLANE} Trajet : ${escapeHtml(data.departureCity || 'Départ')} ➔ ${escapeHtml(data.arrivalCity || 'Arrivée')}
             </h3>
             
             <p style="margin: 4px 0; color: #2D3748; font-size: 14px;">
-              <strong>GP Transporteur :</strong> ${data.gpName}
+              <strong>GP Transporteur :</strong> ${escapeHtml(data.gpName)}
             </p>
             ${data.weightKg ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Poids :</strong> ${data.weightKg} kg</p>` : ''}
             ${data.totalAmount ? `<p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;"><strong>Total :</strong> ${data.totalAmount.toFixed(2)} €</p>` : ''}
             
-            ${data.messageGp ? `<div style="background-color: #ffffff; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #E2E8F0; font-size: 13px; color: #4A5568;"><strong>Message du GP :</strong> ${data.messageGp}</div>` : ''}
+            ${data.messageGp ? `<div style="background-color: #ffffff; border-radius: 6px; padding: 10px; margin-top: 10px; border: 1px solid #E2E8F0; font-size: 13px; color: #4A5568;"><strong>Message du GP :</strong> ${escapeHtml(data.messageGp)}</div>` : ''}
           </div>
 
           ${isAccepted && data.gpPhone ? `
             <div style="text-align: center; margin: 24px 0;">
-              <a href="https://wa.me/${data.gpPhone.replace(/\+/g, '').replace(/\s/g, '')}" 
+              <a href="https://wa.me/${sanitizeDigits(data.gpPhone)}" 
                  style="background-color: #25D366; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
                 ${SVG_WHATSAPP} Contacter le GP sur WhatsApp
               </a>
@@ -455,7 +477,7 @@ export const sendGpRequestStatusToSenderMail = async (data: {
           ` : ''}
 
           <div style="text-align: center; margin-top: 24px;">
-            <a href="${process.env.FRONTEND_URL || 'http://localhost:3000'}/commandes" 
+            <a href="${FRONTEND_URL}/dashboard" 
                style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
               Suivre mes envois de colis sur Dabari
             </a>
@@ -473,3 +495,422 @@ export const sendGpRequestStatusToSenderMail = async (data: {
     html,
   });
 };
+
+export const sendEmailVerificationCodeMail = async (data: {
+  to: string;
+  code: string;
+  name?: string;
+}) => {
+  const title = `Votre code de vérification Dabari : ${data.code}`;
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px; text-align: center;">
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 22px;">
+            Bienvenue sur Dabari${data.name ? `, ${data.name}` : ""} !
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; max-width: 480px; margin: 0 auto 20px auto;">
+            Merci pour votre inscription. Pour finaliser la création de votre compte et sécuriser vos accès, veuillez saisir le code de validation ci-dessous :
+          </p>
+
+          <div style="background-color: #FAF7F2; border: 2px dashed #1D6B45; border-radius: 14px; padding: 22px 16px; margin: 24px auto; max-width: 320px;">
+            <p style="color: #6B7280; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; margin: 0 0 8px 0; font-weight: 600;">
+              Votre code de sécurité
+            </p>
+            <div style="font-size: 34px; font-weight: 800; color: #1D6B45; letter-spacing: 8px; font-family: 'Courier New', Courier, monospace;">
+              ${data.code}
+            </div>
+          </div>
+
+          <p style="color: #6B7280; font-size: 12px; margin: 12px 0 0 0;">
+            Ce code est valable pendant <strong>15 minutes</strong>.
+          </p>
+          <p style="color: #9CA3AF; font-size: 11px; margin: 6px 0 0 0;">
+            Si vous n'êtes pas à l'origine de cette inscription, vous pouvez ignorer cet e-mail en toute sécurité.
+          </p>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.to,
+    subject: `Dabari - Code de vérification : ${data.code}`,
+    html,
+  });
+};
+
+export const sendOrderCancelledToTraiteurMail = async (data: {
+  traiteurEmail: string;
+  traiteurName: string;
+  clientName: string;
+  orderType: "DEVIS" | "PLAT";
+  details?: string;
+  dateEvenement?: string;
+  totalAmount?: number;
+}) => {
+  const isDevis = data.orderType === "DEVIS";
+  const title = `Commande ${isDevis ? "de devis" : "de plats"} annulée par le client`;
+
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <span style="background-color: #FFEBEE; color: #C62828; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
+              ${SVG_X_CIRCLE} Commande Annulée
+            </span>
+          </div>
+
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
+            Bonjour ${escapeHtml(data.traiteurName)},
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
+            Le client <strong style="color: #1A202C;">${escapeHtml(data.clientName)}</strong> a annulé sa commande (${isDevis ? "demande de devis" : "commande de plats"}).
+          </p>
+
+          <div style="background-color: #FAF7F2; border-left: 4px solid #C62828; border-radius: 8px; padding: 18px; margin: 20px 0;">
+            <h3 style="color: #C62828; margin: 0 0 10px 0; font-size: 15px;">
+              Détails de la commande annulée :
+            </h3>
+            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Client :</strong> ${escapeHtml(data.clientName)}</p>
+            ${data.dateEvenement ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Date prévue :</strong> ${escapeHtml(data.dateEvenement)}</p>` : ""}
+            ${data.totalAmount ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Montant :</strong> ${data.totalAmount.toFixed(2)} €</p>` : ""}
+            ${data.details ? `<p style="margin: 6px 0 0 0; color: #4A5568; font-size: 13px; white-space: pre-line;"><strong>Détails :</strong> ${escapeHtml(data.details)}</p>` : ""}
+          </div>
+
+          <p style="color: #718096; font-size: 13px; text-align: center;">
+            Vous n'avez aucune action à effectuer. Votre planning a été mis à jour automatiquement.
+          </p>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/profil/traiteur" 
+               style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
+              Accéder à mon espace traiteur
+            </a>
+          </div>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.traiteurEmail,
+    subject: `Dabari - ${title} (${data.clientName})`,
+    html,
+  });
+};
+
+export const sendGpRequestCancelledToGpMail = async (data: {
+  gpEmail: string;
+  gpName: string;
+  senderName: string;
+  weightKg: number;
+  departureCity?: string;
+  arrivalCity?: string;
+}) => {
+  const title = `Demande de colis annulée par l'expéditeur (${data.weightKg} kg libérés)`;
+
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <span style="background-color: #FFEBEE; color: #C62828; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
+              ${SVG_X_CIRCLE} Demande Colis Annulée
+            </span>
+          </div>
+
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
+            Bonjour ${escapeHtml(data.gpName)},
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
+            L'expéditeur <strong style="color: #1A202C;">${escapeHtml(data.senderName)}</strong> a annulé sa réservation de <strong>${escapeHtml(data.weightKg)} kg</strong>.
+          </p>
+
+          <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0;">
+            <h3 style="color: #1D6B45; margin: 0 0 8px 0; font-size: 15px; display: flex; align-items: center;">
+              ${SVG_PLANE} Vos kilos ont été recrédités automatiquement :
+            </h3>
+            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Kilos libérés :</strong> ${escapeHtml(data.weightKg)} kg</p>
+            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Trajet :</strong> ${escapeHtml(data.departureCity || 'Départ')} ➔ ${escapeHtml(data.arrivalCity || 'Arrivée')}</p>
+            <p style="margin: 4px 0; color: #718096; font-size: 13px;">Ces kilos sont à nouveau réservables par d'autres expéditeurs sur votre annonce.</p>
+          </div>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/profil/gp" 
+               style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
+              Gérer mes annonces GP
+            </a>
+          </div>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.gpEmail,
+    subject: `Dabari - ${title}`,
+    html,
+  });
+};
+
+export const sendDevisChiffreToClientMail = async (data: {
+  clientEmail: string;
+  clientName: string;
+  traiteurName: string;
+  prixDevis: number;
+  dateEvenement?: string;
+  shouldAutoSign?: boolean;
+}) => {
+  const title = `Votre devis est prêt chez ${data.traiteurName} (${data.prixDevis.toFixed(2)} €)`;
+
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <span style="background-color: #FFF8E1; color: #D4870A; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
+              ${SVG_CLOCK} Devis Prêt à Examiner
+            </span>
+          </div>
+
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
+            Bonjour ${escapeHtml(data.clientName)},
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
+            Le chef traiteur <strong style="color: #1D6B45;">${escapeHtml(data.traiteurName)}</strong> a étudié votre demande et a fixé son tarif pour votre événement.
+          </p>
+
+          <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0; text-align: center;">
+            <p style="color: #6B7280; font-size: 12px; margin: 0 0 6px 0; text-transform: uppercase; font-weight: bold;">
+              Montant total du devis proposé
+            </p>
+            <div style="font-size: 32px; font-weight: bold; color: #1D6B45;">
+              ${data.prixDevis.toFixed(2)} €
+            </div>
+            ${data.dateEvenement ? `<p style="margin: 8px 0 0 0; color: #4A5568; font-size: 13px;">Pour votre événement du <strong>${escapeHtml(data.dateEvenement)}</strong></p>` : ""}
+            ${data.shouldAutoSign ? `<p style="margin: 8px 0 0 0; color: #1D6B45; font-size: 12px; font-weight: bold;">✍️ Le traiteur a d'ores et déjà apposé sa signature.</p>` : ""}
+          </div>
+
+          <p style="color: #4A5568; font-size: 14px; text-align: center; line-height: 1.5;">
+            Vous pouvez dès maintenant examiner l'offre, la signer en ligne ou échanger avec le chef traiteur.
+          </p>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/commandes" 
+               style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 13px 26px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 15px; box-shadow: 0 4px 6px rgba(29,107,69,0.2);">
+              Examiner et signer mon devis
+            </a>
+          </div>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.clientEmail,
+    subject: `Dabari - ${title}`,
+    html,
+  });
+};
+
+export const sendDevisSignedToTraiteurMail = async (data: {
+  traiteurEmail: string;
+  traiteurName: string;
+  clientName: string;
+  prixDevis: number;
+  dateEvenement?: string;
+}) => {
+  const title = `Devis validé et signé par le client ${data.clientName} !`;
+
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <span style="background-color: #E8F5E9; color: #1D6B45; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
+              ${SVG_CHECK_CIRCLE} Devis 100% Signé & Validé
+            </span>
+          </div>
+
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
+            Félicitations chef ${escapeHtml(data.traiteurName)} !
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
+            Le client <strong style="color: #1D6B45;">${escapeHtml(data.clientName)}</strong> a validé et signé votre proposition de devis !
+          </p>
+
+          <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0;">
+            <h3 style="color: #1D6B45; margin: 0 0 10px 0; font-size: 15px;">
+              Détails de la prestation confirmée :
+            </h3>
+            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Client :</strong> ${escapeHtml(data.clientName)}</p>
+            ${data.dateEvenement ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Date de l'événement :</strong> ${escapeHtml(data.dateEvenement)}</p>` : ""}
+            <p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;"><strong>Montant convenu :</strong> ${data.prixDevis.toFixed(2)} €</p>
+          </div>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/profil/traiteur" 
+               style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 13px 26px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 15px;">
+              Gérer la prestation sur mon espace traiteur
+            </a>
+          </div>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.traiteurEmail,
+    subject: `Dabari - ${title}`,
+    html,
+  });
+};
+
+export const sendAcompteNotificationMail = async (data: {
+  traiteurEmail: string;
+  traiteurName: string;
+  clientName: string;
+  acompteMontant: number;
+  dateEvenement?: string;
+  transactionRef?: string;
+}) => {
+  const title = `Acompte sous séquestre validé (${data.acompteMontant.toFixed(2)} €) !`;
+
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <span style="background-color: #E8F5E9; color: #1D6B45; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
+              ${SVG_CHECK_CIRCLE} Acompte Sous Séquestre Garanti
+            </span>
+          </div>
+
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
+            Bonjour chef ${escapeHtml(data.traiteurName)},
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
+            Le client <strong style="color: #1D6B45;">${escapeHtml(data.clientName)}</strong> a validé le versement de son acompte de <strong>${data.acompteMontant.toFixed(2)} €</strong> sous séquestre Dabari.
+          </p>
+
+          <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0;">
+            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Montant sous séquestre :</strong> ${data.acompteMontant.toFixed(2)} €</p>
+            ${data.dateEvenement ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Date événement :</strong> ${escapeHtml(data.dateEvenement)}</p>` : ""}
+            ${data.transactionRef ? `<p style="margin: 4px 0; color: #6B7280; font-size: 12px;"><strong>Réf. transaction :</strong> ${escapeHtml(data.transactionRef)}</p>` : ""}
+            <p style="margin: 8px 0 0 0; color: #1D6B45; font-size: 12px;">
+              🛡️ Vos fonds sont conservés en toute sécurité jusqu'à l'exécution de la prestation.
+            </p>
+          </div>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/profil/traiteur" 
+               style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 13px 26px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 15px;">
+              Voir la commande
+            </a>
+          </div>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.traiteurEmail,
+    subject: `Dabari - ${title}`,
+    html,
+  });
+};
+
+export const sendGpDelayNotificationMail = async (data: {
+  senderEmail: string;
+  senderName: string;
+  gpName: string;
+  newArrivalDate: string;
+  delayReason?: string;
+  departureCity?: string;
+  arrivalCity?: string;
+}) => {
+  const title = `Information retard : décalage sur votre vol GP`;
+
+  const html = `
+    <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
+      <div style="max-width: 600px; margin: 0 auto; background-color: #ffffff; border-radius: 16px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); overflow: hidden;">
+        ${EMAIL_HEADER}
+        
+        <div style="padding: 30px 24px;">
+          <div style="text-align: center; margin-bottom: 20px;">
+            <span style="background-color: #FFF8E1; color: #D4870A; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
+              ${SVG_CLOCK} Décalage de Trajet Signalé
+            </span>
+          </div>
+
+          <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; text-align: center;">
+            Bonjour ${escapeHtml(data.senderName)},
+          </h2>
+          
+          <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
+            Votre transporteur GP <strong style="color: #1D6B45;">${escapeHtml(data.gpName)}</strong> a signalé un ajustement sur son vol / trajet.
+          </p>
+
+          <div style="background-color: #FAF7F2; border-left: 4px solid #D4870A; border-radius: 8px; padding: 18px; margin: 20px 0;">
+            <h3 style="color: #D4870A; margin: 0 0 10px 0; font-size: 15px; display: flex; align-items: center;">
+              ${SVG_PLANE} Nouvelle date d'arrivée estimée :
+            </h3>
+            <p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;">
+              ${escapeHtml(data.newArrivalDate)}
+            </p>
+            ${data.departureCity && data.arrivalCity ? `<p style="margin: 4px 0; color: #2D3748; font-size: 13px;">Trajet : ${escapeHtml(data.departureCity)} ➔ ${escapeHtml(data.arrivalCity)}</p>` : ""}
+            ${data.delayReason ? `<p style="margin: 6px 0 0 0; color: #4A5568; font-size: 13px;"><strong>Motif :</strong> ${escapeHtml(data.delayReason)}</p>` : ""}
+          </div>
+
+          <div style="text-align: center; margin-top: 24px;">
+            <a href="${FRONTEND_URL}/commandes" 
+               style="background-color: #1D6B45; color: #ffffff; font-weight: bold; padding: 12px 24px; text-decoration: none; border-radius: 12px; display: inline-block; font-size: 14px;">
+              Suivre mon colis sur Dabari
+            </a>
+          </div>
+        </div>
+
+        ${EMAIL_FOOTER}
+      </div>
+    </div>
+  `;
+
+  return await sendEmail({
+    to: data.senderEmail,
+    subject: `Dabari - ${title} (Arrivée : ${data.newArrivalDate})`,
+    html,
+  });
+};
+

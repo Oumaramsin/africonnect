@@ -64,7 +64,11 @@ export default function BottomNav() {
 
         if (res.ok) {
           const data = await res.json();
-          setUnreadCount(data.unread_count || 0);
+          if (pathname.includes("/commandes") || pathname === "/commandes" || pathname === "commandes") {
+            setUnreadCount(0);
+          } else {
+            setUnreadCount(data.unread_count || 0);
+          }
         }
       } catch (err) {
         // Fallback silencieux en cas d'erreur de décodage ou réseau
@@ -174,7 +178,7 @@ export default function BottomNav() {
                 />
 
                 {/* Badge rouge notifications non lues sur Commandes */}
-                {isCommandes && unreadCount > 0 && (
+                {isCommandes && !isActive && unreadCount > 0 && (
                   <View style={styles.unreadBadge}>
                     <Text style={styles.unreadBadgeText}>
                       {unreadCount > 9 ? "9+" : unreadCount}

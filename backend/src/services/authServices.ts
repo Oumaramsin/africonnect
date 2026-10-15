@@ -1,7 +1,7 @@
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import { db as prisma } from "../db";
-import { sendEmail } from "./emailService";
+import { sendEmail, sendEmailVerificationCodeMail, escapeHtml } from "./emailService";
 
 class AuthService {
   static registerUser = async (
@@ -14,17 +14,25 @@ class AuthService {
   ) => {
     const hashedPassword = await bcrypt.hash(password || "", 10);
 
-    const verifyCode = email
+    const isEmailRegistration = Boolean(
+      email &&
+      email.trim() !== "" &&
+      !email.toLowerCase().endsWith("@dabari.app") &&
+      !email.toLowerCase().endsWith("@africonnect.com")
+    );
+    const verifyCode = isEmailRegistration
       ? Math.floor(100000 + Math.random() * 900000).toString()
       : null;
-    const verifyExpires = email ? new Date(Date.now() + 15 * 60 * 1000) : null;
+    const verifyExpires = isEmailRegistration
+      ? new Date(Date.now() + 15 * 60 * 1000)
+      : null;
 
     const newUser = await prisma.user.create({
       data: {
         email: email || null,
         phone: phone || null,
         password: hashedPassword,
-        is_email_verified: true, // Activé automatiquement par défaut (sans étape Resend)
+        is_email_verified: !isEmailRegistration, // true par défaut pour inscription téléphone, false pour email
         email_verify_code: verifyCode,
         email_verify_expires: verifyExpires,
         profile: {
@@ -42,17 +50,15 @@ class AuthService {
       },
     });
 
-    /* Désactivé temporairement tant que Resend n'est pas configuré avec le domaine
-    if (email && verifyCode) {
-      sendEmail({
+    if (isEmailRegistration && email && verifyCode) {
+      sendEmailVerificationCodeMail({
         to: email,
-        subject: "Votre code de vérification Dabari",
-        html: `...`,
+        code: verifyCode,
+        name: firstname,
       }).catch((err) =>
         console.error("⚠️ Erreur envoi mail de vérification:", err),
       );
     }
-    */
 
     return newUser.profile;
   };
@@ -132,11 +138,10 @@ class AuthService {
       return { message: "Email déjà vérifié.", token };
     }
 
-    // Vérification de l'expiration (15 minutes)
+    // Vérification de l'expiration (15 minutes) sans supprimer le compte utilisateur
     if (user.email_verify_expires && new Date() > user.email_verify_expires) {
-      await prisma.user.delete({ where: { id: user.id } });
       const error: any = new Error("EXPIRED_CODE");
-      error.customMessage = "Le délai de 15 minutes a expiré. Votre inscription a été annulée, veuillez recommencer.";
+      error.customMessage = "Le code de vérification a expiré. Veuillez cliquer sur 'Renvoyer un nouveau code'.";
       throw error;
     }
 
@@ -178,13 +183,7 @@ class AuthService {
       throw new Error("Cet e-mail est déjà vérifié.");
     }
 
-    if (user.email_verify_expires && new Date() > user.email_verify_expires) {
-      await prisma.user.delete({ where: { id: user.id } });
-      const error: any = new Error("EXPIRED_CODE");
-      error.customMessage = "Le délai de 15 minutes a expiré. Veuillez refaire votre inscription.";
-      throw error;
-    }
-
+    // Génération d'un nouveau code avec nouveau délai de 15 minutes
     const newCode = Math.floor(100000 + Math.random() * 900000).toString();
     const newExpires = new Date(Date.now() + 15 * 60 * 1000);
 
@@ -196,19 +195,10 @@ class AuthService {
       },
     });
 
-    sendEmail({
+    sendEmailVerificationCodeMail({
       to: email,
-      subject: "Nouveau code de vérification Dabari",
-      html: `
-        <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
-          <h2>Nouveau code de vérification Dabari</h2>
-          <p>Voici votre nouveau code à 6 chiffres :</p>
-          <div style="font-size: 32px; font-weight: bold; color: #1D6B45; letter-spacing: 6px; margin: 20px 0;">
-            ${newCode}
-          </div>
-          <p style="color: #666; font-size: 12px;">Ce code expire dans 15 minutes.</p>
-        </div>
-      `,
+      code: newCode,
+      name: user.profile?.full_name || undefined,
     }).catch((err) => console.error("⚠️ Erreur réenvoi mail:", err));
 
     return { message: "Un nouveau code a été envoyé à votre adresse e-mail." };
@@ -312,7 +302,7 @@ class AuthService {
                 Réinitialisation de mot de passe
               </h2>
               <p style="color: #4A5568; font-size: 14px; line-height: 1.6; margin: 12px 0 24px 0;">
-                Bonjour ${userName},<br/>
+                Bonjour ${escapeHtml(userName)},<br/>
                 Nous avons reçu une demande de réinitialisation pour votre compte Dabari. Saisissez le code suivant pour définir votre nouveau mot de passe :
               </p>
 

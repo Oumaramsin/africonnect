@@ -77,7 +77,11 @@ export default function Navbar() {
         }
         if (res.ok) {
           const data = await res.json();
-          setUnreadCount(data.unread_count || 0);
+          if (pathname.startsWith("/commandes")) {
+            setUnreadCount(0);
+          } else {
+            setUnreadCount(data.unread_count || 0);
+          }
         }
       } catch (err) {
         console.error("Erreur lors de la récupération des notifications:", err);
@@ -85,6 +89,19 @@ export default function Navbar() {
     };
 
     checkAuthAndNotifications();
+
+    const handleNotifUpdate = () => {
+      if (pathname.startsWith("/commandes")) {
+        setUnreadCount(0);
+      } else {
+        checkAuthAndNotifications();
+      }
+    };
+
+    window.addEventListener("notifications-updated", handleNotifUpdate);
+    return () => {
+      window.removeEventListener("notifications-updated", handleNotifUpdate);
+    };
   }, [pathname]);
 
   // Fermeture du menu profil lors d'un clic en dehors
@@ -117,7 +134,14 @@ export default function Navbar() {
     { href: "/gp", label: "Transport GP", icon: Plane },
     { href: "/services", label: "Services", icon: Grid },
     ...(isLoggedIn
-      ? [{ href: "/commandes", label: "Mes Commandes", icon: Package, badge: unreadCount }]
+      ? [
+          {
+            href: "/commandes",
+            label: "Mes Commandes",
+            icon: Package,
+            badge: pathname.startsWith("/commandes") ? 0 : unreadCount,
+          },
+        ]
       : []),
   ];
 
@@ -273,7 +297,7 @@ export default function Navbar() {
                 className="relative p-2 rounded-xl text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors shrink-0"
               >
                 <Bell size={18} />
-                {unreadCount > 0 && (
+                {!pathname.startsWith("/commandes") && unreadCount > 0 && (
                   <span className="absolute top-1 right-1 w-2.5 h-2.5 rounded-full bg-rose-500 ring-2 ring-white animate-pulse" />
                 )}
               </Link>
@@ -328,7 +352,7 @@ export default function Navbar() {
                           <Package size={16} className="text-slate-400" />
                           Mes Commandes & Devis
                         </div>
-                        {unreadCount > 0 && (
+                        {!pathname.startsWith("/commandes") && unreadCount > 0 && (
                           <span className="px-1.5 py-0.5 text-[10px] font-bold bg-rose-500 text-white rounded-full">
                             {unreadCount}
                           </span>

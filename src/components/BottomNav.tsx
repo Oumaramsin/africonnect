@@ -46,6 +46,11 @@ export default function BottomNav() {
         setIsLoggedIn(true);
         setIsAdmin(decodedPayload.role === "admin");
 
+        if (pathname.startsWith("/commandes")) {
+          setUnreadCount(0);
+          return;
+        }
+
         const res = await fetch(
           `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/notifications`,
           {
@@ -66,7 +71,11 @@ export default function BottomNav() {
 
         if (res.ok) {
           const data = await res.json();
-          setUnreadCount(data.unread_count || 0);
+          if (pathname.startsWith("/commandes")) {
+            setUnreadCount(0);
+          } else {
+            setUnreadCount(data.unread_count || 0);
+          }
         }
       } catch (error) {
         console.error("Erreur dans le fetch des notifications :", error);
@@ -74,6 +83,19 @@ export default function BottomNav() {
     };
 
     fetchUnread();
+
+    const handleNotifUpdate = () => {
+      if (pathname.startsWith("/commandes")) {
+        setUnreadCount(0);
+      } else {
+        fetchUnread();
+      }
+    };
+
+    window.addEventListener("notifications-updated", handleNotifUpdate);
+    return () => {
+      window.removeEventListener("notifications-updated", handleNotifUpdate);
+    };
   }, [pathname]);
 
   const hideOn = ["/login", "/register", "/reset-password", "/forgot-password"];
@@ -141,7 +163,7 @@ export default function BottomNav() {
                   {item.icon}
                 </span>
 
-                {isCommandes && unreadCount > 0 && (
+                {isCommandes && !pathname.startsWith("/commandes") && unreadCount > 0 && (
                   <span
                     style={{
                       position: "absolute",

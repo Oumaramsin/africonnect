@@ -837,6 +837,31 @@ export const updateTraiteurProposalStatus = async (
       }
     }
 
+    // Marquer les notifications reçues par le client pour cette proposition comme lues
+    try {
+      const notifs = await tx.notification.findMany({
+        where: {
+          user_id: clientId,
+          is_read: false,
+        },
+        take: 50,
+      });
+      const notifIds = notifs
+        .filter((n) => {
+          const d = n.data as any;
+          return d && (d.proposalId === proposalId || d.requestId === proposal.request_id);
+        })
+        .map((n) => n.id);
+      if (notifIds.length > 0) {
+        await tx.notification.updateMany({
+          where: { id: { in: notifIds } },
+          data: { is_read: true },
+        });
+      }
+    } catch (e) {
+      console.error("Erreur marquage notification proposal lue:", e);
+    }
+
     return updated;
   });
 };

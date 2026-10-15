@@ -75,10 +75,18 @@ class AuthController {
         password,
         address,
       );
+      const isEmailReg = Boolean(
+        email &&
+        email.trim() !== "" &&
+        !email.toLowerCase().endsWith("@dabari.app") &&
+        !email.toLowerCase().endsWith("@africonnect.com")
+      );
       return res.status(201).json({
         user,
-        requiresVerification: false, // Désactivé temporairement 
-        message: "Compte créé avec succès.",
+        requiresVerification: isEmailReg,
+        message: isEmailReg
+          ? "Un code de vérification à 6 chiffres a été envoyé à votre adresse e-mail."
+          : "Compte créé avec succès.",
       });
     } catch (error: any) {
       res.status(400).json({ message: error.message || "registration failed", error });
