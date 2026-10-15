@@ -7,7 +7,7 @@ import { ShieldCheck, Heart, Plane, UtensilsCrossed, MessageCircle } from "lucid
 export default function Footer() {
   const pathname = usePathname();
 
-  const hideFooterOn = ["/login", "/register", "/reset-password"];
+  const hideFooterOn = ["/login", "/register", "/reset-password", "/forgot-password"];
   if (hideFooterOn.includes(pathname)) return null;
 
   return (

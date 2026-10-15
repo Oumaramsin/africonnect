@@ -76,7 +76,7 @@ export default function BottomNav() {
     fetchUnread();
   }, [pathname]);
 
-  const hideOn = ["/login", "/register", "/reset-password"];
+  const hideOn = ["/login", "/register", "/reset-password", "/forgot-password"];
   if (hideOn.includes(pathname)) return null;
 
   let items = [...NAV_ITEMS];

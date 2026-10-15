@@ -195,6 +195,46 @@ class AuthController {
       res.status(400).json({ message: "internal server error", error: error.message });
     }
   };
+
+  static forgotPassword = async (req: Request, res: Response) => {
+    try {
+      const { email, honeypot, website } = req.body;
+      if (honeypot || website) {
+        return res.status(400).json({ message: "Requête refusée (détection de bot)." });
+      }
+      if (!email || typeof email !== "string" || !email.includes("@")) {
+        return res.status(400).json({ message: "Veuillez renseigner une adresse e-mail valide." });
+      }
+
+      const result = await AuthService.forgotPassword(email);
+      return res.status(200).json(result);
+    } catch (error: any) {
+      console.error("[Auth] Erreur forgotPassword:", error);
+      const msg = error.customMessage || error.message || "Erreur serveur.";
+      return res.status(400).json({ message: msg });
+    }
+  };
+
+  static resetPassword = async (req: Request, res: Response) => {
+    try {
+      const { email, code, newPassword, honeypot, website } = req.body;
+      if (honeypot || website) {
+        return res.status(400).json({ message: "Requête refusée (détection de bot)." });
+      }
+      if (!email || !code || !newPassword) {
+        return res.status(400).json({
+          message: "L'adresse e-mail, le code à 6 chiffres et le nouveau mot de passe sont obligatoires.",
+        });
+      }
+
+      const result = await AuthService.resetPassword(email, code, newPassword);
+      return res.status(200).json(result);
+    } catch (error: any) {
+      console.error("[Auth] Erreur resetPassword:", error);
+      const msg = error.customMessage || error.message || "Erreur lors de la réinitialisation.";
+      return res.status(400).json({ message: msg });
+    }
+  };
 }
 
 export default AuthController;

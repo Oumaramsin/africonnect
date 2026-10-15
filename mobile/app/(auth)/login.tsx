@@ -238,7 +238,17 @@ export default function LoginScreen() {
 
               {/* Password Field */}
               <View style={styles.fieldGroup}>
-                <Text style={styles.fieldLabel}>MOT DE PASSE</Text>
+                <View style={styles.passwordLabelRow}>
+                  <Text style={styles.fieldLabel}>MOT DE PASSE</Text>
+                  <TouchableOpacity
+                    onPress={() => router.push("/(auth)/forgot-password" as any)}
+                    activeOpacity={0.7}
+                  >
+                    <Text style={styles.forgotPasswordText}>
+                      Mot de passe oublié ?
+                    </Text>
+                  </TouchableOpacity>
+                </View>
                 <View style={styles.inputWrapper}>
                   <Ionicons
                     name="lock-closed-outline"
@@ -437,6 +447,16 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#6B7280",
     letterSpacing: 0.5,
+  },
+  passwordLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  forgotPasswordText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1D6B45",
   },
   inputWrapper: {
     position: "relative",

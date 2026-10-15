@@ -121,7 +121,7 @@ export default function Navbar() {
       : []),
   ];
 
-  const hideNavbarOn = ["/login", "/register", "/reset-password"];
+  const hideNavbarOn = ["/login", "/register", "/reset-password", "/forgot-password"];
   if (hideNavbarOn.includes(pathname)) return null;
 
   const isHomeDashboard = pathname === "/dashboard" || pathname === "/";
