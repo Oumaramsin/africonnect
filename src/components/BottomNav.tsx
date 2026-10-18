@@ -23,6 +23,49 @@ export default function BottomNav() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const handleFocusIn = (e: FocusEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (
+        target &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable)
+      ) {
+        setIsKeyboardOpen(true);
+      }
+    };
+
+    const handleFocusOut = () => {
+      setIsKeyboardOpen(false);
+    };
+
+    const handleViewportResize = () => {
+      if (window.visualViewport) {
+        const isReduced = window.visualViewport.height < window.innerHeight * 0.78;
+        setIsKeyboardOpen(isReduced);
+      }
+    };
+
+    window.addEventListener("focusin", handleFocusIn);
+    window.addEventListener("focusout", handleFocusOut);
+    if (window.visualViewport) {
+      window.visualViewport.addEventListener("resize", handleViewportResize);
+    }
+
+    return () => {
+      window.removeEventListener("focusin", handleFocusIn);
+      window.removeEventListener("focusout", handleFocusOut);
+      if (window.visualViewport) {
+        window.visualViewport.removeEventListener("resize", handleViewportResize);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUnread = async () => {
@@ -119,6 +162,10 @@ export default function BottomNav() {
     items.push(
       { href: "/login", icon: <LogIn size={22} />, label: "Connexion" },
     );
+  }
+
+  if (isKeyboardOpen) {
+    return null;
   }
 
   return (

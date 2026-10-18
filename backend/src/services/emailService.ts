@@ -347,6 +347,8 @@ export const sendNewGpRequestToGpMail = async (data: {
   senderName: string;
   senderPhone?: string;
   senderEmail?: string;
+  recipientName?: string;
+  recipientPhone?: string;
   departureCity?: string;
   arrivalCity?: string;
   weightKg: number;
@@ -379,6 +381,7 @@ export const sendNewGpRequestToGpMail = async (data: {
             </p>
             ${data.senderPhone ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Téléphone / WhatsApp :</strong> <a href="https://wa.me/${sanitizeDigits(data.senderPhone)}" style="color: #1D6B45; text-decoration: none; font-weight: bold;">${escapeHtml(data.senderPhone)}</a></p>` : ''}
             ${data.senderEmail ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>E-mail :</strong> ${escapeHtml(data.senderEmail)}</p>` : ''}
+            ${data.recipientName ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Destinataire à l'arrivée :</strong> ${escapeHtml(data.recipientName)} ${data.recipientPhone ? `(<a href="https://wa.me/${sanitizeDigits(data.recipientPhone)}" style="color: #1D6B45; text-decoration: none; font-weight: bold;">${escapeHtml(data.recipientPhone)}</a>)` : ''}</p>` : ''}
             <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Poids estimé :</strong> ${data.weightKg} kg</p>
             ${data.totalAmount ? `<p style="margin: 4px 0; color: #1D6B45; font-size: 16px; font-weight: bold;"><strong>Prix total estimé :</strong> ${data.totalAmount.toFixed(2)} €</p>` : ''}
             

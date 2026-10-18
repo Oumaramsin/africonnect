@@ -7,6 +7,10 @@ import {
   ScrollView,
   TextInput,
   ActivityIndicator,
+  Modal,
+  Image,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -16,6 +20,8 @@ import OrderEditModal, {
   DetailRowItem,
 } from "../../components/OrderEditModal";
 import { showErrorAlert } from "../../utils/alerts";
+import { COUNTRY_DIAL_CODES } from "../../utils/constants/dialCodes";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 export default function EditGpScreen() {
   const router = useRouter();
@@ -34,12 +40,23 @@ export default function EditGpScreen() {
     contentDesc: string;
     declaredValue: string;
     notes: string;
+    recipientName: string;
+    recipientPhoneCode: string;
+    recipientPhoneNumber: string;
   } | null>(null);
 
   const [weightKg, setWeightKg] = useState("1");
   const [contentDesc, setContentDesc] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
   const [notes, setNotes] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhoneCode, setRecipientPhoneCode] = useState("+33");
+  const [recipientPhoneNumber, setRecipientPhoneNumber] = useState("");
+  const [showDialCodeModal, setShowDialCodeModal] = useState(false);
+
+  const selectedDial =
+    COUNTRY_DIAL_CODES.find((c) => c.code === recipientPhoneCode) ||
+    COUNTRY_DIAL_CODES[0];
 
   useEffect(() => {
     if (!id) return;
@@ -73,17 +90,37 @@ export default function EditGpScreen() {
       const initDesc = req.content_desc || "";
       const initVal = req.declared_value ? String(req.declared_value) : "";
       const initNotes = req.notes || "";
+      const initRecName = req.recipient_name || "";
+
+      let initPhoneCode = "+33";
+      let initPhoneNum = "";
+      if (req.recipient_phone) {
+        const rawPhone = String(req.recipient_phone).trim();
+        const matched = COUNTRY_DIAL_CODES.find((c) => rawPhone.startsWith(c.code));
+        if (matched) {
+          initPhoneCode = matched.code;
+          initPhoneNum = rawPhone.slice(matched.code.length).trim();
+        } else {
+          initPhoneNum = rawPhone;
+        }
+      }
 
       setWeightKg(initWeight);
       setContentDesc(initDesc);
       setDeclaredValue(initVal);
       setNotes(initNotes);
+      setRecipientName(initRecName);
+      setRecipientPhoneCode(initPhoneCode);
+      setRecipientPhoneNumber(initPhoneNum);
 
       setInitialData({
         weightKg: initWeight,
         contentDesc: initDesc,
         declaredValue: initVal,
         notes: initNotes,
+        recipientName: initRecName,
+        recipientPhoneCode: initPhoneCode,
+        recipientPhoneNumber: initPhoneNum,
       });
     } catch (e: any) {
       showErrorAlert(
@@ -115,7 +152,11 @@ export default function EditGpScreen() {
 
   const isWeightExceeded = !isNaN(parsedWeight) && parsedWeight > maxAllowedKg;
 
-  const isFormValid = isWeightValid && isContentValid && isDeclaredValueValid;
+  const isRecipientNameValid = recipientName.trim().length > 0;
+  const isRecipientPhoneValid = recipientPhoneNumber.trim().length > 0;
+  const isRecipientValid = isRecipientNameValid && isRecipientPhoneValid;
+
+  const isFormValid = isWeightValid && isContentValid && isDeclaredValueValid && isRecipientValid;
 
   const hasChanges = useMemo(() => {
     if (!initialData) return false;
@@ -123,8 +164,11 @@ export default function EditGpScreen() {
     if (contentDesc.trim() !== initialData.contentDesc.trim()) return true;
     if (declaredValue.trim() !== initialData.declaredValue.trim()) return true;
     if (notes.trim() !== initialData.notes.trim()) return true;
+    if (recipientName.trim() !== initialData.recipientName.trim()) return true;
+    if (recipientPhoneCode !== initialData.recipientPhoneCode) return true;
+    if (recipientPhoneNumber.trim() !== initialData.recipientPhoneNumber.trim()) return true;
     return false;
-  }, [initialData, weightKg, contentDesc, declaredValue, notes]);
+  }, [initialData, weightKg, contentDesc, declaredValue, notes, recipientName, recipientPhoneCode, recipientPhoneNumber]);
 
   const getPricePerKg = () => {
     return Number(listing?.price_per_kg || 0);
@@ -166,6 +210,31 @@ export default function EditGpScreen() {
       return;
     }
 
+    if (!isRecipientNameValid) {
+      showErrorAlert(
+        "Destinataire obligatoire",
+        "Veuillez obligatoirement renseigner le nom et prénom du destinataire à l'arrivée.",
+      );
+      return;
+    }
+
+    if (!isRecipientPhoneValid) {
+      showErrorAlert(
+        "Téléphone obligatoire",
+        "Veuillez obligatoirement renseigner le numéro de téléphone du destinataire.",
+      );
+      return;
+    }
+
+    const recipientDigits = recipientPhoneNumber.replace(/\D/g, "");
+    if (recipientDigits.length < 6) {
+      showErrorAlert(
+        "Téléphone invalide",
+        "Le numéro de téléphone du destinataire doit contenir au moins 6 chiffres (sans lettres).",
+      );
+      return;
+    }
+
     setShowConfirmModal(true);
   };
 
@@ -177,6 +246,8 @@ export default function EditGpScreen() {
         content_desc: contentDesc.trim(),
         declared_value: parsedDeclaredValue,
         notes: notes.trim(),
+        recipient_name: recipientName.trim(),
+        recipient_phone: `${recipientPhoneCode} ${recipientPhoneNumber.trim()}`,
       };
 
       const res = await apiFetch(`/commande/gp/${id}`, {
@@ -248,6 +319,11 @@ export default function EditGpScreen() {
       label: "Valeur déclarée",
       value: `${!isNaN(parsedDeclaredValue) && parsedDeclaredValue >= 0 ? `${parsedDeclaredValue} €` : "0 €"}`,
     },
+    {
+      icon: "person-outline",
+      label: "Destinataire à l'arrivée",
+      value: `${recipientName.trim() || "Non renseigné"} (${recipientPhoneCode} ${recipientPhoneNumber.trim()})`,
+    },
   ];
 
   if (loading) {
@@ -280,10 +356,10 @@ export default function EditGpScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <AppKeyboardScrollView
         style={styles.container}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+        extraScrollHeight={140}
       >
         {/* Résumé du trajet */}
         {Boolean(depCity && arrCity) && (
@@ -456,7 +532,7 @@ export default function EditGpScreen() {
             ]}
             value={contentDesc}
             onChangeText={setContentDesc}
-            placeholder="Ex: Vêtements, documents administratifs, denrées sèches..."
+            placeholder="Ex: Vêtements, documents administratifs, produits secs..."
             placeholderTextColor="#94A3B8"
           />
           {!contentDesc.trim() && (
@@ -493,6 +569,80 @@ export default function EditGpScreen() {
               La valeur déclarée est obligatoire (saisissez au minimum 0 €).
             </Text>
           )}
+        </View>
+
+        {/* Destinataire à l'arrivée */}
+        <View style={styles.cardSection}>
+          <View style={styles.labelWithRequiredRow}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Ionicons name="person" size={15} color="#D4870A" />
+              <Text style={styles.sectionLabel}>DESTINATAIRE À L'ARRIVÉE</Text>
+            </View>
+            <Text style={styles.requiredBadge}>* OBLIGATOIRE</Text>
+          </View>
+          <Text style={styles.fieldHelper}>
+            Personne qui récupérera le colis à l'arrivée ({arrCity || "destination"}).
+          </Text>
+
+          <View style={{ gap: 12, marginTop: 4 }}>
+            <View>
+              <Text style={styles.inputSubLabel}>Nom &amp; Prénom du destinataire *</Text>
+              <TextInput
+                style={[
+                  styles.textInput,
+                  !recipientName.trim() && styles.inputWarningBorder,
+                ]}
+                value={recipientName}
+                onChangeText={setRecipientName}
+                placeholder="Ex: Amadou Diallo"
+                placeholderTextColor="#94A3B8"
+              />
+              {!recipientName.trim() && (
+                <Text style={styles.fieldErrorNotice}>
+                  Le nom et prénom du destinataire sont obligatoires.
+                </Text>
+              )}
+            </View>
+
+            <View>
+              <Text style={styles.inputSubLabel}>Téléphone du destinataire *</Text>
+              <View style={styles.phoneInputRow}>
+                <TouchableOpacity
+                  style={styles.dialCodeBtn}
+                  activeOpacity={0.8}
+                  onPress={() => setShowDialCodeModal(true)}
+                >
+                  <Image
+                    source={{ uri: `https://flagcdn.com/w80/${selectedDial.iso}.png` }}
+                    style={styles.dialTriggerFlag}
+                    resizeMode="cover"
+                  />
+                  <Text style={styles.dialCodeBtnText}>{recipientPhoneCode}</Text>
+                  <Ionicons name="chevron-down" size={14} color="#1D6B45" />
+                </TouchableOpacity>
+                <TextInput
+                  style={[
+                    styles.textInput,
+                    styles.phoneInputFlex,
+                    !recipientPhoneNumber.trim() && styles.inputWarningBorder,
+                  ]}
+                  placeholder="Ex: 07 12 34 56 78"
+                  placeholderTextColor="#94A3B8"
+                  keyboardType="phone-pad"
+                  value={recipientPhoneNumber}
+                  onChangeText={(val) => {
+                    const clean = val.replace(/[^0-9\s]/g, "");
+                    setRecipientPhoneNumber(clean);
+                  }}
+                />
+              </View>
+              {!recipientPhoneNumber.trim() && (
+                <Text style={styles.fieldErrorNotice}>
+                  Le numéro de téléphone du destinataire est obligatoire.
+                </Text>
+              )}
+            </View>
+          </View>
         </View>
 
         {/* Notes pour le GP */}
@@ -542,13 +692,17 @@ export default function EditGpScreen() {
                     ? "Description requise"
                     : !isDeclaredValueValid
                     ? "Valeur déclarée requise"
+                    : !isRecipientNameValid
+                    ? "Destinataire requis"
+                    : !isRecipientPhoneValid
+                    ? "Téléphone destinataire requis"
                     : "Enregistrer les modifications"}
                 </Text>
               </View>
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      </AppKeyboardScrollView>
 
       {/* ── MODALE VISUELLE DE CONFIRMATION DE MODIFICATION ── */}
       <OrderEditModal
@@ -586,6 +740,11 @@ export default function EditGpScreen() {
             value: `${weightKg} kg`,
           },
           {
+            icon: "person-outline",
+            label: "Destinataire",
+            value: recipientName.trim(),
+          },
+          {
             icon: "cash-outline",
             label: "Montant révisé",
             value: `${getEstimatedTotal()} €`,
@@ -597,6 +756,51 @@ export default function EditGpScreen() {
           router.replace("/commandes");
         }}
       />
+
+      {/* ── MODALE CHOIX INDICATIF PAYS ── */}
+      <Modal
+        transparent
+        animationType="slide"
+        visible={showDialCodeModal}
+        onRequestClose={() => setShowDialCodeModal(false)}
+      >
+        <View style={styles.dialModalOverlay}>
+          <View style={styles.dialModalCard}>
+            <View style={styles.dialModalHeader}>
+              <Text style={styles.dialModalTitle}>Choisir l'indicatif pays</Text>
+              <TouchableOpacity onPress={() => setShowDialCodeModal(false)}>
+                <Ionicons name="close" size={22} color="#64748B" />
+              </TouchableOpacity>
+            </View>
+            <ScrollView style={styles.dialList} showsVerticalScrollIndicator={false}>
+              {COUNTRY_DIAL_CODES.map((item) => {
+                const isSelected = item.code === recipientPhoneCode;
+                return (
+                  <TouchableOpacity
+                    key={item.code}
+                    style={[styles.dialItem, isSelected && styles.dialItemSelected]}
+                    onPress={() => {
+                      setRecipientPhoneCode(item.code);
+                      setShowDialCodeModal(false);
+                    }}
+                  >
+                    <Image
+                      source={{ uri: `https://flagcdn.com/w80/${item.iso}.png` }}
+                      style={styles.dialItemFlagImg}
+                      resizeMode="cover"
+                    />
+                    <Text style={styles.dialItemCountry}>{item.country}</Text>
+                    <Text style={styles.dialItemCode}>{item.code}</Text>
+                    {isSelected && (
+                      <Ionicons name="checkmark-circle" size={18} color="#1D6B45" />
+                    )}
+                  </TouchableOpacity>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -915,5 +1119,99 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: "#DC2626",
     fontWeight: "600",
+  },
+  inputSubLabel: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#334155",
+    marginBottom: 6,
+  },
+  phoneInputRow: {
+    flexDirection: "row",
+    gap: 10,
+    alignItems: "center",
+  },
+  dialCodeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#EBF5EE",
+    borderWidth: 1,
+    borderColor: "#C2E2CE",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+    paddingVertical: 12,
+  },
+  dialCodeBtnText: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#1D6B45",
+  },
+  phoneInputFlex: {
+    flex: 1,
+  },
+  dialModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.5)",
+    justifyContent: "flex-end",
+  },
+  dialModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    maxHeight: "70%",
+    paddingBottom: 30,
+  },
+  dialModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 18,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+  },
+  dialModalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  dialList: {
+    paddingHorizontal: 16,
+  },
+  dialItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 13,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F8FAFC",
+    gap: 12,
+  },
+  dialItemSelected: {
+    backgroundColor: "#F0FDF4",
+  },
+  dialItemFlag: {
+    fontSize: 22,
+  },
+  dialTriggerFlag: {
+    width: 22,
+    height: 15,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  dialItemFlagImg: {
+    width: 28,
+    height: 19,
+    borderRadius: 3,
+  },
+  dialItemCountry: {
+    flex: 1,
+    fontSize: 14,
+    color: "#1E293B",
+    fontWeight: "600",
+  },
+  dialItemCode: {
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "700",
   },
 });

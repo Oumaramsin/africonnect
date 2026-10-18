@@ -182,6 +182,8 @@ model GpRequest {
   status            String?   @default("pending")
   total_amount      Decimal?  @db.Decimal
   notes             String?
+  recipient_name    String?
+  recipient_phone   String?
   departure_city    String?
   departure_country String?
   arrival_city      String?

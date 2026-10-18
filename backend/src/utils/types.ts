@@ -329,6 +329,8 @@ export interface CreateGpRequestInput {
   declared_value?: number;
   notes?: string;
   total_amount?: number;
+  recipient_name?: string;
+  recipient_phone?: string;
 }
 
 export interface GpDelayInput {
@@ -341,6 +343,8 @@ export interface UpdateClientGpRequestInput {
   content_desc?: string;
   declared_value?: number;
   notes?: string;
+  recipient_name?: string;
+  recipient_phone?: string;
 }
 
 export interface GpRequest {
@@ -353,6 +357,8 @@ export interface GpRequest {
   status: string | null;
   total_amount: number | null;
   notes: string | null;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
   departure_city?: string | null;
   departure_country?: string | null;
   arrival_city?: string | null;

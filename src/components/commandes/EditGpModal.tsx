@@ -1,9 +1,11 @@
 "use client";
 
 import { useEffect, useState, useMemo } from "react";
-import { Plane, PlaneTakeoff, PlaneLanding, Scale, Package, X, Minus, Plus, Banknote, AlertCircle, ArrowRight } from "lucide-react";
+import { Plane, PlaneTakeoff, PlaneLanding, Scale, Package, X, Minus, Plus, Banknote, AlertCircle, ArrowRight, User, Phone } from "lucide-react";
 import { authFetch } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+import { COUNTRY_DIAL_CODES } from "@/lib/constants/dialCodes";
+import CountryDialPicker from "@/components/ui/CountryDialPicker";
 
 type Props = {
   isOpen: boolean;
@@ -28,12 +30,18 @@ export default function EditGpModal({
     contentDesc: string;
     declaredValue: string;
     notes: string;
+    recipientName: string;
+    recipientPhoneCode: string;
+    recipientPhoneNumber: string;
   } | null>(null);
 
   const [weightKg, setWeightKg] = useState("1");
   const [contentDesc, setContentDesc] = useState("");
   const [declaredValue, setDeclaredValue] = useState("");
   const [notes, setNotes] = useState("");
+  const [recipientName, setRecipientName] = useState("");
+  const [recipientPhoneCode, setRecipientPhoneCode] = useState("+33");
+  const [recipientPhoneNumber, setRecipientPhoneNumber] = useState("");
 
   useEffect(() => {
     if (request && isOpen) {
@@ -41,11 +49,28 @@ export default function EditGpModal({
       const initDesc = request.content_desc || "";
       const initVal = request.declared_value ? String(request.declared_value) : "";
       const initNotes = request.notes || "";
+      const initRecName = request.recipient_name || "";
+
+      let initPhoneCode = "+33";
+      let initPhoneNum = "";
+      if (request.recipient_phone) {
+        const rawPhone = String(request.recipient_phone).trim();
+        const matched = COUNTRY_DIAL_CODES.find((c) => rawPhone.startsWith(c.code));
+        if (matched) {
+          initPhoneCode = matched.code;
+          initPhoneNum = rawPhone.slice(matched.code.length).trim();
+        } else {
+          initPhoneNum = rawPhone;
+        }
+      }
 
       setWeightKg(initWeight);
       setContentDesc(initDesc);
       setDeclaredValue(initVal);
       setNotes(initNotes);
+      setRecipientName(initRecName);
+      setRecipientPhoneCode(initPhoneCode);
+      setRecipientPhoneNumber(initPhoneNum);
       setError(null);
       setShowConfirmModal(false);
 
@@ -54,6 +79,9 @@ export default function EditGpModal({
         contentDesc: initDesc,
         declaredValue: initVal,
         notes: initNotes,
+        recipientName: initRecName,
+        recipientPhoneCode: initPhoneCode,
+        recipientPhoneNumber: initPhoneNum,
       });
     }
   }, [request, isOpen]);
@@ -73,8 +101,11 @@ export default function EditGpModal({
     if (contentDesc.trim() !== initialData.contentDesc.trim()) return true;
     if (declaredValue.trim() !== initialData.declaredValue.trim()) return true;
     if (notes.trim() !== initialData.notes.trim()) return true;
+    if (recipientName.trim() !== initialData.recipientName.trim()) return true;
+    if (recipientPhoneCode !== initialData.recipientPhoneCode) return true;
+    if (recipientPhoneNumber.trim() !== initialData.recipientPhoneNumber.trim()) return true;
     return false;
-  }, [initialData, weightKg, contentDesc, declaredValue, notes]);
+  }, [initialData, weightKg, contentDesc, declaredValue, notes, recipientName, recipientPhoneCode, recipientPhoneNumber]);
 
   if (!isOpen || !request) return null;
 
@@ -102,8 +133,11 @@ export default function EditGpModal({
     declaredValue.trim().length > 0 &&
     !isNaN(parsedDeclaredValue) &&
     parsedDeclaredValue >= 0;
+  const isRecipientNameValid = recipientName.trim().length > 0;
+  const isRecipientPhoneValid = recipientPhoneNumber.trim().length > 0;
+  const isRecipientValid = isRecipientNameValid && isRecipientPhoneValid;
 
-  const isFormValid = isWeightValid && isContentValid && isDeclaredValueValid;
+  const isFormValid = isWeightValid && isContentValid && isDeclaredValueValid && isRecipientValid;
   const estimatedTotal = (parsedWeight * pricePerKg).toFixed(2);
 
   const adjustWeight = (delta: number) => {
@@ -143,6 +177,22 @@ export default function EditGpModal({
       return;
     }
 
+    if (!isRecipientNameValid) {
+      setError("Veuillez renseigner le nom et prénom du destinataire à l'arrivée.");
+      return;
+    }
+
+    if (!isRecipientPhoneValid) {
+      setError("Veuillez renseigner le numéro de téléphone du destinataire.");
+      return;
+    }
+
+    const recipientDigits = recipientPhoneNumber.replace(/\D/g, "");
+    if (recipientDigits.length < 6) {
+      setError("Le numéro de téléphone du destinataire doit comporter au moins 6 chiffres (sans lettres).");
+      return;
+    }
+
     setError(null);
     setShowConfirmModal(true);
   };
@@ -157,6 +207,8 @@ export default function EditGpModal({
         content_desc: contentDesc.trim(),
         declared_value: parsedDeclaredValue,
         notes: notes.trim(),
+        recipient_name: recipientName.trim(),
+        recipient_phone: `${recipientPhoneCode} ${recipientPhoneNumber.trim()}`,
       };
 
       const res = await authFetch(
@@ -190,6 +242,8 @@ export default function EditGpModal({
     if (loading) return "Enregistrement...";
     if (!contentDesc.trim()) return "Description requise";
     if (!isDeclaredValueValid) return "Valeur déclarée requise";
+    if (!isRecipientNameValid) return "Destinataire requis";
+    if (!isRecipientPhoneValid) return "Téléphone destinataire requis";
     if (isWeightExceeded) return "Capacité dépassée";
     if (!isWeightValid) return "Poids invalide";
     if (!hasChanges) return "Aucune modification";
@@ -408,6 +462,74 @@ export default function EditGpModal({
               )}
             </div>
 
+            {/* Destinataire à l'arrivée */}
+            <div className="p-3.5 rounded-2xl bg-amber-50/50 border border-amber-200/70 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <User size={15} className="text-[#D4870A]" />
+                  Destinataire à l&apos;arrivée
+                </span>
+                <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-red-100 text-red-700">
+                  * Obligatoire
+                </span>
+              </div>
+              <p className="text-[11px] text-gray-500">
+                Personne qui récupérera le colis à l&apos;arrivée ({arrCity}).
+              </p>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Nom &amp; Prénom du destinataire *
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={recipientName}
+                  onChange={(e) => setRecipientName(e.target.value)}
+                  placeholder="Ex: Amadou Diallo"
+                  className={`w-full px-3.5 py-2.5 rounded-xl border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#D4870A] ${
+                    !isRecipientNameValid ? "border-amber-300 bg-amber-50/20" : "border-gray-200"
+                  }`}
+                />
+                {!isRecipientNameValid && (
+                  <p className="text-[11px] text-amber-700 font-medium mt-1">
+                    Le nom et prénom du destinataire sont obligatoires.
+                  </p>
+                )}
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-700 mb-1">
+                  Téléphone du destinataire *
+                </label>
+                <div className="flex gap-2">
+                  <CountryDialPicker
+                    value={recipientPhoneCode}
+                    onChange={setRecipientPhoneCode}
+                  />
+                  <input
+                    type="tel"
+                    inputMode="numeric"
+                    required
+                    value={recipientPhoneNumber}
+                    onChange={(e) => {
+                      const clean = e.target.value.replace(/[^0-9\s]/g, "");
+                      setRecipientPhoneNumber(clean);
+                    }}
+                    placeholder="Ex: 07 12 34 56 78"
+                    className={`flex-1 px-3.5 py-2 rounded-xl border text-sm bg-white focus:outline-none focus:ring-2 focus:ring-[#D4870A] ${
+                      !isRecipientPhoneValid ? "border-amber-300 bg-amber-50/20" : "border-gray-200"
+                    }`}
+                  />
+                </div>
+                {!isRecipientPhoneValid && (
+                  <p className="text-[11px] text-amber-700 font-medium mt-1">
+                    Le numéro de téléphone du destinataire est obligatoire.
+                  </p>
+                )}
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-bold text-gray-700 uppercase tracking-wider mb-1.5">
                 Notes supplémentaires (optionnel)
@@ -469,7 +591,9 @@ export default function EditGpModal({
               Voulez-vous enregistrer cette réservation de transport pour un colis de{" "}
               <span className="font-bold text-gray-900">{weightKg} kg</span> ({contentDesc}) avec une valeur déclarée de{" "}
               <span className="font-bold text-gray-900">{declaredValue} €</span> vers{" "}
-              <span className="font-bold text-gray-900">{arrCity}</span> pour un total estimé de{" "}
+              <span className="font-bold text-gray-900">{arrCity}</span> destiné à{" "}
+              <span className="font-bold text-gray-900">{recipientName}</span>{" "}
+              <span className="text-gray-500">({recipientPhoneCode} {recipientPhoneNumber})</span> pour un total estimé de{" "}
               <span className="font-bold text-[#D4870A]">{estimatedTotal} €</span> ?
             </p>
 

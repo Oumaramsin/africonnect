@@ -290,6 +290,53 @@ export const CountryFlag: React.FC<CountryFlagProps> = ({
         </span>
       );
 
+    // NIGER
+    case normalized.includes("niger"):
+      return (
+        <span className={svgWrapperClass} style={{ width: size, height }}>
+          <svg viewBox="0 0 36 27" width={size} height={height} fill="none">
+            <rect width="36" height="9" fill="#E05206" />
+            <rect y="9" width="36" height="9" fill="#FFFFFF" />
+            <rect y="18" width="36" height="9" fill="#0DB02B" />
+            <circle cx="18" cy="13.5" r="3.5" fill="#E05206" />
+          </svg>
+        </span>
+      );
+
+    // USA / ÉTATS-UNIS
+    case normalized.includes("usa") || normalized.includes("états-unis") || normalized.includes("etats-unis") || normalized.includes("united states"):
+      return (
+        <span className={svgWrapperClass} style={{ width: size, height }}>
+          <svg viewBox="0 0 36 27" width={size} height={height} fill="none">
+            <rect width="36" height="27" fill="#B22234" />
+            <rect y="2.07" width="36" height="2.07" fill="#FFFFFF" />
+            <rect y="6.21" width="36" height="2.07" fill="#FFFFFF" />
+            <rect y="10.35" width="36" height="2.07" fill="#FFFFFF" />
+            <rect y="14.49" width="36" height="2.07" fill="#FFFFFF" />
+            <rect y="18.63" width="36" height="2.07" fill="#FFFFFF" />
+            <rect y="22.77" width="36" height="2.07" fill="#FFFFFF" />
+            <rect width="14.4" height="14.5" fill="#3C3B6E" />
+            <circle cx="7.2" cy="7.25" r="3" fill="#FFFFFF" />
+          </svg>
+        </span>
+      );
+
+    // ROYAUME-UNI / UK
+    case normalized.includes("royaume-uni") || normalized.includes("uk") || normalized.includes("united kingdom"):
+      return (
+        <span className={svgWrapperClass} style={{ width: size, height }}>
+          <svg viewBox="0 0 36 27" width={size} height={height} fill="none">
+            <rect width="36" height="27" fill="#012169" />
+            <path d="M0,0 L36,27 M36,0 L0,27" stroke="#FFFFFF" strokeWidth="4" />
+            <path d="M0,0 L36,27 M36,0 L0,27" stroke="#C8102E" strokeWidth="2" />
+            <rect x="15" width="6" height="27" fill="#FFFFFF" />
+            <rect y="10.5" width="36" height="6" fill="#FFFFFF" />
+            <rect x="16" width="4" height="27" fill="#C8102E" />
+            <rect y="11.5" width="36" height="4" fill="#C8102E" />
+          </svg>
+        </span>
+      );
+
     // DEFAULT (Dabari Elegant Globe Icon)
     default:
       return (

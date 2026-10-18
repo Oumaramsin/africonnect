@@ -17,11 +17,29 @@ body {
   }
 }
 
-/* Force les couleurs sur tous les inputs pour éviter le mode sombre */
-input, textarea, select {
+/* Force les couleurs sur les champs textuels pour éviter le mode sombre + marge de scroll clavier */
+input:not([type="checkbox"]):not([type="radio"]):not([type="submit"]):not([type="button"]),
+textarea,
+select {
   color: #111827 !important;
   background-color: #ffffff !important;
   -webkit-text-fill-color: #111827 !important;
+  scroll-margin-bottom: 140px;
+  scroll-margin-top: 30px;
+}
+
+/* Empêche le zoom intrusif d'iOS Safari (< 16px) qui bloque la remontée de page */
+@media screen and (max-width: 768px) {
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* Lorsque le clavier est actif sur mobile web, cacher les éléments fixes en bas */
+body.keyboard-active .md\:hidden.fixed.bottom-0 {
+  display: none !important;
 }
 
 input::placeholder, textarea::placeholder {

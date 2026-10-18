@@ -16,6 +16,7 @@ import {
   Home,
   Calendar,
   AlertTriangle,
+  AlertCircle,
   Phone,
   ArrowLeft,
   ShieldCheck,
@@ -35,8 +36,10 @@ import {
   ChevronUp,
 } from "lucide-react";
 import CountryFlag from "@/components/ui/CountryFlag";
+import CountryDialPicker from "@/components/ui/CountryDialPicker";
 import { getValidToken, authFetch } from "@/lib/auth";
 import { formatWhatsAppUrl } from "@/lib/types/traiteur";
+import { COUNTRY_DIAL_CODES } from "@/lib/constants/dialCodes";
 
 type GpListing = {
   id: string;
@@ -74,7 +77,7 @@ type GpListing = {
 
 const AUTHORIZED_ITEMS = [
   "Vêtements, chaussures & textiles traditionnels (Wax, Bazin, Kente)",
-  "Denrées sèches hermétiquement scellées (Fonio, piment séché, bissap, épices)",
+  "Produits secs hermétiquement scellés (Fonio, piment séché, bissap, épices)",
   "Documents administratifs, courriers & livres",
   "Cosmétiques solides & beurre de karité scellés",
   "Petits objets artisanaux & souvenirs non dangereux",
@@ -84,7 +87,7 @@ const PROHIBITED_ITEMS = [
   "Substances illicites & médicaments sans ordonnance nominative",
   "Liquides & aérosols non conformes aux normes IATA",
   "Batteries au lithium en vrac & matières inflammables",
-  "Denrées fraîches périssables non protégées / non autorisées",
+  "Produits frais périssables non protégés / non autorisés",
   "Contrefaçons & objets interdits au passage en douane",
 ];
 
@@ -106,6 +109,9 @@ export default function GpDetailPage() {
     content_desc: "",
     declared_value: "",
     notes: "",
+    recipient_name: "",
+    recipient_phone_code: "+225",
+    recipient_phone_number: "",
   });
 
   useEffect(() => {
@@ -150,12 +156,14 @@ export default function GpDetailPage() {
 
   const isValidNumberFormat = (str: string) => /^\d+([.,]\d+)?$/.test(str);
 
+  const isWeightExceeded = listing ? weightNum > listing.available_kg : false;
+
   const isWeightInvalid =
     !form.weight_kg.trim() ||
     !isValidNumberFormat(form.weight_kg.trim()) ||
     isNaN(weightNum) ||
     weightNum <= 0 ||
-    (listing ? weightNum > listing.available_kg : false);
+    isWeightExceeded;
 
   const isDeclaredValInvalid =
     form.declared_value.trim() !== "" &&
@@ -167,10 +175,18 @@ export default function GpDetailPage() {
     submitting ||
     isWeightInvalid ||
     !form.content_desc.trim() ||
+    !form.recipient_name.trim() ||
+    !form.recipient_phone_number.trim() ||
     isDeclaredValInvalid;
 
   const handlePreSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    if (isWeightExceeded) {
+      setError(
+        `Capacité insuffisante : le poids saisi (${weightNum} kg) dépasse la capacité restante du voyageur (${listing?.available_kg} kg disponibles).`,
+      );
+      return;
+    }
     if (isWeightInvalid) {
       setError(
         `Le poids doit être un nombre valide entre 0.5 et ${listing?.available_kg || 10} kg`,
@@ -180,6 +196,22 @@ export default function GpDetailPage() {
 
     if (!form.content_desc.trim()) {
       setError("La description du contenu de votre colis est requise");
+      return;
+    }
+
+    if (!form.recipient_name.trim()) {
+      setError("Le nom et prénom du destinataire à l'arrivée sont requis");
+      return;
+    }
+
+    if (!form.recipient_phone_number.trim()) {
+      setError("Le numéro de téléphone du destinataire à l'arrivée est requis");
+      return;
+    }
+
+    const recipientDigits = form.recipient_phone_number.replace(/\D/g, "");
+    if (recipientDigits.length < 6) {
+      setError("Le numéro de téléphone du destinataire doit contenir au moins 6 chiffres (sans lettres)");
       return;
     }
 
@@ -206,6 +238,8 @@ export default function GpDetailPage() {
         ? declaredValNum
         : 0;
 
+    const fullRecipientPhone = `${form.recipient_phone_code} ${form.recipient_phone_number.trim()}`;
+
     try {
       const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/gp/${listingId}/order`,
@@ -220,6 +254,8 @@ export default function GpDetailPage() {
             declared_value: safeDeclaredValue,
             total_amount: total,
             notes: form.notes || null,
+            recipient_name: form.recipient_name.trim(),
+            recipient_phone: fullRecipientPhone,
             status: "pending",
           }),
         },
@@ -845,15 +881,28 @@ export default function GpDetailPage() {
                   type="number"
                   step="0.5"
                   min="0.5"
-                  max={listing.available_kg}
                   required
                   placeholder={`Ex: 3 (max ${listing.available_kg} kg)`}
                   value={form.weight_kg}
                   onChange={(e) =>
                     setForm({ ...form, weight_kg: e.target.value })
                   }
-                  className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm font-semibold"
+                  className={`w-full px-4 py-2.5 rounded-xl border text-sm font-semibold transition-colors ${
+                    isWeightExceeded
+                      ? "border-red-400 bg-red-50/40 text-red-700 focus:border-red-500"
+                      : "border-slate-200 focus:border-[#1D6B45]"
+                  } focus:outline-hidden`}
                 />
+
+                {/* Message d'erreur visible si le poids dépasse la capacité */}
+                {isWeightExceeded && (
+                  <div className="mt-2 p-2.5 rounded-xl bg-red-50 border border-red-200 text-xs font-semibold text-red-700 flex items-center gap-2 animate-in fade-in duration-150">
+                    <AlertCircle size={15} className="shrink-0 text-red-600" />
+                    <span>
+                      Capacité insuffisante : vous demandez <strong>{weightNum} kg</strong> alors qu'il ne reste que <strong>{listing.available_kg} kg</strong> disponibles chez ce voyageur.
+                    </span>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -870,6 +919,67 @@ export default function GpDetailPage() {
                   }
                   className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm font-medium"
                 />
+              </div>
+
+              {/* Destinataire à l'arrivée */}
+              <div className="bg-[#FAF7F2] p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                <div className="flex items-center gap-2">
+                  <User size={15} className="text-[#1D6B45]" />
+                  <span className="text-xs font-black text-slate-800">
+                    Destinataire à l'arrivée *
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-500 leading-tight">
+                  Personne qui récupérera le colis à l'arrivée ({listing.arrival_city}).
+                </p>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Nom & Prénom du destinataire *
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ex: Amadou Diallo"
+                    value={form.recipient_name}
+                    onChange={(e) =>
+                      setForm({ ...form, recipient_name: e.target.value })
+                    }
+                    className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-white focus:border-[#1D6B45] focus:outline-hidden text-xs font-medium"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Téléphone du destinataire *
+                  </label>
+                  <div className="flex gap-2">
+                    <CountryDialPicker
+                      value={form.recipient_phone_code}
+                      onChange={(code) =>
+                        setForm({
+                          ...form,
+                          recipient_phone_code: code,
+                        })
+                      }
+                    />
+                    <input
+                      type="tel"
+                      inputMode="numeric"
+                      required
+                      placeholder="Ex: 07 12 34 56 78"
+                      value={form.recipient_phone_number}
+                      onChange={(e) => {
+                        const clean = e.target.value.replace(/[^0-9\s]/g, "");
+                        setForm({
+                          ...form,
+                          recipient_phone_number: clean,
+                        });
+                      }}
+                      className="flex-1 px-3.5 py-2 rounded-xl border border-slate-200 bg-white focus:border-[#1D6B45] focus:outline-hidden text-xs font-medium"
+                    />
+                  </div>
+                </div>
               </div>
 
               <div>
@@ -1011,6 +1121,14 @@ export default function GpDetailPage() {
                   {form.content_desc}
                 </strong>
               </div>
+              {form.recipient_name && (
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Destinataire :</span>
+                  <strong className="text-slate-900 truncate max-w-[200px]">
+                    {form.recipient_name} ({form.recipient_phone_code} {form.recipient_phone_number})
+                  </strong>
+                </div>
+              )}
               {form.declared_value && (
                 <div className="flex justify-between">
                   <span className="text-slate-500">Valeur déclarée :</span>

@@ -17,6 +17,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { saveSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 export default function ForgotPasswordScreen() {
   const router = useRouter();
@@ -137,14 +138,10 @@ export default function ForgotPasswordScreen() {
 
   return (
     <SafeAreaView style={styles.container} edges={["top", "bottom"]}>
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <AppKeyboardScrollView
+        contentContainerStyle={styles.scrollContent}
+        extraScrollHeight={140}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-        >
           {/* Header Row avec bouton retour */}
           <View style={styles.topBar}>
             <TouchableOpacity
@@ -388,8 +385,7 @@ export default function ForgotPasswordScreen() {
               </TouchableOpacity>
             </View>
           </View>
-        </ScrollView>
-      </KeyboardAvoidingView>
+      </AppKeyboardScrollView>
     </SafeAreaView>
   );
 }

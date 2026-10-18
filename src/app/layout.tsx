@@ -1,12 +1,21 @@
-import type { Metadata } from 'next'
+import type { Metadata, Viewport } from 'next'
 import { Inter } from 'next/font/google'
 import Script from 'next/script'
 import './globals.css'
 import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import BottomNavWrapper from '../components/BottomNavWrapper'
+import KeyboardViewportHelper from '../components/KeyboardViewportHelper'
 
 const inter = Inter({ subsets: ['latin'] })
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  maximumScale: 1,
+  viewportFit: 'cover',
+  interactiveWidget: 'resizes-content',
+}
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://dabari.app'),
@@ -152,6 +161,9 @@ export default function RootLayout({
 
         {/* Navigation basse sur mobile uniquement */}
         <BottomNavWrapper />
+
+        {/* Gestion automatique du scroll viewport lors de l'ouverture du clavier mobile */}
+        <KeyboardViewportHelper />
       </body>
     </html>
   )

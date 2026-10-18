@@ -272,7 +272,7 @@ export default function GpPage() {
             </h1>
 
             <p className="text-white/85 text-xs sm:text-sm md:text-base leading-relaxed max-w-xl">
-              Faites voyager vos colis, denrées et documents en toute confiance
+              Faites voyager vos colis et documents en toute confiance
               avec des voyageurs vérifiés reliant l'Europe, l'Afrique et
               l'Amérique.
             </p>

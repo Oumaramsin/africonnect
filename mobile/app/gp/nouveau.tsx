@@ -10,6 +10,7 @@ import {
   Modal,
   Platform,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -21,6 +22,7 @@ import AddressAutocomplete, {
 } from "../../components/AddressAutocomplete";
 import { GP_COUNTRIES } from "../../utils/types/gp";
 import { verifyAddressExists } from "../../utils/addressValidation";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 import { COMMON_CITIES_WITH_OTHER as COMMON_CITIES } from "../../utils/constants/locations";
 
@@ -421,10 +423,10 @@ export default function NouveauGpScreen() {
         </View>
 
         {/* Formulaire */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/* Itinéraire */}
           <View style={styles.sectionCard}>
@@ -1026,7 +1028,7 @@ export default function NouveauGpScreen() {
             <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
             <Text style={styles.submitBtnText}>Publier mon annonce</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         <Modal
           transparent

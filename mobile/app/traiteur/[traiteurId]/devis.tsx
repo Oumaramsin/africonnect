@@ -11,6 +11,7 @@ import {
   Linking,
   Modal,
   ActivityIndicator,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -22,6 +23,7 @@ import { apiFetch } from "../../../utils/api";
 import AddressAutocomplete from "../../../components/AddressAutocomplete";
 import { verifyAddressExists } from "../../../utils/addressValidation";
 import { EVENT_TYPES } from "../../../utils/constants";
+import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -286,11 +288,10 @@ export default function DevisScreen() {
         </View>
 
         {/* ── 2. CONTENU DU FORMULAIRE ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.contentScroll}
-          contentContainerStyle={styles.scrollPadding}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollPadding, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/* Fiche récapitulative du chef ciblé */}
           <View style={styles.targetTraiteurCard}>
@@ -482,7 +483,7 @@ export default function DevisScreen() {
               </>
             )}
           </TouchableOpacity>
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* ── 3. MODALE DE CONFIRMATION AVANT ENVOI ── */}
         {showConfirmModal && (

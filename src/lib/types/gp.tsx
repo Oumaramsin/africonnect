@@ -50,6 +50,8 @@ export type GpRequest = {
   status: string;
   total_amount: number;
   notes: string;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
   departure_city?: string | null;
   departure_country?: string | null;
   arrival_city?: string | null;

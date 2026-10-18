@@ -6,6 +6,7 @@ import {
   TouchableOpacity,
   Platform,
   DeviceEventEmitter,
+  Keyboard,
 } from "react-native";
 import { usePathname, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -21,6 +22,23 @@ export default function BottomNav() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      () => setIsKeyboardVisible(true)
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => setIsKeyboardVisible(false)
+    );
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   useEffect(() => {
     const fetchUserData = async () => {
@@ -91,7 +109,11 @@ export default function BottomNav() {
     };
   }, [pathname]);
 
-  // Masquer le BottomNav sur les pages de bienvenue, connexion et inscription
+  // Masquer le BottomNav si le clavier est actif ou sur les pages de bienvenue/auth
+  if (isKeyboardVisible) {
+    return null;
+  }
+
   const hideOn = ["/login", "/register", "/(auth)/login", "/(auth)/register"];
   if (
     pathname === "/" ||
@@ -146,6 +168,10 @@ export default function BottomNav() {
       iconActive: "log-in",
       iconInactive: "log-in-outline",
     });
+  }
+
+  if (isKeyboardVisible) {
+    return null;
   }
 
   return (

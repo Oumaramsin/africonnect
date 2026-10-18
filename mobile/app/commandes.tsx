@@ -12,7 +12,10 @@ import {
   TextInput,
   Alert,
   DeviceEventEmitter,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
+import AppKeyboardScrollView from "../components/AppKeyboardScrollView";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
@@ -65,6 +68,8 @@ type GpRequest = {
   status: string;
   total_amount: number;
   notes: string | null;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
   departure_city?: string | null;
   departure_country?: string | null;
   arrival_city?: string | null;
@@ -897,10 +902,10 @@ export default function CommandeScreen() {
         </View>
 
         {/* Corps Principal de la Liste des Commandes */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/* SECTION ENVOYÉES */}
           {tab === "envoyees" && (
@@ -1415,6 +1420,20 @@ export default function CommandeScreen() {
                                     {gp.content_desc}
                                   </Text>
                                 </View>
+
+                                {Boolean(gp.recipient_name) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="person-outline"
+                                      size={15}
+                                      color="#1D6B45"
+                                    />
+                                    <Text style={[styles.detailText, { flex: 1, fontWeight: "700", color: "#0F172A" }]}>
+                                      Destinataire : {gp.recipient_name}
+                                      {gp.recipient_phone ? ` (${gp.recipient_phone})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
 
                                 {Boolean(gp.departure_date || listing?.departure_date) && (
                                   <View style={styles.detailRow}>
@@ -2426,6 +2445,20 @@ export default function CommandeScreen() {
                                   </Text>
                                 </View>
 
+                                {Boolean(gp.recipient_name) && (
+                                  <View style={styles.detailRow}>
+                                    <Ionicons
+                                      name="person-outline"
+                                      size={15}
+                                      color="#1D6B45"
+                                    />
+                                    <Text style={[styles.detailText, { flex: 1, fontWeight: "700", color: "#0F172A" }]}>
+                                      Destinataire à l'arrivée : {gp.recipient_name}
+                                      {gp.recipient_phone ? ` (${gp.recipient_phone})` : ""}
+                                    </Text>
+                                  </View>
+                                )}
+
                                 {Boolean(gp.departure_date || listing?.departure_date) && (
                                   <View style={styles.detailRow}>
                                     <Ionicons
@@ -2612,7 +2645,7 @@ export default function CommandeScreen() {
               )}
             </>
           )}
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* MODAL DE CONFIRMATION */}
         {confirmAction && (
@@ -2622,8 +2655,12 @@ export default function CommandeScreen() {
             visible={!!confirmAction}
             onRequestClose={() => setConfirmAction(null)}
           >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalCard}>
+            <KeyboardAvoidingView
+              behavior={Platform.OS === "ios" ? "padding" : undefined}
+              style={{ flex: 1 }}
+            >
+              <View style={styles.modalOverlay}>
+                <View style={styles.modalCard}>
                 <View
                   style={[
                     styles.modalIconCircle,
@@ -2713,7 +2750,8 @@ export default function CommandeScreen() {
                 </View>
               </View>
             </View>
-          </Modal>
+          </KeyboardAvoidingView>
+        </Modal>
         )}
 
         {/* MODALE CONFIRMATION ANNULATION CLIENT */}

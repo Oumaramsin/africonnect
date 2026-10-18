@@ -17,6 +17,7 @@ import { CartItem } from "../../utils/types/traiteur";
 import { deleteSecureToken, getSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -291,10 +292,10 @@ export default function CommanderScreen() {
           </Text>
         </View>
 
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/* 1. Récapitulatif du Panier */}
           <View style={styles.sectionCard}>
@@ -518,7 +519,7 @@ export default function CommanderScreen() {
             </Text>
             <Text style={styles.submitBtnPrice}>{totalPrice.toFixed(2)} €</Text>
           </TouchableOpacity>
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* Pop-up (Modale) de confirmation */}
         {showConfirmModal && (

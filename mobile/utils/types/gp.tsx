@@ -58,6 +58,8 @@ export type GpRequest = {
   declared_value?: number;
   total_amount?: number;
   notes?: string;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
   is_delayed?: boolean | null;
   delay_reason?: string | null;
   departure_city?: string | null;

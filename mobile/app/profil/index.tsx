@@ -11,6 +11,8 @@ import {
   ActivityIndicator,
   Alert,
   DeviceEventEmitter,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -18,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { deleteSecureToken, getSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 export default function ProfilScreen() {
   const router = useRouter();
@@ -332,10 +335,10 @@ export default function ProfilScreen() {
         </View>
 
         {/* ── 2. CONTENU PRINCIPAL (FOND CLAIR DOUX #F8FAFC) ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {Boolean(error) && (
             <View style={styles.errorGlobalBox}>
@@ -694,7 +697,7 @@ export default function ProfilScreen() {
           </View>
 
           <Text style={styles.versionFooter}>Dabari Mobile • Version 1.0 Sécurisée</Text>
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* ── MODALE DE CONFIRMATION DE DÉCONNEXION ── */}
         <Modal

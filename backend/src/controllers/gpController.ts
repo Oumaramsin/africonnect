@@ -82,6 +82,8 @@ export const createGpOrderController = async (req: Request, res: Response) => {
       declared_value,
       notes,
       total_amount,
+      recipient_name,
+      recipient_phone,
     } = req.body;
 
     if (!weight_kg || !content_desc?.trim()) {
@@ -131,6 +133,8 @@ export const createGpOrderController = async (req: Request, res: Response) => {
       content_desc: content_desc.trim(),
       notes: notes?.trim(),
       total_amount: total_amountParsed,
+      recipient_name: recipient_name?.trim(),
+      recipient_phone: recipient_phone?.trim(),
     });
 
     res.status(201).json({

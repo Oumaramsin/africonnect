@@ -10,6 +10,8 @@ import {
   Image,
   ActivityIndicator,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
@@ -18,6 +20,7 @@ import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 import { CUISINES, ZONES } from "../../../utils/constants";
+import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
 export default function EditTraiteurProfileScreen() {
   const router = useRouter();
@@ -209,10 +212,10 @@ export default function EditTraiteurProfileScreen() {
         </View>
 
         {/* ── CONTENU DU FORMULAIRE (#F8FAFC) ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           <View style={styles.formCard}>
             {/* Bannière d'erreur */}
@@ -412,7 +415,7 @@ export default function EditTraiteurProfileScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
+        </AppKeyboardScrollView>
       </SafeAreaView>
     </View>
   );

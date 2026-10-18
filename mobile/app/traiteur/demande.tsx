@@ -22,6 +22,7 @@ import { apiFetch } from "../../utils/api";
 import { showErrorAlert } from "../../utils/alerts";
 import { verifyAddressExists } from "../../utils/addressValidation";
 import { DEMANDE_EVENT_TYPES as EVENT_TYPES, EventTypeOption, DISH_SUGGESTIONS } from "../../utils/constants";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -244,16 +245,11 @@ export default function DemandeTraiteurScreen() {
           </View>
         </View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1 }}
+        <AppKeyboardScrollView
+          style={styles.contentScroll}
+          contentContainerStyle={[styles.scrollPadding, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
-          <ScrollView
-            style={styles.contentScroll}
-            contentContainerStyle={styles.scrollPadding}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
             {/* ── 2. TYPE D'ÉVÉNEMENT (TUILES VECTORIELLES) ── */}
             <View style={styles.cardSection}>
               <View style={styles.sectionHeaderRow}>
@@ -488,8 +484,7 @@ export default function DemandeTraiteurScreen() {
                 Veuillez compléter le type d'événement, la date, le lieu et vos souhaits culinaires pour activer la publication.
               </Text>
             )}
-          </ScrollView>
-        </KeyboardAvoidingView>
+        </AppKeyboardScrollView>
 
         {/* ── MODALE DE CONFIRMATION DE PUBLICATION ── */}
         <OrderEditModal

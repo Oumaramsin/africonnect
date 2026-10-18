@@ -18,6 +18,7 @@ import AddressAutocomplete, { AddressFeature } from "../../components/AddressAut
 import OrderEditModal, { DetailRowItem } from "../../components/OrderEditModal";
 import { showErrorAlert } from "../../utils/alerts";
 import { verifyAddressExists } from "../../utils/addressValidation";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -332,15 +333,10 @@ export default function EditTraiteurRequestScreen() {
           </View>
         </View>
 
-        <KeyboardAvoidingView
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
-          style={{ flex: 1 }}
+        <AppKeyboardScrollView
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
-          <ScrollView
-            contentContainerStyle={styles.scrollContent}
-            keyboardShouldPersistTaps="handled"
-            showsVerticalScrollIndicator={false}
-          >
             {/* Type d'événement */}
             <View style={styles.sectionCard}>
               <Text style={styles.sectionLabel}>Type d'événement *</Text>
@@ -504,8 +500,7 @@ export default function EditTraiteurRequestScreen() {
                 )}
               </TouchableOpacity>
             </View>
-          </ScrollView>
-        </KeyboardAvoidingView>
+        </AppKeyboardScrollView>
 
         {/* Modal de Confirmation */}
         <OrderEditModal

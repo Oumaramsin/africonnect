@@ -19,6 +19,7 @@ import OrderEditModal, {
 } from "../../components/OrderEditModal";
 import { showErrorAlert } from "../../utils/alerts";
 import { verifyAddressExists } from "../../utils/addressValidation";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -317,10 +318,10 @@ export default function EditDevisScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <AppKeyboardScrollView
         style={styles.container}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+        extraScrollHeight={140}
       >
         {/* Date de l'événement avec Pick Date */}
         <View style={styles.cardSection}>
@@ -502,7 +503,7 @@ export default function EditDevisScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      </AppKeyboardScrollView>
 
       {/* ── MODALE VISUELLE DE CONFIRMATION DE MODIFICATION ── */}
       <OrderEditModal

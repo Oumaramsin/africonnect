@@ -18,6 +18,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { Traiteur, TraiteurRequest } from "../../utils/types/traiteur";
 import { apiFetch } from "../../utils/api";
 import { getSecureToken } from "../../utils/storage";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 const CUISINE_FILTERS = [
   "Toutes",
@@ -319,10 +320,10 @@ export default function TraiteurScreen() {
         </View>
 
         {/* ── 3. CONTENU PRINCIPAL PAR ONGLET ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/* Action Publier une Demande de Devis (Dans le ScrollView pour ne plus saturer l'écran !) */}
           <TouchableOpacity
@@ -629,7 +630,7 @@ export default function TraiteurScreen() {
               ))
             )
           )}
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* ── 4. MODALE DE RÉPONSE / PROPOSITION TRAITEUR ── */}
         {selectedRequestForProposal && (

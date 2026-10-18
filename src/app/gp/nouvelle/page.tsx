@@ -790,7 +790,7 @@ export default function NouvelleAnnoncePage() {
           </div>
           <p className="text-xs text-slate-500">
             Précisez vos disponibilités, les types de colis acceptés ou refusés
-            (ex: uniquement denrées sèches scellées, pas de liquides...).
+            (ex: uniquement produits secs scellés, pas de liquides...).
           </p>
           <textarea
             {...register("description")}

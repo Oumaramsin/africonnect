@@ -135,6 +135,8 @@ type GpRequest = {
   status: string;
   total_amount: number;
   notes: string | null;
+  recipient_name?: string | null;
+  recipient_phone?: string | null;
   departure_city?: string | null;
   departure_country?: string | null;
   arrival_city?: string | null;
@@ -1417,6 +1419,17 @@ export default function CommandesPage() {
                               />
                               <span>{request.content_desc}</span>
                             </div>
+                            {request.recipient_name && (
+                              <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60">
+                                <User size={15} className="text-[#1D6B45] shrink-0" />
+                                <span>
+                                  <strong>Destinataire :</strong> {request.recipient_name}{" "}
+                                  {request.recipient_phone && (
+                                    <span className="text-slate-600 font-normal">({request.recipient_phone})</span>
+                                  )}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 text-sm text-gray-600">
                               <Banknote
                                 size={16}
@@ -2271,6 +2284,17 @@ export default function CommandesPage() {
                               />
                               <span>{request.content_desc}</span>
                             </div>
+                            {request.recipient_name && (
+                              <div className="flex items-center gap-2 text-xs font-semibold text-slate-800 bg-amber-50/80 p-2.5 rounded-xl border border-amber-200/60">
+                                <User size={15} className="text-[#1D6B45] shrink-0" />
+                                <span>
+                                  <strong>Destinataire à l'arrivée :</strong> {request.recipient_name}{" "}
+                                  {request.recipient_phone && (
+                                    <span className="text-slate-600 font-normal">({request.recipient_phone})</span>
+                                  )}
+                                </span>
+                              </div>
+                            )}
                             <div className="flex items-center gap-2 text-sm text-gray-600">
                               <Banknote
                                 size={16}

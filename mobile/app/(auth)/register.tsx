@@ -16,6 +16,7 @@ import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken, saveSecureToken } from "../../utils/storage";
 import { apiFetch } from "../../utils/api";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 export default function RegisterScreen() {
   const router = useRouter();
@@ -170,14 +171,10 @@ export default function RegisterScreen() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        style={{ flex: 1 }}
+      <AppKeyboardScrollView
+        contentContainerStyle={styles.scrollContent}
+        extraScrollHeight={140}
       >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
           {/* Top Header Bar */}
           <View style={styles.header}>
             <TouchableOpacity
@@ -565,8 +562,7 @@ export default function RegisterScreen() {
           </View>
         )}
       </View>
-    </ScrollView>
-  </KeyboardAvoidingView>
+    </AppKeyboardScrollView>
 </SafeAreaView>
   );
 }

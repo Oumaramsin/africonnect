@@ -10,6 +10,9 @@ import {
   Modal,
   ActivityIndicator,
   Linking,
+  Image,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
@@ -17,6 +20,8 @@ import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
 import { GpListing, formatWhatsAppUrl } from "../../../utils/types/gp";
 import { apiFetch } from "../../../utils/api";
+import { COUNTRY_DIAL_CODES } from "../../../utils/constants/dialCodes";
+import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
 export default function GpBookingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -35,6 +40,14 @@ export default function GpBookingScreen() {
   const [content_desc, setContent_desc] = useState("");
   const [declared_value, setDeclared_value] = useState("");
   const [notes, setNotes] = useState("");
+  const [recipient_name, setRecipient_name] = useState("");
+  const [recipient_phone_code, setRecipient_phone_code] = useState("+225");
+  const [recipient_phone_number, setRecipient_phone_number] = useState("");
+  const [showDialCodeModal, setShowDialCodeModal] = useState(false);
+
+  const selectedDial =
+    COUNTRY_DIAL_CODES.find((c) => c.code === recipient_phone_code) ||
+    COUNTRY_DIAL_CODES[0];
 
   useFocusEffect(
     useCallback(() => {
@@ -76,12 +89,18 @@ export default function GpBookingScreen() {
 
   const isValidNumberFormat = (str: string) => /^\d+([.,]\d+)?$/.test(str);
 
+  const isWeightExceeded = Boolean(
+    listing &&
+      !isNaN(weightNum) &&
+      weightNum > listing.available_kg
+  );
+
   const isWeightInvalid =
     !weight_kg.trim() ||
     !isValidNumberFormat(weight_kg.trim()) ||
     isNaN(weightNum) ||
     weightNum <= 0 ||
-    Boolean(listing && weightNum > listing.available_kg);
+    isWeightExceeded;
 
   const isDeclaredValInvalid =
     !declared_value.trim() ||
@@ -93,6 +112,8 @@ export default function GpBookingScreen() {
     submitting ||
     isWeightInvalid ||
     !content_desc.trim() ||
+    !recipient_name.trim() ||
+    !recipient_phone_number.trim() ||
     isDeclaredValInvalid;
 
   const handlePreSubmit = async () => {
@@ -102,12 +123,30 @@ export default function GpBookingScreen() {
     }
 
     if (listing && weightNum > listing.available_kg) {
-      setError(`Le poids ne peut pas dépasser les ${listing.available_kg} kg disponibles.`);
+      setError(
+        `Capacité insuffisante : le poids saisi (${weightNum} kg) dépasse la capacité restante (${listing.available_kg} kg disponibles).`
+      );
       return;
     }
 
     if (!content_desc.trim()) {
       setError("La description du contenu est requise");
+      return;
+    }
+
+    if (!recipient_name.trim()) {
+      setError("Le nom et prénom du destinataire à l'arrivée sont requis");
+      return;
+    }
+
+    if (!recipient_phone_number.trim()) {
+      setError("Le numéro de téléphone du destinataire à l'arrivée est requis");
+      return;
+    }
+
+    const recipientDigits = recipient_phone_number.replace(/\D/g, "");
+    if (recipientDigits.length < 6) {
+      setError("Le numéro de téléphone du destinataire doit contenir au moins 6 chiffres (sans lettres)");
       return;
     }
 
@@ -136,6 +175,8 @@ export default function GpBookingScreen() {
         ? declaredValNum
         : 0;
 
+    const fullRecipientPhone = `${recipient_phone_code} ${recipient_phone_number.trim()}`;
+
     try {
       const response = await apiFetch(`/gp/${id}/order`, {
         method: "POST",
@@ -145,6 +186,8 @@ export default function GpBookingScreen() {
           declared_value: safeDeclaredValue,
           total_amount: total,
           notes: notes || null,
+          recipient_name: recipient_name.trim(),
+          recipient_phone: fullRecipientPhone,
           status: "pending",
         }),
       });
@@ -319,10 +362,10 @@ export default function GpBookingScreen() {
           </View>
         </View>
 
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {listing.is_delayed && (
             <View style={styles.delayAlertBanner}>
@@ -530,7 +573,10 @@ export default function GpBookingScreen() {
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>POIDS DU COLIS (KG) *</Text>
                   <TextInput
-                    style={styles.input}
+                    style={[
+                      styles.input,
+                      isWeightExceeded && styles.inputErrorBorder,
+                    ]}
                     placeholder={`Max ${listing.available_kg} kg`}
                     placeholderTextColor="#94A3B8"
                     keyboardType="decimal-pad"
@@ -540,6 +586,14 @@ export default function GpBookingScreen() {
                       setWeight_kg(clean);
                     }}
                   />
+                  {isWeightExceeded && (
+                    <View style={styles.weightErrorNotice}>
+                      <Ionicons name="alert-circle" size={15} color="#DC2626" />
+                      <Text style={styles.weightErrorNoticeText}>
+                        Capacité insuffisante : {weightNum} kg dépasse la limite disponible ({listing.available_kg} kg max)
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
                 {/* Champ 2: Description du contenu */}
@@ -554,6 +608,58 @@ export default function GpBookingScreen() {
                     value={content_desc}
                     onChangeText={setContent_desc}
                   />
+                </View>
+
+                {/* Destinataire à l'arrivée */}
+                <View style={styles.recipientCardBox}>
+                  <View style={styles.recipientHeaderRow}>
+                    <Ionicons name="person" size={15} color="#1D6B45" />
+                    <Text style={styles.recipientCardTitle}>DESTINATAIRE À L'ARRIVÉE *</Text>
+                  </View>
+                  <Text style={styles.recipientCardSub}>
+                    Personne qui récupérera le colis à l'arrivée ({listing.arrival_city}).
+                  </Text>
+
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>NOM & PRÉNOM DU DESTINATAIRE *</Text>
+                    <TextInput
+                      style={styles.input}
+                      placeholder="Ex: Amadou Diallo"
+                      placeholderTextColor="#94A3B8"
+                      value={recipient_name}
+                      onChangeText={setRecipient_name}
+                    />
+                  </View>
+
+                  <View style={styles.fieldGroup}>
+                    <Text style={styles.fieldLabel}>TÉLÉPHONE DU DESTINATAIRE *</Text>
+                    <View style={styles.phoneInputRow}>
+                      <TouchableOpacity
+                        style={styles.dialCodeBtn}
+                        activeOpacity={0.8}
+                        onPress={() => setShowDialCodeModal(true)}
+                      >
+                        <Image
+                          source={{ uri: `https://flagcdn.com/w80/${selectedDial.iso}.png` }}
+                          style={styles.dialTriggerFlag}
+                          resizeMode="cover"
+                        />
+                        <Text style={styles.dialCodeBtnText}>{recipient_phone_code}</Text>
+                        <Ionicons name="chevron-down" size={14} color="#1D6B45" />
+                      </TouchableOpacity>
+                      <TextInput
+                        style={[styles.input, styles.phoneInputFlex]}
+                        placeholder="Ex: 07 12 34 56 78"
+                        placeholderTextColor="#94A3B8"
+                        keyboardType="phone-pad"
+                        value={recipient_phone_number}
+                        onChangeText={(val) => {
+                          const clean = val.replace(/[^0-9\s]/g, "");
+                          setRecipient_phone_number(clean);
+                        }}
+                      />
+                    </View>
+                  </View>
                 </View>
 
                 {/* Champ 3: Valeur déclarée */}
@@ -628,7 +734,7 @@ export default function GpBookingScreen() {
               </Text>
             </TouchableOpacity>
           )}
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* POP-UP (MODALE) DE CONFIRMATION DE LA DEMANDE */}
         <Modal
@@ -655,6 +761,14 @@ export default function GpBookingScreen() {
                 </Text>{" "}
                 ?
               </Text>
+              {Boolean(recipient_name) && (
+                <View style={styles.confirmRecipientBox}>
+                  <Text style={styles.confirmRecipientLabel}>Destinataire à l'arrivée :</Text>
+                  <Text style={styles.confirmRecipientValue}>
+                    {recipient_name} ({recipient_phone_code} {recipient_phone_number})
+                  </Text>
+                </View>
+              )}
 
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity
@@ -682,6 +796,51 @@ export default function GpBookingScreen() {
                   )}
                 </TouchableOpacity>
               </View>
+            </View>
+          </View>
+        </Modal>
+
+        {/* MODALE CHOIX INDICATIF PAYS */}
+        <Modal
+          transparent
+          animationType="slide"
+          visible={showDialCodeModal}
+          onRequestClose={() => setShowDialCodeModal(false)}
+        >
+          <View style={styles.dialModalOverlay}>
+            <View style={styles.dialModalCard}>
+              <View style={styles.dialModalHeader}>
+                <Text style={styles.dialModalTitle}>Choisir l'indicatif pays</Text>
+                <TouchableOpacity onPress={() => setShowDialCodeModal(false)}>
+                  <Ionicons name="close" size={22} color="#64748B" />
+                </TouchableOpacity>
+              </View>
+              <ScrollView style={styles.dialList} showsVerticalScrollIndicator={false}>
+                {COUNTRY_DIAL_CODES.map((item) => {
+                  const isSelected = item.code === recipient_phone_code;
+                  return (
+                    <TouchableOpacity
+                      key={item.code}
+                      style={[styles.dialItem, isSelected && styles.dialItemSelected]}
+                      onPress={() => {
+                        setRecipient_phone_code(item.code);
+                        setShowDialCodeModal(false);
+                      }}
+                    >
+                      <Image
+                        source={{ uri: `https://flagcdn.com/w80/${item.iso}.png` }}
+                        style={styles.dialItemFlagImg}
+                        resizeMode="cover"
+                      />
+                      <Text style={styles.dialItemCountry}>{item.country}</Text>
+                      <Text style={styles.dialItemCode}>{item.code}</Text>
+                      {isSelected && (
+                        <Ionicons name="checkmark-circle" size={18} color="#1D6B45" />
+                      )}
+                    </TouchableOpacity>
+                  );
+                })}
+              </ScrollView>
             </View>
           </View>
         </Modal>
@@ -1351,5 +1510,163 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontSize: 13,
     fontWeight: "600",
+  },
+  recipientCardBox: {
+    backgroundColor: "#FAF7F2",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#E2D9CC",
+    padding: 14,
+    marginBottom: 16,
+  },
+  recipientHeaderRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 4,
+  },
+  recipientCardTitle: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: "#0F172A",
+    letterSpacing: 0.5,
+  },
+  recipientCardSub: {
+    fontSize: 11,
+    color: "#64748B",
+    marginBottom: 12,
+    lineHeight: 15,
+  },
+  phoneInputRow: {
+    flexDirection: "row",
+    gap: 8,
+    alignItems: "center",
+  },
+  dialCodeBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#F8FAFC",
+    borderWidth: 1,
+    borderColor: "#CBD5E1",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    height: 48,
+  },
+  dialCodeBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#0F172A",
+  },
+  phoneInputFlex: {
+    flex: 1,
+  },
+  dialModalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(15, 23, 42, 0.6)",
+    justifyContent: "flex-end",
+  },
+  dialModalCard: {
+    backgroundColor: "#FFFFFF",
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    maxHeight: "75%",
+    paddingBottom: 30,
+  },
+  dialModalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingHorizontal: 20,
+    paddingVertical: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#E2E8F0",
+  },
+  dialModalTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#0F172A",
+  },
+  dialList: {
+    paddingHorizontal: 16,
+  },
+  dialItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 14,
+    paddingHorizontal: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#F1F5F9",
+    gap: 12,
+  },
+  dialItemSelected: {
+    backgroundColor: "#F0FDF4",
+    borderRadius: 12,
+  },
+  dialItemFlag: {
+    fontSize: 20,
+  },
+  dialTriggerFlag: {
+    width: 22,
+    height: 15,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  dialItemFlagImg: {
+    width: 28,
+    height: 19,
+    borderRadius: 3,
+  },
+  dialItemCountry: {
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#1E293B",
+  },
+  dialItemCode: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#1D6B45",
+  },
+  confirmRecipientBox: {
+    backgroundColor: "#FAF7F2",
+    borderRadius: 12,
+    padding: 10,
+    marginTop: 8,
+    width: "100%",
+  },
+  confirmRecipientLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#64748B",
+  },
+  confirmRecipientValue: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#0F172A",
+    marginTop: 2,
+  },
+  inputErrorBorder: {
+    borderColor: "#EF4444",
+    backgroundColor: "#FEF2F2",
+  },
+  weightErrorNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#FEF2F2",
+    borderWidth: 1,
+    borderColor: "#FCA5A5",
+    borderRadius: 8,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 6,
+  },
+  weightErrorNoticeText: {
+    flex: 1,
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#B91C1C",
+    lineHeight: 16,
   },
 });

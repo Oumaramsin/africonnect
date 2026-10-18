@@ -20,6 +20,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken, saveSecureToken } from "../../../utils/storage";
 import { CartItem, Dish, Traiteur } from "../../../utils/types/traiteur";
 import { apiFetch } from "../../../utils/api";
+import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
 function DishCard({
   dish,
@@ -377,10 +378,10 @@ export default function TraiteurDetailScreen() {
       <SafeAreaView style={styles.container} edges={["top"]}>
         <StatusBar barStyle="light-content" backgroundColor="#165034" />
 
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/* ── 1. HERO DU CHEF (IDENTIQUE AU DESIGN WEB) ── */}
           <View style={styles.heroCard}>
@@ -595,7 +596,7 @@ export default function TraiteurDetailScreen() {
               ))
             )}
           </View>
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* ── 5. PANIER FLOTTANT (STYLE WEB MOBILE MODERNE) ── */}
         {cart.length > 0 && (

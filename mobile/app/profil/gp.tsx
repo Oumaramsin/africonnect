@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   Switch,
   Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -21,6 +22,7 @@ import { apiFetch } from "../../utils/api";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "../../components/AddressAutocomplete";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 import { COMMON_CITIES_WITH_OTHER as COMMON_CITIES } from "../../utils/constants/locations";
 
@@ -720,10 +722,10 @@ export default function GpProfilScreen() {
         </View>
 
         {/* ── CORPS DE PAGE (#F8FAFC) ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {Boolean(error) && (
             <View style={styles.errorBanner}>
@@ -1537,7 +1539,7 @@ export default function GpProfilScreen() {
               </TouchableOpacity>
             </View>
           )}
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         {/* ── MODALE SIGNALER UN RETARD ── */}
         <Modal

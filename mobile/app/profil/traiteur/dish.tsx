@@ -11,6 +11,8 @@ import {
   Switch,
   ActivityIndicator,
   Alert,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
@@ -20,6 +22,7 @@ import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 
 import { CUISINES } from "../../../utils/constants";
+import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
 export default function TraiteurDishFormScreen() {
   const router = useRouter();
@@ -245,10 +248,10 @@ export default function TraiteurDishFormScreen() {
         </View>
 
         {/* ── FORMULAIRE SCROLLABLE (#F8FAFC) ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           <View style={styles.formCard}>
             {/* 1. Photos du plat */}
@@ -440,7 +443,7 @@ export default function TraiteurDishFormScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
+        </AppKeyboardScrollView>
       </SafeAreaView>
     </View>
   );

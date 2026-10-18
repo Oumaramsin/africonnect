@@ -17,6 +17,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
 import { GpListing } from "../../utils/types/gp";
 import { apiFetch } from "../../utils/api";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 const destination = [
   { label: "Tout voir", value: "tout", icon: "globe-outline" },
@@ -324,10 +325,10 @@ export default function GpScreen() {
           </View>
         </View>
 
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           {/*  Erreur Réseau / Serveur */}
           {Boolean(error) && (
@@ -591,7 +592,7 @@ export default function GpScreen() {
               ))}
             </View>
           )}
-        </ScrollView>
+        </AppKeyboardScrollView>
 
         <TouchableOpacity
           style={[styles.fabBtn, !isLoggedIn && styles.fabBtnLogin]}

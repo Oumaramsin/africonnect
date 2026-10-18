@@ -815,6 +815,10 @@ export const updateClientGpRequest = async (
         declared_value:
           data.declared_value !== undefined ? Number(data.declared_value) : undefined,
         notes: data.notes !== undefined ? data.notes.trim() : undefined,
+        recipient_name:
+          data.recipient_name !== undefined ? (data.recipient_name?.trim() || null) : undefined,
+        recipient_phone:
+          data.recipient_phone !== undefined ? (data.recipient_phone?.trim() || null) : undefined,
       },
       include: {
         listing: true,

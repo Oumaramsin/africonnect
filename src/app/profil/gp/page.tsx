@@ -1298,7 +1298,7 @@ export default function GpEspacePage() {
                   </p>
                   <p>
                     • Refusez tout liquide non scellé, médicament sans ordonnance
-                    ou denrée périssable.
+                    ou produit périssable.
                   </p>
                   <p>
                     • En cas de retard de vol, signalez-le directement via votre

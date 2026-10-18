@@ -18,6 +18,7 @@ import OrderEditModal, {
   DetailRowItem,
 } from "../../components/OrderEditModal";
 import { showErrorAlert } from "../../utils/alerts";
+import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 type OrderItem = {
   dish_id: string;
@@ -338,10 +339,10 @@ export default function EditPlatScreen() {
         </View>
       </View>
 
-      <ScrollView
+      <AppKeyboardScrollView
         style={styles.container}
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
+        contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+        extraScrollHeight={140}
       >
         {/* Mode de réception */}
         <View style={styles.cardSection}>
@@ -648,7 +649,7 @@ export default function EditPlatScreen() {
             )}
           </TouchableOpacity>
         </View>
-      </ScrollView>
+      </AppKeyboardScrollView>
 
       {/* ── MODALE VISUELLE DE CONFIRMATION DE MODIFICATION ── */}
       <OrderEditModal

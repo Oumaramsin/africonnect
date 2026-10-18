@@ -10,6 +10,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  Platform,
+  KeyboardAvoidingView,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -18,6 +20,7 @@ import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
 import { apiFetch } from "../../../utils/api";
 import { CUISINES as CUISINES_PROPOSITIONS, ZONES as ZONES_PROPOSITIONS } from "../../../utils/constants";
+import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
 export default function CreateTraiteurScreen() {
   const router = useRouter();
@@ -235,10 +238,10 @@ export default function CreateTraiteurScreen() {
         </View>
 
         {/* ── FORMULAIRE SCROLLABLE (#F8FAFC) ── */}
-        <ScrollView
+        <AppKeyboardScrollView
           style={styles.mainScrollView}
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
+          contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
+          extraScrollHeight={140}
         >
           <View style={styles.formCard}>
             <Text style={styles.cardHeaderTitle}>Activer mon Atelier Traiteur</Text>
@@ -454,7 +457,7 @@ export default function CreateTraiteurScreen() {
               )}
             </TouchableOpacity>
           </View>
-        </ScrollView>
+        </AppKeyboardScrollView>
       </SafeAreaView>
     </View>
   );
