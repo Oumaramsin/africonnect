@@ -57,19 +57,27 @@ export async function verifyAddressExists(
     lower.includes("france") ||
     /\b\d{5}\b/.test(clean);
 
-  // 1. API officielle Adresse data.gouv.fr (France)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+  // Un service de géocodage injoignable (hors ligne, délai dépassé, erreur serveur) ne permet pas
+  // de conclure que l'adresse n'existe pas : elle est alors acceptée telle quelle, et le serveur
+  // la revalide à l'enregistrement.
+  const unverifiedButAccepted: AddressValidationResult = {
+    isValid: true,
+    normalizedAddress: clean,
+  };
 
+  // 1. API officielle Adresse data.gouv.fr (France)
+  let banAnswered = false;
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 3500);
+  try {
     const banUrl = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
       clean
     )}&limit=1`;
     const res = await fetch(banUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
 
     if (res.ok) {
       const data = await res.json();
+      banAnswered = true;
       const first = data.features?.[0];
       const score = first?.properties?.score || 0;
 
@@ -82,9 +90,12 @@ export async function verifyAddressExists(
     }
   } catch (err) {
     console.warn("[verifyAddressExists mobile] Erreur BAN:", err);
+  } finally {
+    clearTimeout(timeoutId);
   }
 
   if (isExplicitFrance) {
+    if (!banAnswered) return unverifiedButAccepted;
     return {
       isValid: false,
       error:
@@ -105,10 +116,10 @@ export async function verifyAddressExists(
   }
 
   // 3. Fallback Nominatim OpenStreetMap
+  let osmAnswered = false;
+  const osmController = new AbortController();
+  const osmTimeout = setTimeout(() => osmController.abort(), 3000);
   try {
-    const osmController = new AbortController();
-    const osmTimeout = setTimeout(() => osmController.abort(), 3000);
-
     const osmUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
       clean
     )}&format=json&limit=1`;
@@ -118,10 +129,10 @@ export async function verifyAddressExists(
         Accept: "application/json",
       },
     });
-    clearTimeout(osmTimeout);
 
     if (osmRes.ok) {
       const osmData = await osmRes.json();
+      osmAnswered = true;
       if (Array.isArray(osmData) && osmData.length > 0 && osmData[0]?.display_name) {
         return {
           isValid: true,
@@ -131,7 +142,13 @@ export async function verifyAddressExists(
     }
   } catch (osmErr) {
     console.warn("[verifyAddressExists mobile] Erreur OSM fallback:", osmErr);
+  } finally {
+    clearTimeout(osmTimeout);
   }
+
+  // OpenStreetMap n'a pas répondu (la base nationale ne couvre que la France) : impossible de
+  // conclure, l'adresse est acceptée
+  if (!osmAnswered) return unverifiedButAccepted;
 
   return {
     isValid: false,

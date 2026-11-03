@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Plane, PlaneTakeoff, PlaneLanding, Scale, Package, X, Minus, Plus, Banknote, AlertCircle, ArrowRight, User, Phone } from "lucide-react";
-import { authFetch } from "@/lib/auth";
+import { apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 import { COUNTRY_DIAL_CODES } from "@/lib/constants/dialCodes";
 import CountryDialPicker from "@/components/ui/CountryDialPicker";
@@ -23,6 +23,10 @@ export default function EditGpModal({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Erreur d'enregistrement, affichée dans la confirmation (qui reste ouverte pour réessayer)
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const savingRef = useRef(false);
 
   // Valeurs initiales
   const [initialData, setInitialData] = useState<{
@@ -72,6 +76,7 @@ export default function EditGpModal({
       setRecipientPhoneCode(initPhoneCode);
       setRecipientPhoneNumber(initPhoneNum);
       setError(null);
+      setSaveError(null);
       setShowConfirmModal(false);
 
       setInitialData({
@@ -92,7 +97,7 @@ export default function EditGpModal({
     } else {
       onClose();
     }
-  }, isOpen);
+  }, isOpen && !loading);
 
   // Détection si l'utilisateur a modifié quelque chose
   const hasChanges = useMemo(() => {
@@ -194,12 +199,16 @@ export default function EditGpModal({
     }
 
     setError(null);
+    setSaveError(null);
     setShowConfirmModal(true);
   };
 
+  // Même saisie = même corps : une relance après une coupure réutilise la clé d'idempotence
   const performSave = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setLoading(true);
-    setError(null);
+    setSaveError(null);
 
     try {
       const payload = {
@@ -224,16 +233,17 @@ export default function EditGpModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de la modification");
+        setSaveError(apiErrorMessage(data, "Erreur lors de la modification"));
+        return;
       }
 
       setShowConfirmModal(false);
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Impossible d'enregistrer les modifications");
-      setShowConfirmModal(false);
+    } catch (err: unknown) {
+      setSaveError(sendErrorMessage(err, "Impossible d'enregistrer les modifications"));
     } finally {
+      savingRef.current = false;
       setLoading(false);
     }
   };
@@ -256,7 +266,9 @@ export default function EditGpModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-gp-title"
-        onClick={onClose}
+        onClick={() => {
+          if (!loading) onClose();
+        }}
         className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
       >
         <div
@@ -574,7 +586,9 @@ export default function EditGpModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-gp-title"
-          onClick={() => setShowConfirmModal(false)}
+          onClick={() => {
+            if (!loading) setShowConfirmModal(false);
+          }}
           className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in zoom-in duration-150"
         >
           <div
@@ -597,6 +611,16 @@ export default function EditGpModal({
               <span className="font-bold text-[#D4870A]">{estimatedTotal} €</span> ?
             </p>
 
+            {saveError && (
+              <div
+                role="alert"
+                className="mb-4 p-3 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-left"
+              >
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <span>{saveError}</span>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 type="button"
@@ -610,9 +634,9 @@ export default function EditGpModal({
                 type="button"
                 onClick={performSave}
                 disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-[#D4870A] text-white font-bold text-xs sm:text-sm hover:bg-[#b57207] transition-colors shadow-md flex items-center justify-center"
+                className="flex-1 py-3 rounded-xl bg-[#D4870A] text-white font-bold text-xs sm:text-sm hover:bg-[#b57207] transition-colors shadow-md flex items-center justify-center disabled:opacity-60"
               >
-                {loading ? "Enregistrement..." : "Oui, confirmer"}
+                {loading ? "Enregistrement..." : saveError ? "Réessayer" : "Oui, confirmer"}
               </button>
             </div>
           </div>

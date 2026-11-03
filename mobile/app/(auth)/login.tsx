@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,13 +9,15 @@ import {
   KeyboardAvoidingView,
   Platform,
   Image,
+  ActivityIndicator,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken, saveSecureToken } from "../../utils/storage";
-import { apiFetch } from "../../utils/api";
+import { apiFetch, getApiErrorCode, getApiErrorMessage, getErrorMessage } from "../../utils/api";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
+import EmailVerificationStep from "../../components/EmailVerificationStep";
 
 export default function LoginScreen() {
   const router = useRouter();
@@ -26,6 +28,14 @@ export default function LoginScreen() {
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [infoMessage, setInfoMessage] = useState<string | null>(null);
+  const [submitting, setSubmitting] = useState(false);
+  // Verrou synchrone : un double appui (ou Entrée + bouton) ne doit pas envoyer deux connexions
+  const submittingRef = useRef(false);
+
+  // Compte dont l'adresse e-mail n'est pas encore vérifiée : étape de saisie du code
+  const [verifyStep, setVerifyStep] = useState(false);
+  const [verifyEmail, setVerifyEmail] = useState("");
 
   useEffect(() => {
     async function checkAuth() {
@@ -42,7 +52,9 @@ export default function LoginScreen() {
   }, [router]);
 
   async function handleSubmit() {
+    if (submittingRef.current) return;
     setError(null);
+    setInfoMessage(null);
     const identifier = method === "email" ? email : phone;
     if (!identifier) {
       setError(
@@ -50,10 +62,15 @@ export default function LoginScreen() {
       );
       return;
     }
-    if (password.length < 8) {
-      setError("Le mot de passe doit faire au minimum 8 caractères.");
+    // Pas de longueur minimale à la connexion : d'anciens mots de passe de 6-7 caractères
+    // (réinitialisations antérieures) doivent rester utilisables ; la règle s'applique à la création.
+    if (!password) {
+      setError("Veuillez saisir votre mot de passe.");
       return;
     }
+    submittingRef.current = true;
+    setSubmitting(true);
+    let navigating = false;
     try {
       const response = await apiFetch("/auth/login", {
         method: "POST",
@@ -65,16 +82,44 @@ export default function LoginScreen() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la connexion");
+        // Inscription jamais confirmée (code encore valable) : on passe à la saisie du code
+        if (getApiErrorCode(data) === "UNVERIFIED_EMAIL") {
+          setVerifyEmail(method === "email" ? email.trim() : "");
+          setVerifyStep(true);
+          return;
+        }
+        setError(getApiErrorMessage(data, "Erreur lors de la connexion."));
+        return;
+      }
+      if (typeof data.token !== "string" || !data.token) {
+        setError("Réponse inattendue du serveur. Réessayez dans un instant.");
         return;
       }
       await saveSecureToken("token", data.token);
+      navigating = true;
       router.replace("/accueil");
-    } catch (err: any) {
-      setError(
-        `Impossible de contacter le serveur (${err.message || "Erreur réseau"}).`,
-      );
+    } catch (err) {
+      setError(getErrorMessage(err, "Impossible de contacter le serveur. Réessayez."));
+    } finally {
+      // Après un succès, l'écran change : le bouton reste désactivé jusque-là
+      if (!navigating) {
+        submittingRef.current = false;
+        setSubmitting(false);
+      }
     }
+  }
+
+  // Code validé : l'API ouvre directement la session ; sinon l'adresse était déjà vérifiée et
+  // il suffit de se reconnecter
+  async function handleVerified(token: string | undefined, message: string | undefined) {
+    if (token) {
+      await saveSecureToken("token", token);
+      router.replace("/accueil");
+      return;
+    }
+    setVerifyStep(false);
+    setError(null);
+    setInfoMessage(message || "Adresse e-mail vérifiée : vous pouvez vous connecter.");
   }
 
   return (
@@ -107,6 +152,20 @@ export default function LoginScreen() {
 
           {/* Main Card (Identique au Web Auth) */}
           <View style={styles.authCard}>
+            {verifyStep ? (
+              /* ── ÉTAPE VÉRIFICATION EMAIL (compte pas encore confirmé) ── */
+              <EmailVerificationStep
+                email={verifyEmail}
+                initialInfo="Votre adresse e-mail n'est pas encore vérifiée. Saisissez le code à 6 chiffres reçu par e-mail, ou demandez-en un nouveau."
+                onVerified={handleVerified}
+                onBack={() => {
+                  setVerifyStep(false);
+                  setError(null);
+                }}
+                backLabel="Retour à la connexion"
+              />
+            ) : (
+            <>
             {/* Pill Switcher Email / Téléphone */}
             <View style={styles.switcherContainer}>
               <TouchableOpacity
@@ -166,6 +225,13 @@ export default function LoginScreen() {
 
             {/* Card Title */}
             <Text style={styles.cardTitle}>Connexion</Text>
+
+            {infoMessage && (
+              <View style={styles.infoBox}>
+                <Ionicons name="checkmark-circle-outline" size={18} color="#1D6B45" />
+                <Text style={styles.infoText}>{infoMessage}</Text>
+              </View>
+            )}
 
             {error && (
               <View style={styles.errorBox}>
@@ -279,12 +345,19 @@ export default function LoginScreen() {
 
               {/* Submit Button */}
               <TouchableOpacity
-                style={styles.submitBtn}
+                style={[styles.submitBtn, submitting && styles.submitBtnDisabled]}
                 onPress={handleSubmit}
+                disabled={submitting}
                 activeOpacity={0.85}
               >
-                <Text style={styles.submitBtnText}>Se connecter</Text>
-                <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                {submitting ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <>
+                    <Text style={styles.submitBtnText}>Se connecter</Text>
+                    <Ionicons name="arrow-forward" size={18} color="#FFFFFF" />
+                  </>
+                )}
               </TouchableOpacity>
 
               {/* Continuer sans compte */}
@@ -309,6 +382,8 @@ export default function LoginScreen() {
                 </TouchableOpacity>
               </Link>
             </View>
+            </>
+            )}
           </View>
       </AppKeyboardScrollView>
     </SafeAreaView>
@@ -431,6 +506,21 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     flex: 1,
   },
+  infoBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E8F5E9",
+    padding: 12,
+    borderRadius: 14,
+    marginBottom: 16,
+    gap: 8,
+  },
+  infoText: {
+    color: "#1D6B45",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
+  },
 
   formContainer: {
     gap: 16,
@@ -500,6 +590,9 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "700",
+  },
+  submitBtnDisabled: {
+    opacity: 0.6,
   },
 
   guestBtn: {

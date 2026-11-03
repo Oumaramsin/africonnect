@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
@@ -32,9 +32,12 @@ import {
   Layers,
   Calculator,
 } from "lucide-react";
-import { getValidToken, authFetch } from "@/lib/auth";
+import { hasSession, authFetch, apiErrorMessage, sendErrorMessage } from "@/lib/auth";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
+
+/** Date de demain au format AAAA-MM-JJ (date minimale de l'événement). */
+const tomorrowIsoDate = () => new Date(Date.now() + 86400000).toISOString().split("T")[0];
 
 const EVENT_TYPES = [
   { id: "mariage", label: "Mariage", icon: Heart },
@@ -90,8 +93,8 @@ const SUGGESTION_CATEGORIES = [
 export default function DemandeTraiteurPage() {
   const router = useRouter();
 
-  const tomorrow = new Date(Date.now() + 86400000);
-  const minDateStr = tomorrow.toISOString().split("T")[0];
+  // Date minimale calculée une fois (et non à chaque rendu)
+  const [minDateStr] = useState(tomorrowIsoDate);
 
   const [eventType, setEventType] = useState("mariage");
   const [customEventType, setCustomEventType] = useState("");
@@ -108,10 +111,15 @@ export default function DemandeTraiteurPage() {
   const [useManualLocation, setUseManualLocation] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [validatingAddress, setValidatingAddress] = useState(false);
+  // Erreur de publication, affichée dans la modale de confirmation (qui reste ouverte pour réessayer)
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Adresse acceptée sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
   useEffect(() => {
-    const token = getValidToken();
-    if (!token) {
+    if (!hasSession()) {
       router.push("/login");
     }
   }, [router]);
@@ -177,17 +185,25 @@ export default function DemandeTraiteurPage() {
       ) {
         setLocation(check.normalizedAddress);
       }
+      setAddressUnverified(Boolean(check.unverified));
+      setSubmitError(null);
       setShowConfirmModal(true);
     } catch (err: unknown) {
       console.warn("Erreur validation adresse:", err);
+      setAddressUnverified(true);
+      setSubmitError(null);
       setShowConfirmModal(true);
     } finally {
       setValidatingAddress(false);
     }
   };
 
+  // Même saisie = même corps : une relance après une coupure réutilise la clé d'idempotence
   const executePublish = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError(null);
+    setSubmitError(null);
     setLoading(true);
 
     try {
@@ -221,9 +237,10 @@ export default function DemandeTraiteurPage() {
 
       const res = await response.json();
       if (!response.ok) {
-        throw new Error(
-          res.error || "Une erreur est survenue lors de la publication.",
+        setSubmitError(
+          apiErrorMessage(res, "Une erreur est survenue lors de la publication."),
         );
+        return;
       }
 
       setShowConfirmModal(false);
@@ -232,9 +249,9 @@ export default function DemandeTraiteurPage() {
         router.push("/commandes");
       }, 2000);
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Erreur de connexion.");
+      setSubmitError(sendErrorMessage(err, "Erreur de connexion."));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -856,7 +873,7 @@ export default function DemandeTraiteurPage() {
 
         {/* Floating Bar Mobile */}
         {!success && (
-          <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
+          <div className="fixed bottom-above-nav inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
             <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
               <div>
                 <span className="text-[11px] text-slate-400 block font-medium">
@@ -967,6 +984,22 @@ export default function DemandeTraiteurPage() {
                 )}
               </div>
 
+              {addressUnverified && (
+                <p className="-mt-3 mb-4 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  {UNVERIFIED_ADDRESS_NOTICE}
+                </p>
+              )}
+
+              {submitError && (
+                <div
+                  role="alert"
+                  className="mb-4 bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded-2xl text-xs font-medium flex items-start gap-2"
+                >
+                  <AlertCircle size={16} className="shrink-0 text-red-600 mt-0.5" />
+                  <span>{submitError}</span>
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -990,7 +1023,7 @@ export default function DemandeTraiteurPage() {
                   ) : (
                     <>
                       <Sparkles size={16} />
-                      <span>Confirmer & publier</span>
+                      <span>{submitError ? "Réessayer" : "Confirmer & publier"}</span>
                     </>
                   )}
                 </button>

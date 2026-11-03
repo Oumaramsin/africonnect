@@ -1,8 +1,8 @@
 "use client";
 
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { Clock, AlertCircle, X, Check, Calendar, MessageSquare } from "lucide-react";
-import { authFetch } from "@/lib/auth";
+import { apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 interface SignalGpDelayModalProps {
@@ -33,8 +33,10 @@ export default function SignalGpDelayModal({
     date: "",
     reason: "",
   });
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
-  useEscapeKey(onClose, isOpen);
+  useEscapeKey(onClose, isOpen && !loading);
 
   useEffect(() => {
     if (target) {
@@ -82,6 +84,8 @@ export default function SignalGpDelayModal({
       return;
     }
 
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -102,14 +106,16 @@ export default function SignalGpDelayModal({
 
       if (!res.ok) {
         const json = await res.json().catch(() => ({}));
-        throw new Error(json.error || "Erreur lors de l'enregistrement du retard");
+        setError(apiErrorMessage(json, "Erreur lors de l'enregistrement du retard"));
+        return;
       }
 
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Une erreur est survenue");
+    } catch (err: unknown) {
+      setError(sendErrorMessage(err, "Une erreur est survenue"));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -120,7 +126,9 @@ export default function SignalGpDelayModal({
       aria-modal="true"
       aria-labelledby="delay-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-150"
-      onClick={onClose}
+      onClick={() => {
+        if (!loading) onClose();
+      }}
     >
       <div
         className="bg-white rounded-3xl max-w-md w-full shadow-2xl border border-gray-100 overflow-hidden transform animate-in zoom-in-95 duration-150"
@@ -144,6 +152,8 @@ export default function SignalGpDelayModal({
           <button
             type="button"
             onClick={onClose}
+            disabled={loading}
+            aria-label="Fermer"
             className="text-gray-400 hover:text-gray-600 p-1 rounded-xl transition-colors cursor-pointer"
           >
             <X size={18} />
@@ -225,7 +235,9 @@ export default function SignalGpDelayModal({
               ) : (
                 <>
                   <Check size={15} />
-                  <span>{hasChanges ? "Enregistrer & Notifier" : "Aucune modification"}</span>
+                  <span>
+                    {!hasChanges ? "Aucune modification" : error ? "Réessayer" : "Enregistrer & Notifier"}
+                  </span>
                 </>
               )}
             </button>

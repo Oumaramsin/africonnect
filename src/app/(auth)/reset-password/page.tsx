@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -17,7 +17,12 @@ import {
   RefreshCw,
   ArrowLeft,
 } from "lucide-react";
-import cookies from "js-cookie";
+import {
+  apiErrorMessage,
+  authFetch,
+  invalidateCurrentUser,
+  loadErrorMessage,
+} from "@/lib/auth";
 
 export default function ResetPasswordPage() {
   const router = useRouter();
@@ -35,10 +40,13 @@ export default function ResetPasswordPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
   // Étape 1 : Envoi du code
   const handleRequestCode = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
     setError(null);
     setSuccessMsg(null);
 
@@ -52,10 +60,11 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
 
     try {
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/forgot-password`,
         {
           method: "POST",
@@ -72,8 +81,7 @@ export default function ResetPasswordPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la demande de réinitialisation.");
-        setLoading(false);
+        setError(apiErrorMessage(data, "Erreur lors de la demande de réinitialisation."));
         return;
       }
 
@@ -81,9 +89,10 @@ export default function ResetPasswordPage() {
         "Un code de sécurité à 6 chiffres a été envoyé à votre adresse e-mail.",
       );
       setStep(2);
-      setLoading(false);
-    } catch {
-      setError("Impossible de contacter le serveur Dabari.");
+    } catch (err) {
+      setError(loadErrorMessage(err, "Impossible de contacter le serveur Dabari."));
+    } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -91,6 +100,7 @@ export default function ResetPasswordPage() {
   // Étape 2 : Réinitialisation du mot de passe
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submittingRef.current) return;
     setError(null);
 
     if (honeypot.trim() !== "") {
@@ -103,8 +113,8 @@ export default function ResetPasswordPage() {
       return;
     }
 
-    if (newPassword.length < 6) {
-      setError("Le nouveau mot de passe doit comporter au moins 6 caractères.");
+    if (newPassword.length < 8) {
+      setError("Le nouveau mot de passe doit comporter au moins 8 caractères.");
       return;
     }
 
@@ -113,10 +123,12 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
 
     try {
-      const response = await fetch(
+      // Connexion automatique après réinitialisation : cookie httpOnly posé par l'API
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/reset-password`,
         {
           method: "POST",
@@ -135,27 +147,22 @@ export default function ResetPasswordPage() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Le code est incorrect ou a expiré.");
+        setError(apiErrorMessage(data, "Le code est incorrect ou a expiré."));
+        submittingRef.current = false;
         setLoading(false);
         return;
       }
 
-      // Connexion automatique après réinitialisation
-      if (data.token) {
-        cookies.set("token", data.token, {
-          expires: 7,
-          sameSite: "lax",
-          secure: process.env.NODE_ENV === "production",
-        });
-      }
-
+      // Succès : le bouton reste désactivé jusqu'à la redirection
+      invalidateCurrentUser();
       setSuccessMsg("Mot de passe réinitialisé avec succès ! Redirection en cours...");
       setTimeout(() => {
-        router.push("/dashboard");
+        router.push("/");
         router.refresh();
       }, 1500);
-    } catch {
-      setError("Impossible de contacter le serveur Dabari.");
+    } catch (err) {
+      setError(loadErrorMessage(err, "Impossible de contacter le serveur Dabari."));
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -170,7 +177,7 @@ export default function ResetPasswordPage() {
 
           {/* Logo Dabari */}
           <div className="relative z-10 space-y-4">
-            <Link href="/dashboard" className="inline-flex items-center gap-3 group">
+            <Link href="/" className="inline-flex items-center gap-3 group">
               <div className="w-12 h-12 rounded-2xl bg-white/15 backdrop-blur-md border border-white/25 flex items-center justify-center shadow-md group-hover:scale-105 transition-transform">
                 <Image
                   src="/dabari_logo.png"
@@ -395,9 +402,9 @@ export default function ResetPasswordPage() {
                       type={showPassword ? "text" : "password"}
                       value={newPassword}
                       onChange={(e) => setNewPassword(e.target.value)}
-                      placeholder="Minimum 6 caractères"
+                      placeholder="Minimum 8 caractères"
                       required
-                      minLength={6}
+                      minLength={8}
                       className="w-full pl-10 pr-11 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1D6B45] focus:border-transparent text-xs sm:text-sm transition-all"
                     />
                     <button
@@ -425,7 +432,7 @@ export default function ResetPasswordPage() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder="Retapez le mot de passe"
                       required
-                      minLength={6}
+                      minLength={8}
                       className="w-full pl-10 pr-11 py-3 rounded-2xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-[#1D6B45] focus:border-transparent text-xs sm:text-sm transition-all"
                     />
                   </div>

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,19 +9,24 @@ import {
   ActivityIndicator,
   TextInput,
   DeviceEventEmitter,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken, saveSecureToken } from "../utils/storage";
-import { apiFetch } from "../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../utils/api";
 import type { CommandeTraiteur, OrderPlat } from "../utils/types/traiteur";
 import { GpRequest } from "../utils/types/gp";
+import LoadErrorState from "../components/LoadErrorState";
 
 export default function AccueilScreen() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [errorOffline, setErrorOffline] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [fullname, setFullname] = useState("");
   const [ordersPlats, setOrdersPlats] = useState<OrderPlat[]>([]);
@@ -34,6 +39,69 @@ export default function AccueilScreen() {
   // Recherche rapide sur l'accueil (identique au web)
   const [searchQuery, setSearchQuery] = useState("");
   const [searchService, setSearchService] = useState<"all" | "traiteur" | "gp">("all");
+
+  // Chargement des commandes récentes et du compteur de notifications. `silent` : rafraîchissement
+  // (tirer pour rafraîchir, réessai, événement) sans écran de chargement plein écran, les commandes
+  // déjà affichées restant visibles si l'actualisation échoue.
+  const loadData = useCallback(async (silent = false) => {
+    if (!silent) setLoading(true);
+    try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        setFullname("");
+        setIsLoggedIn(false);
+        setError(null);
+        return;
+      }
+      setIsLoggedIn(true);
+
+      let networkDown = false;
+      try {
+        const response = await apiFetch("/commande");
+        const data = await response.json();
+        if (!response.ok) {
+          setError(getApiErrorMessage(data, "Erreur lors de la récupération de vos commandes"));
+          setErrorOffline(false);
+        } else {
+          const userProfile = data.data?.orders;
+          if (userProfile) {
+            setFullname(userProfile.full_name);
+            setGpRequests(userProfile.gp_requests || []);
+            setOrdersPlats(userProfile.orders || []);
+            setCommandesTraiteur(userProfile.commandes || []);
+          }
+          setError(null);
+        }
+      } catch (err) {
+        console.warn("Erreur chargement dashboard:", err);
+        networkDown = isNetworkError(err);
+        setError(getErrorMessage(err, "Impossible de charger vos commandes récentes."));
+        setErrorOffline(networkDown);
+      }
+
+      // Compteur de notifications : un échec reste silencieux (inutile de réessayer sans réseau)
+      if (!networkDown) {
+        try {
+          const notifRes = await apiFetch("/notifications");
+          if (notifRes.ok) {
+            const notifData = await notifRes.json();
+            setUnreadNotifications(
+              notifData.notifications?.filter((n: any) => !n.is_read) || []
+            );
+            setUnreadCount(notifData.unread_count || 0);
+          }
+        } catch (e) {
+          console.warn("[Accueil] Notifications indisponibles:", e);
+        }
+      }
+    } catch (e) {
+      console.warn("[Accueil] Erreur lecture de session:", e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+      setRetrying(false);
+    }
+  }, []);
 
   useEffect(() => {
     async function checkBanner() {
@@ -49,62 +117,34 @@ export default function AccueilScreen() {
     }
     checkBanner();
 
-    async function loadData() {
-      setLoading(true);
-      const token = await getSecureToken("token");
-      if (!token) {
-        setFullname("");
-        setIsLoggedIn(false);
-        setLoading(false);
-        return;
-      }
-      setIsLoggedIn(true);
-      try {
-        const response = await apiFetch("/commande");
-        const data = await response.json();
-        if (!response.ok) {
-          setError(
-            data.message || "Erreur lors de la récupération de vos commandes"
-          );
-          setLoading(false);
-          return;
-        }
-        const userProfile = data.data?.orders;
-        if (userProfile) {
-          setFullname(userProfile.full_name);
-          setGpRequests(userProfile.gp_requests || []);
-          setOrdersPlats(userProfile.orders || []);
-          setCommandesTraiteur(userProfile.commandes || []);
-        }
-        const notifRes = await apiFetch("/notifications");
-        if (notifRes.ok) {
-          const notifData = await notifRes.json();
-          setUnreadNotifications(
-            notifData.notifications?.filter((n: any) => !n.is_read) || []
-          );
-          setUnreadCount(notifData.unread_count || 0);
-        }
-      } catch (err) {
-        console.error("Erreur chargement dashboard:", err);
-      } finally {
-        setLoading(false);
-      }
-    }
     loadData();
 
     const sub1 = DeviceEventEmitter.addListener(
       "dabari_orders_updated",
-      () => loadData(),
+      () => loadData(true),
     );
     const sub2 = DeviceEventEmitter.addListener(
       "dabari_notifications_updated",
-      () => loadData(),
+      () => loadData(true),
     );
     return () => {
       sub1.remove();
       sub2.remove();
     };
-  }, []);
+  }, [loadData]);
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadData(true);
+  };
+
+  const handleRetry = () => {
+    setRetrying(true);
+    loadData(true);
+  };
+
+  const hasRecentOrders =
+    commandesTraiteur.length > 0 || ordersPlats.length > 0 || gpRequests.length > 0;
 
   const handleDismissDescription = async () => {
     setShowDescription(false);
@@ -190,12 +230,20 @@ export default function AccueilScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         <ScrollView
           style={styles.mainScrollView}
           contentContainerStyle={styles.scrollContent}
           showsVerticalScrollIndicator={false}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#1D6B45"
+              colors={["#1D6B45"]}
+            />
+          }
         >
           {/* ── 1. BANNIÈRE HERO PRINCIPALE (GRADIENT ÉMERAUDE & OR) ── */}
           <View style={styles.heroCard}>
@@ -393,14 +441,6 @@ export default function AccueilScreen() {
               </View>
             )}
 
-            {/* Alerte Erreur si présente */}
-            {error && (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
             {/* Notification Alert Banner */}
             {(unreadCount > 0 || unreadNotifications.length > 0) && (
               <TouchableOpacity
@@ -556,10 +596,17 @@ export default function AccueilScreen() {
             </View>
 
             {/* ── 4. COMMANDES RÉCENTES (SI CONNECTÉ) ── */}
-            {isLoggedIn &&
-            (commandesTraiteur.length > 0 ||
-              ordersPlats.length > 0 ||
-              gpRequests.length > 0) ? (
+            {/* Chargement impossible et rien à afficher : carte d'erreur avec Réessayer */}
+            {isLoggedIn && error && !hasRecentOrders ? (
+              <LoadErrorState
+                title="Commandes récentes indisponibles"
+                message={error}
+                offline={errorOffline}
+                retrying={retrying}
+                onRetry={handleRetry}
+                style={styles.recentOrdersError}
+              />
+            ) : isLoggedIn && hasRecentOrders ? (
               <View style={styles.recentOrdersCard}>
                 <View style={styles.recentOrdersHeader}>
                   <Text style={styles.recentOrdersTitle}>Commandes récentes</Text>
@@ -567,6 +614,30 @@ export default function AccueilScreen() {
                     <Text style={styles.seeAllText}>Voir tout</Text>
                   </TouchableOpacity>
                 </View>
+
+                {/* Actualisation échouée : les commandes déjà chargées restent affichées */}
+                {Boolean(error) && (
+                  <TouchableOpacity
+                    style={styles.errorBox}
+                    onPress={handleRetry}
+                    disabled={retrying}
+                    activeOpacity={0.8}
+                  >
+                    <Ionicons
+                      name={errorOffline ? "cloud-offline-outline" : "alert-circle-outline"}
+                      size={18}
+                      color="#B91C1C"
+                    />
+                    <Text style={styles.errorText}>
+                      {`Actualisation impossible : ${error}`}
+                    </Text>
+                    {retrying ? (
+                      <ActivityIndicator size="small" color="#B91C1C" />
+                    ) : (
+                      <Text style={styles.errorRetryText}>Réessayer</Text>
+                    )}
+                  </TouchableOpacity>
+                )}
 
                 {/* Commandes Traiteur événements */}
                 {commandesTraiteur.slice(0, 2).map((cmd: CommandeTraiteur) => {
@@ -1412,5 +1483,14 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     flex: 1,
+  },
+  errorRetryText: {
+    color: "#B91C1C",
+    fontSize: 12,
+    fontWeight: "800",
+    textDecorationLine: "underline",
+  },
+  recentOrdersError: {
+    padding: 0,
   },
 });

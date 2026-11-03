@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ShieldCheck, Heart, Plane, UtensilsCrossed, MessageCircle } from "lucide-react";
+import { ShieldCheck, Heart, Plane, UtensilsCrossed, Mail } from "lucide-react";
+import { CONTACT_EMAIL } from "@/lib/site";
 
 export default function Footer() {
   const pathname = usePathname();
@@ -16,16 +17,16 @@ export default function Footer() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8 lg:gap-12">
           {/* ── COLONNE 1 : BRAND & MISSION ── */}
           <div className="lg:col-span-2 space-y-4">
-            <div className="flex items-center gap-3">
+            <Link href="/" className="flex items-center gap-3 w-fit" aria-label="Dabari, retour à l'accueil">
               <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-[#1D6B45] to-[#0F4A30] flex items-center justify-center text-white shadow-md">
                 <span className="font-black text-xl text-[#FAF7F2]">D</span>
               </div>
               <span className="font-black text-2xl tracking-tight text-white">
                 Dabari
               </span>
-            </div>
+            </Link>
             <p className="text-sm text-slate-400 leading-relaxed max-w-sm">
-              La plateforme de confiance qui connecte la diaspora africaine : traiteurs passionnés, saveurs authentiques et transport sécurisé de colis (GP) entre l'Afrique, l'Europe et le reste du monde.
+              La plateforme de confiance qui connecte la diaspora africaine : traiteurs passionnés, saveurs authentiques et transport sécurisé de colis (GP) entre l&apos;Afrique, l&apos;Europe et le reste du monde.
             </p>
 
             <div className="pt-2 flex items-center gap-3 text-xs text-slate-400">
@@ -40,7 +41,7 @@ export default function Footer() {
 
           {/* ── COLONNE 2 : SERVICES ── */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white">Services</h4>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white">Services</h2>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/traiteur" className="hover:text-white transition-colors flex items-center gap-2">
@@ -72,7 +73,7 @@ export default function Footer() {
 
           {/* ── COLONNE 3 : ESPACE PRO ── */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white">Espace Professionnel</h4>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white">Espace Professionnel</h2>
             <ul className="space-y-2 text-sm">
               <li>
                 <Link href="/profil/gp" className="hover:text-white transition-colors">
@@ -99,16 +100,14 @@ export default function Footer() {
 
           {/* ── COLONNE 4 : SUPPORT & CONTACT ── */}
           <div className="space-y-3">
-            <h4 className="text-xs font-bold uppercase tracking-wider text-white">Assistance</h4>
+            <h2 className="text-xs font-bold uppercase tracking-wider text-white">Assistance</h2>
             <ul className="space-y-2 text-sm">
               <li>
                 <a
-                  href="https://wa.me/33600000000?text=Bonjour%20Dabari%2C%20j%27ai%20une%20question"
-                  target="_blank"
-                  rel="noopener noreferrer"
+                  href={`mailto:${CONTACT_EMAIL}`}
                   className="inline-flex items-center gap-2 text-emerald-400 hover:text-emerald-300 transition-colors font-medium"
                 >
-                  <MessageCircle size={15} /> Support WhatsApp
+                  <Mail size={15} /> Nous écrire
                 </a>
               </li>
               <li>
@@ -132,14 +131,21 @@ export default function Footer() {
           {/* ── BAS DE PAGE : COPYRIGHT & MENTIONS ── */}
           <div className="mt-12 pt-8 border-t border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
             <p>© {new Date().getFullYear()} Dabari. Tous droits réservés.</p>
-            <div className="flex items-center gap-6">
+            <div className="flex flex-wrap items-center justify-center gap-x-6 gap-y-2">
               <span>Fait avec passion pour la diaspora africaine</span>
               <span>•</span>
               <Link href="/cgu" className="hover:text-emerald-400 transition-colors font-medium">
                 Conditions Générales (CGU)
               </Link>
               <span>•</span>
-              <span className="hover:text-slate-400 cursor-pointer">Confidentialité & RGPD</span>
+              {/* Politique de confidentialité : article 11 des CGU (src/data/cguData.ts) */}
+              <Link href="/cgu#article-11" className="hover:text-emerald-400 transition-colors font-medium">
+                Confidentialité & RGPD
+              </Link>
+              <span>•</span>
+              <Link href="/suppression-compte" className="hover:text-emerald-400 transition-colors font-medium">
+                Supprimer mon compte
+              </Link>
             </div>
           </div>
       </div>

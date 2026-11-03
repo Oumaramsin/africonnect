@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   MapPin,
@@ -26,8 +26,14 @@ import {
   Share2,
 } from "lucide-react";
 import Link from "next/link";
-import cookies from "js-cookie";
-import { getValidToken, removeToken, authFetch } from "@/lib/auth";
+import {
+  apiErrorMessage,
+  authFetch,
+  hasSession,
+  loadErrorMessage,
+  sendErrorMessage,
+} from "@/lib/auth";
+import { useObjectUrls } from "@/hooks/useObjectUrls";
 import Image from "next/image";
 import CountryFlag from "@/components/ui/CountryFlag";
 
@@ -63,6 +69,12 @@ const CUISINES = [
   "guineen",
   "burkinabe",
 ];
+
+// Limites de l'API d'envoi de fichiers (POST /upload/*)
+const MAX_FILES_PER_UPLOAD = 5;
+const MAX_UPLOAD_BYTES = 5 * 1024 * 1024;
+const ACCEPTED_IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MAX_DISH_IMAGES = 10;
 
 const ZONES = [
   "Paris",
@@ -111,55 +123,105 @@ export default function TraiteurEspacePage() {
   const [dishToDelete, setDishToDelete] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  // Chargement impossible (hors ligne, API en panne) : distinct d'un compte sans espace traiteur
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Erreurs des actions sur la carte (disponibilité, suppression) et plat en cours de mise à jour
+  const [dishActionError, setDishActionError] = useState<string | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [togglingDishId, setTogglingDishId] = useState<string | null>(null);
+  // Verrous contre la double soumission (posés avant le rendu suivant)
+  const savingSetupRef = useRef(false);
+  const savingDishRef = useRef(false);
+  const deletingRef = useRef(false);
 
-  async function loadTraiteur() {
-    const token = getValidToken() || cookies.get("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-    try {
-      const response = await authFetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/me`,
-        {
-          headers: {
-            "Content-Type": "application/json",
-          },
-        },
-      );
-      if (response.status === 401) {
-        removeToken();
+  // Aperçus locaux des photos choisies, libérés quand elles sont retirées ou envoyées
+  const profileImageFiles = useMemo(
+    () => (profileImageFile ? [profileImageFile] : []),
+    [profileImageFile],
+  );
+  const [profileImagePreview] = useObjectUrls(profileImageFiles);
+  const selectedFilePreviews = useObjectUrls(selectedFiles);
+
+  useEffect(() => {
+    const loadTraiteur = async () => {
+      if (!hasSession()) {
         router.push("/login");
         return;
       }
-      const data = await response.json();
-      if (!response.ok) {
-        setError(
-          data.error ||
-            data.message ||
-            "Erreur lors de la récupération du profil",
+      try {
+        const response = await authFetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/traiteur/me`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
+          },
         );
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        const data = await response.json();
+        if (!response.ok) {
+          setLoadError(
+            apiErrorMessage(data, "Erreur lors de la récupération du profil"),
+          );
+          return;
+        }
+        setLoadError(null);
+        if (data.isTraiteur && data.traiteur) {
+          setTraiteur(data.traiteur);
+          setView("profil");
+          setDishes(data.traiteur.dishes || []);
+        } else {
+          setView("setup");
+        }
+      } catch (err: unknown) {
+        console.error(err);
+        setLoadError(
+          loadErrorMessage(err, "Erreur de chargement du profil traiteur"),
+        );
+      } finally {
         setLoading(false);
-        return;
       }
-      if (data.isTraiteur && data.traiteur) {
-        setTraiteur(data.traiteur);
-        setView("profil");
-        setDishes(data.traiteur.dishes || []);
-      } else {
-        setView("setup");
-      }
-    } catch (err: unknown) {
-      console.error(err);
-      setError("Erreur de chargement du profil traiteur");
-    } finally {
-      setLoading(false);
-    }
-  }
-
-  useEffect(() => {
+    };
     loadTraiteur();
-  }, []);
+  }, [router, reloadKey]);
+
+  const retryLoad = () => {
+    setLoading(true);
+    setLoadError(null);
+    setReloadKey((key) => key + 1);
+  };
+
+  /**
+   * Envoie la photo de profil choisie, une seule fois : l'URL obtenue remplace le fichier dans le
+   * formulaire, pour qu'une relance après un échec de l'enregistrement ne la renvoie pas.
+   * Renvoie null (erreur déjà affichée) si l'envoi échoue.
+   */
+  async function uploadProfileImage(): Promise<string | null> {
+    if (!profileImageFile) return setupData.image_url;
+    const formData = new FormData();
+    formData.append("file", profileImageFile);
+    formData.append("folder", "profiles");
+
+    const uploadRes = await authFetch(
+      `${process.env.NEXT_PUBLIC_API_URL}/upload/single`,
+      {
+        method: "POST",
+        body: formData,
+      },
+    );
+    const uploadData = await uploadRes.json();
+    if (!uploadRes.ok || typeof uploadData.url !== "string") {
+      setError(apiErrorMessage(uploadData, "Erreur upload photo de profil"));
+      return null;
+    }
+    setSetupData((prev) => ({ ...prev, image_url: uploadData.url }));
+    setProfileImageFile(null);
+    return uploadData.url;
+  }
 
   async function handleSetup() {
     if (
@@ -170,45 +232,25 @@ export default function TraiteurEspacePage() {
       setError("Remplis tous les champs obligatoires");
       return;
     }
-    setSavingSetup(true);
-    setError(null);
-    const token = getValidToken() || cookies.get("token");
-    if (!token) {
+    if (!hasSession()) {
       router.push("/login");
       return;
     }
+    if (savingSetupRef.current) return;
+    savingSetupRef.current = true;
+    setSavingSetup(true);
+    setError(null);
 
     try {
-      let finalImageUrl = setupData.image_url;
+      const finalImageUrl = await uploadProfileImage();
+      if (finalImageUrl === null) return;
 
-      if (profileImageFile) {
-        const formData = new FormData();
-        formData.append("file", profileImageFile);
-        formData.append("folder", "profiles");
-
-        const uploadRes = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/upload/single`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          },
-        );
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok)
-          throw new Error(uploadData.error || "Erreur upload photo de profil");
-        finalImageUrl = uploadData.url;
-      }
-
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur/setup`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             name: setupData.name,
@@ -223,18 +265,19 @@ export default function TraiteurEspacePage() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(
-          data.error || "Erreur lors de la création de l'espace traiteur",
+        setError(
+          apiErrorMessage(data, "Erreur lors de la création de l'espace traiteur"),
         );
+        return;
       }
 
       setTraiteur(data.data.traiteur);
       setView("profil");
       setProfileImageFile(null);
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue.");
+      setError(sendErrorMessage(err, "Une erreur est survenue."));
     } finally {
+      savingSetupRef.current = false;
       setSavingSetup(false);
     }
   }
@@ -248,45 +291,25 @@ export default function TraiteurEspacePage() {
       setError("Remplis tous les champs obligatoires");
       return;
     }
-    setSavingSetup(true);
-    setError(null);
-    const token = getValidToken() || cookies.get("token");
-    if (!token) {
+    if (!hasSession()) {
       router.push("/login");
       return;
     }
+    if (savingSetupRef.current) return;
+    savingSetupRef.current = true;
+    setSavingSetup(true);
+    setError(null);
 
     try {
-      let finalImageUrl = setupData.image_url;
+      const finalImageUrl = await uploadProfileImage();
+      if (finalImageUrl === null) return;
 
-      if (profileImageFile) {
-        const formData = new FormData();
-        formData.append("file", profileImageFile);
-        formData.append("folder", "profiles");
-
-        const uploadRes = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/upload/single`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          },
-        );
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok)
-          throw new Error(uploadData.error || "Erreur upload photo de profil");
-        finalImageUrl = uploadData.url;
-      }
-
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur/profile`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             name: setupData.name,
@@ -301,9 +324,10 @@ export default function TraiteurEspacePage() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(
-          data.error || "Erreur lors de la modification du profil",
+        setError(
+          apiErrorMessage(data, "Erreur lors de la modification du profil"),
         );
+        return;
       }
 
       setTraiteur(data.data.traiteur);
@@ -312,19 +336,103 @@ export default function TraiteurEspacePage() {
       setView("profil");
       setProfileImageFile(null);
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue.");
+      setError(sendErrorMessage(err, "Une erreur est survenue."));
     } finally {
+      savingSetupRef.current = false;
       setSavingSetup(false);
     }
   }
+
+  /**
+   * Envoie les nouvelles photos du plat par lots (5 au plus par requête, limite de l'API). Chaque
+   * lot envoyé rejoint aussitôt les photos du formulaire et ses fichiers en sont retirés : une
+   * relance après un échec (lot suivant ou enregistrement du plat) ne renvoie pas les photos déjà
+   * reçues. Renvoie toutes les URL du plat, ou null (erreur affichée).
+   */
+  async function uploadDishPhotos(): Promise<string[] | null> {
+    let imageUrls = newDish.image_urls;
+    let remaining = selectedFiles;
+    while (remaining.length > 0) {
+      const batch = remaining.slice(0, MAX_FILES_PER_UPLOAD);
+      const formData = new FormData();
+      batch.forEach((file) => formData.append("files", file));
+      formData.append("folder", "dishes");
+
+      const uploadRes = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/upload/multiple`,
+        {
+          method: "POST",
+          body: formData,
+        },
+      );
+      const uploadData = await uploadRes.json();
+      if (!uploadRes.ok) {
+        setError(apiErrorMessage(uploadData, "Erreur lors de l'upload des images"));
+        return null;
+      }
+      const uploadedUrls: string[] = Array.isArray(uploadData.urls)
+        ? uploadData.urls
+        : [];
+      imageUrls = [...imageUrls, ...uploadedUrls];
+      remaining = remaining.slice(batch.length);
+      setNewDish((prev) => ({
+        ...prev,
+        image_urls: [...prev.image_urls, ...uploadedUrls],
+      }));
+      setSelectedFiles(remaining);
+    }
+    return imageUrls;
+  }
+
+  /** Photo acceptée par l'API d'envoi : JPEG, PNG ou WebP de 5 Mo au plus. */
+  const isUploadableImage = (file: File) =>
+    ACCEPTED_IMAGE_TYPES.includes(file.type) && file.size <= MAX_UPLOAD_BYTES;
+
+  const describeRejected = (files: File[]) =>
+    `${files
+      .slice(0, 3)
+      .map((file) => file.name)
+      .join(", ")}${files.length > 3 ? "…" : ""}`;
+
+  // Contrôle à la sélection : formats et poids acceptés par l'API, 10 photos au plus par plat
+  const selectDishPhotos = (fileList: FileList) => {
+    const files = Array.from(fileList);
+    const rejected = files.filter((file) => !isUploadableImage(file));
+    const accepted = files.filter(isUploadableImage);
+    const room = Math.max(0, MAX_DISH_IMAGES - newDish.image_urls.length);
+    const kept = accepted.slice(0, room);
+    const messages: string[] = [];
+    if (rejected.length > 0) {
+      messages.push(
+        `Photo(s) ignorée(s) (${describeRejected(rejected)}) : formats JPEG, PNG ou WebP uniquement, 5 Mo maximum par photo.`,
+      );
+    }
+    if (kept.length < accepted.length) {
+      messages.push(
+        `Un plat compte au plus ${MAX_DISH_IMAGES} photos : ${accepted.length - kept.length} photo(s) non ajoutée(s).`,
+      );
+    }
+    setError(messages.length > 0 ? messages.join(" ") : null);
+    setSelectedFiles(kept);
+  };
+
+  const selectProfileImage = (file: File) => {
+    if (!isUploadableImage(file)) {
+      setError(
+        `Photo ignorée (${file.name}) : formats JPEG, PNG ou WebP uniquement, 5 Mo maximum.`,
+      );
+      return;
+    }
+    setError(null);
+    setProfileImageFile(file);
+  };
 
   async function handleAddDish() {
     if (
       !newDish.name ||
       !newDish.price ||
       !newDish.cuisine_type ||
-      selectedFiles.length === 0
+      (selectedFiles.length === 0 && newDish.image_urls.length === 0)
     ) {
       setError("Remplis tous les champs obligatoires");
       return;
@@ -334,47 +442,25 @@ export default function TraiteurEspacePage() {
       setError("Le prix ne peut pas être négatif");
       return;
     }
-    setSavingDish(true);
-    setError(null);
-    const token = getValidToken() || cookies.get("token");
-    if (!token) {
+    if (!hasSession()) {
       router.push("/login");
       return;
     }
+    if (savingDishRef.current) return;
+    savingDishRef.current = true;
+    setSavingDish(true);
+    setError(null);
 
     try {
-      let uploadedUrls: string[] = [];
+      const imageUrls = await uploadDishPhotos();
+      if (imageUrls === null) return;
 
-      if (selectedFiles.length > 0) {
-        const formData = new FormData();
-        selectedFiles.forEach((file) => formData.append("files", file));
-        formData.append("folder", "dishes");
-
-        const uploadRes = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/upload/multiple`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          },
-        );
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok)
-          throw new Error(
-            uploadData.error || "Erreur lors de l'upload des images",
-          );
-        uploadedUrls = uploadData.urls || [];
-      }
-
-      const response = await fetch(
+      const response = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes`,
         {
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             name: newDish.name,
@@ -382,14 +468,15 @@ export default function TraiteurEspacePage() {
             price: parseFloat(newDish.price),
             cuisine_type: newDish.cuisine_type,
             is_available: newDish.is_available,
-            image_urls: uploadedUrls,
+            image_urls: imageUrls,
           }),
         },
       );
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "Erreur lors de l'ajout du plat");
+        setError(apiErrorMessage(data, "Erreur lors de l'ajout du plat"));
+        return;
       }
 
       const createdDish = data.data.dish;
@@ -408,9 +495,9 @@ export default function TraiteurEspacePage() {
       setTimeout(() => setSuccess(null), 3000);
       setView("plats");
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue.");
+      setError(sendErrorMessage(err, "Une erreur est survenue."));
     } finally {
+      savingDishRef.current = false;
       setSavingDish(false);
     }
   }
@@ -430,47 +517,25 @@ export default function TraiteurEspacePage() {
       setError("Le prix ne peut pas être négatif");
       return;
     }
-    setSavingDish(true);
-    setError(null);
-    const token = getValidToken() || cookies.get("token");
-    if (!token) {
+    if (!hasSession()) {
       router.push("/login");
       return;
     }
+    if (!editDish || savingDishRef.current) return;
+    savingDishRef.current = true;
+    setSavingDish(true);
+    setError(null);
 
     try {
-      let uploadedUrls: string[] = [];
+      const imageUrls = await uploadDishPhotos();
+      if (imageUrls === null) return;
 
-      if (selectedFiles.length > 0) {
-        const formData = new FormData();
-        selectedFiles.forEach((file) => formData.append("files", file));
-        formData.append("folder", "dishes");
-
-        const uploadRes = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/upload/multiple`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            body: formData,
-          },
-        );
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok)
-          throw new Error(
-            uploadData.error || "Erreur lors de l'upload des images",
-          );
-        uploadedUrls = uploadData.urls || [];
-      }
-
-      const response = await fetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${editDish!.id}`,
+      const response = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${editDish.id}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({
             name: newDish.name,
@@ -478,19 +543,20 @@ export default function TraiteurEspacePage() {
             price: parseFloat(newDish.price),
             cuisine_type: newDish.cuisine_type,
             is_available: newDish.is_available,
-            image_urls: [...newDish.image_urls, ...uploadedUrls],
+            image_urls: imageUrls,
           }),
         },
       );
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || "Erreur lors de la modification du plat");
+        setError(apiErrorMessage(data, "Erreur lors de la modification du plat"));
+        return;
       }
 
       const updatedDish = data.data.dish;
       setDishes((prev) =>
-        prev.map((d) => (d.id === editDish!.id ? updatedDish : d)),
+        prev.map((d) => (d.id === editDish.id ? updatedDish : d)),
       );
       setNewDish({
         name: "",
@@ -506,60 +572,89 @@ export default function TraiteurEspacePage() {
       setTimeout(() => setSuccess(null), 3000);
       setView("plats");
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue.");
+      setError(sendErrorMessage(err, "Une erreur est survenue."));
     } finally {
+      savingDishRef.current = false;
       setSavingDish(false);
     }
   }
 
+  // La carte n'est mise à jour qu'après confirmation de l'API
   async function toggleDish(dishId: string, current: boolean) {
-    const token = getValidToken() || cookies.get("token");
-    if (token) {
-      await fetch(
+    if (togglingDishId) return;
+    if (!hasSession()) {
+      router.push("/login");
+      return;
+    }
+    setTogglingDishId(dishId);
+    setDishActionError(null);
+    try {
+      const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${dishId}`,
         {
           method: "PATCH",
           headers: {
             "Content-Type": "application/json",
-            Authorization: `Bearer ${token}`,
           },
           body: JSON.stringify({ is_available: !current }),
         },
       );
+      if (!res.ok) {
+        const data = await res.json();
+        setDishActionError(
+          apiErrorMessage(data, "La disponibilité du plat n'a pas pu être modifiée."),
+        );
+        return;
+      }
+      setDishes((prev) =>
+        prev.map((d) =>
+          d.id === dishId ? { ...d, is_available: !current } : d,
+        ),
+      );
+    } catch (err) {
+      setDishActionError(
+        sendErrorMessage(err, "La disponibilité du plat n'a pas pu être modifiée."),
+      );
+    } finally {
+      setTogglingDishId(null);
     }
-    setDishes((prev) =>
-      prev.map((d) =>
-        d.id === dishId ? { ...d, is_available: !current } : d,
-      ),
-    );
   }
 
+  // Le plat n'est retiré de la carte qu'après confirmation de l'API ; en cas d'échec, la
+  // modale reste ouverte avec l'erreur et permet de réessayer
   async function confirmDeleteDish() {
-    if (!dishToDelete) return;
+    if (!dishToDelete || deletingRef.current) return;
+    deletingRef.current = true;
     setIsDeleting(true);
-    const token = getValidToken() || cookies.get("token");
+    setDeleteError(null);
     try {
-      if (token) {
-        await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${dishToDelete}`,
-          {
-            method: "DELETE",
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-          },
-        );
+      const res = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/dishes/${dishToDelete}`,
+        {
+          method: "DELETE",
+        },
+      );
+      // 404 : déjà supprimé (par exemple par une tentative précédente restée sans réponse)
+      if (!res.ok && res.status !== 404) {
+        const data = await res.json();
+        setDeleteError(apiErrorMessage(data, "Le plat n'a pas pu être supprimé."));
+        return;
       }
 
       setDishes((prev) => prev.filter((d) => d.id !== dishToDelete));
-    } catch (err) {
-      console.error("Erreur lors de la suppression:", err);
-    } finally {
-      setIsDeleting(false);
       setDishToDelete(null);
+    } catch (err) {
+      setDeleteError(sendErrorMessage(err, "Le plat n'a pas pu être supprimé."));
+    } finally {
+      deletingRef.current = false;
+      setIsDeleting(false);
     }
   }
+
+  const closeDeleteModal = () => {
+    setDishToDelete(null);
+    setDeleteError(null);
+  };
 
   const toggleCuisine = (c: string) =>
     setSetupData((prev) => ({
@@ -599,6 +694,31 @@ export default function TraiteurEspacePage() {
         <p className="text-sm font-semibold text-slate-700">
           Chargement de votre espace traiteur...
         </p>
+      </div>
+    );
+  }
+
+  // Profil illisible (hors ligne, API en panne) : ne pas proposer la création d'un espace qui
+  // existe peut-être déjà
+  if (loadError && !traiteur) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200/80 shadow-xs p-8 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertCircle size={28} />
+          </div>
+          <h2 className="text-lg font-extrabold text-slate-900">
+            Espace traiteur momentanément indisponible
+          </h2>
+          <p className="text-sm text-slate-600 leading-relaxed">{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoad}
+            className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#1D6B45] hover:bg-[#155235] text-white text-sm font-bold transition-colors shadow-xs cursor-pointer"
+          >
+            Réessayer
+          </button>
+        </div>
       </div>
     );
   }
@@ -672,9 +792,9 @@ export default function TraiteurEspacePage() {
                   </label>
                   <div className="flex flex-col sm:flex-row items-center gap-5">
                     <div className="relative w-24 h-24 rounded-3xl bg-slate-50 border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden shrink-0 shadow-xs">
-                      {profileImageFile ? (
+                      {profileImagePreview ? (
                         <Image
-                          src={URL.createObjectURL(profileImageFile)}
+                          src={profileImagePreview}
                           alt="Preview"
                           fill
                           unoptimized
@@ -703,7 +823,7 @@ export default function TraiteurEspacePage() {
                           className="hidden"
                           onChange={(e) => {
                             if (e.target.files && e.target.files[0]) {
-                              setProfileImageFile(e.target.files[0]);
+                              selectProfileImage(e.target.files[0]);
                             }
                           }}
                         />
@@ -972,8 +1092,8 @@ export default function TraiteurEspacePage() {
                         Cliquez ou glissez-déposez vos photos
                       </div>
                       <p className="text-xs text-slate-400">
-                        PNG, JPG, WEBP jusqu'à 2MB (sélection multiple
-                        possible)
+                        PNG, JPG, WEBP jusqu&apos;à 5 Mo par photo, {MAX_DISH_IMAGES}{" "}
+                        photos maximum (sélection multiple possible)
                       </p>
                     </div>
                     <input
@@ -983,8 +1103,10 @@ export default function TraiteurEspacePage() {
                       className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
                       onChange={(e) => {
                         if (e.target.files) {
-                          setSelectedFiles(Array.from(e.target.files));
+                          selectDishPhotos(e.target.files);
                         }
+                        // Permet de choisir à nouveau le même fichier après une erreur
+                        e.target.value = "";
                       }}
                     />
                   </div>
@@ -1036,13 +1158,13 @@ export default function TraiteurEspacePage() {
                         Nouvelles photos prêtes à être téléversées :
                       </p>
                       <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-3">
-                        {selectedFiles.map((file, idx) => (
+                        {selectedFilePreviews.map((previewUrl, idx) => (
                           <div
                             key={`new-${idx}`}
                             className="relative group rounded-2xl overflow-hidden border border-emerald-300 aspect-square shadow-2xs ring-2 ring-[#1D6B45]/20"
                           >
                             <Image
-                              src={URL.createObjectURL(file)}
+                              src={previewUrl}
                               alt={`preview-${idx}`}
                               fill
                               unoptimized
@@ -1219,9 +1341,9 @@ export default function TraiteurEspacePage() {
                 {/* Card Dish Preview */}
                 <div className="rounded-2xl border border-slate-200/80 overflow-hidden bg-white shadow-2xs">
                   <div className="relative aspect-video bg-slate-100 flex items-center justify-center overflow-hidden">
-                    {selectedFiles.length > 0 ? (
+                    {selectedFilePreviews.length > 0 ? (
                       <Image
-                        src={URL.createObjectURL(selectedFiles[0])}
+                        src={selectedFilePreviews[0]}
                         alt="Preview"
                         fill
                         unoptimized
@@ -1429,6 +1551,24 @@ export default function TraiteurEspacePage() {
           <div className="bg-[#E8F5E9] border border-[#1D6B45]/20 text-[#1D6B45] rounded-2xl px-5 py-3.5 mb-6 text-sm font-semibold flex items-center gap-2 shadow-xs">
             <CheckCircle2 size={18} />
             <span>{success}</span>
+          </div>
+        )}
+
+        {dishActionError && (
+          <div
+            role="alert"
+            className="bg-red-50 border border-red-200 text-red-700 rounded-2xl px-5 py-3.5 mb-6 text-sm font-semibold flex items-center gap-2 shadow-xs"
+          >
+            <AlertCircle size={18} className="shrink-0 text-red-600" />
+            <span className="flex-1">{dishActionError}</span>
+            <button
+              type="button"
+              onClick={() => setDishActionError(null)}
+              aria-label="Fermer le message"
+              className="p-1 rounded-lg text-red-500 hover:bg-red-100 transition-colors cursor-pointer"
+            >
+              <X size={16} />
+            </button>
           </div>
         )}
 
@@ -1810,7 +1950,8 @@ export default function TraiteurEspacePage() {
                       <button
                         type="button"
                         onClick={() => toggleDish(dish.id, dish.is_available)}
-                        className={`text-xs px-3.5 py-2 rounded-xl font-bold transition-all cursor-pointer ${
+                        disabled={togglingDishId !== null}
+                        className={`text-xs px-3.5 py-2 rounded-xl font-bold transition-all cursor-pointer disabled:opacity-60 disabled:cursor-wait ${
                           dish.is_available
                             ? "bg-[#E8F5E9] text-[#1D6B45] hover:bg-[#C8E6C9]"
                             : "bg-slate-100 text-slate-600 hover:bg-slate-200"
@@ -1878,10 +2019,18 @@ export default function TraiteurEspacePage() {
               Ce plat sera définitivement retiré de votre menu en ligne.
               L'historique de vos commandes passées reste préservé.
             </p>
+            {deleteError && (
+              <div
+                role="alert"
+                className="mb-4 p-3 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs font-medium text-left"
+              >
+                {deleteError}
+              </div>
+            )}
             <div className="flex gap-3">
               <button
                 type="button"
-                onClick={() => setDishToDelete(null)}
+                onClick={closeDeleteModal}
                 disabled={isDeleting}
                 className="flex-1 py-3 rounded-2xl font-bold text-xs sm:text-sm text-slate-700 bg-slate-100 hover:bg-slate-200 transition-colors disabled:opacity-50 cursor-pointer"
               >
@@ -1893,7 +2042,7 @@ export default function TraiteurEspacePage() {
                 disabled={isDeleting}
                 className="flex-1 py-3 rounded-2xl font-bold text-xs sm:text-sm text-white bg-red-600 hover:bg-red-700 transition-colors disabled:opacity-50 shadow-sm cursor-pointer"
               >
-                {isDeleting ? "Suppression..." : "Supprimer"}
+                {isDeleting ? "Suppression..." : deleteError ? "Réessayer" : "Supprimer"}
               </button>
             </div>
           </div>

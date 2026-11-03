@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import {
   ChefHat,
@@ -9,12 +10,19 @@ import {
   CheckCircle2,
   Sparkles,
   ShieldCheck,
-  Headphones,
-  HeartHandshake,
+  Mail,
   PlusCircle,
   FileText,
   BadgeCheck,
 } from "lucide-react";
+import { CONTACT_EMAIL, pageMetadata } from "@/lib/site";
+
+export const metadata: Metadata = pageMetadata({
+  title: "Nos services pour la diaspora africaine",
+  description:
+    "Découvrez l'ensemble de l'écosystème Dabari : traiteurs authentiques pour vos repas et cérémonies, et transport de colis GP sécurisé entre l'Afrique et l'Europe.",
+  path: "/services",
+});
 
 export default function ServicesPage() {
   return (
@@ -130,13 +138,13 @@ export default function ServicesPage() {
               </div>
 
               <p className="text-xs text-slate-600 leading-relaxed">
-                Connectez-vous avec des voyageurs pour expédier documents, vêtements et produits en toute confiance entre l'Europe, l'Afrique et l'Amérique du Nord.
+                Connectez-vous avec des voyageurs pour expédier documents, vêtements et produits en toute confiance entre l&apos;Europe, l&apos;Afrique et l&apos;Amérique du Nord.
               </p>
 
               <div className="pt-2 space-y-1.5 text-xs text-slate-600">
                 <div className="flex items-center gap-2">
                   <BadgeCheck size={14} className="text-[#D4870A]" />
-                  <span>Billets d'avion et identités vérifiés</span>
+                  <span>Billets d&apos;avion et identités vérifiés</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <BadgeCheck size={14} className="text-[#D4870A]" />
@@ -235,9 +243,9 @@ export default function ServicesPage() {
           <span className="text-xs font-extrabold uppercase tracking-wider text-[#1D6B45]">
             Simplicité & Rapidité
           </span>
-          <h3 className="text-2xl font-black text-slate-900">
+          <h2 className="text-2xl font-black text-slate-900">
             Comment fonctionne Dabari ?
-          </h3>
+          </h2>
           <p className="text-xs sm:text-sm text-slate-500">
             Une mise en relation directe, transparente et sécurisée pour la diaspora
           </p>
@@ -248,9 +256,9 @@ export default function ServicesPage() {
             <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-[#1D6B45] font-black text-xl flex items-center justify-center mx-auto shadow-xs">
               1
             </div>
-            <h4 className="font-extrabold text-slate-900 text-base">
+            <h3 className="font-extrabold text-slate-900 text-base">
               Choisissez votre prestation
-            </h4>
+            </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
               Consultez les menus de chefs traiteurs ou filtrez les annonces de vols GP par ville de départ et de destination.
             </p>
@@ -260,9 +268,9 @@ export default function ServicesPage() {
             <div className="w-14 h-14 rounded-2xl bg-amber-50 text-[#D4870A] font-black text-xl flex items-center justify-center mx-auto shadow-xs">
               2
             </div>
-            <h4 className="font-extrabold text-slate-900 text-base">
+            <h3 className="font-extrabold text-slate-900 text-base">
               Réservez ou demandez un devis
-            </h4>
+            </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
               Commandez directement ou envoyez vos spécifications. Discutez en direct sur WhatsApp avec le prestataire.
             </p>
@@ -272,11 +280,11 @@ export default function ServicesPage() {
             <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-[#1D6B45] font-black text-xl flex items-center justify-center mx-auto shadow-xs">
               3
             </div>
-            <h4 className="font-extrabold text-slate-900 text-base">
+            <h3 className="font-extrabold text-slate-900 text-base">
               Livraison & Réception en confiance
-            </h4>
+            </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Suivez l'état d'avancement de votre commande ou le vol de votre colis jusqu'à la remise en main propre.
+              Suivez l&apos;état d&apos;avancement de votre commande ou le vol de votre colis jusqu&apos;à la remise en main propre.
             </p>
           </div>
         </div>
@@ -285,9 +293,9 @@ export default function ServicesPage() {
       {/* ── 4. ENGAGEMENTS & RÉASSURANCE ── */}
       <section className="bg-slate-900 text-white rounded-3xl p-8 sm:p-12 shadow-xl flex flex-col md:flex-row items-center justify-between gap-8">
         <div className="space-y-2 max-w-xl">
-          <h3 className="text-xl sm:text-2xl font-black text-white">
-            Une question ou besoin d'assistance ?
-          </h3>
+          <h2 className="text-xl sm:text-2xl font-black text-white">
+            Une question ou besoin d&apos;assistance ?
+          </h2>
           <p className="text-xs sm:text-sm text-slate-400">
             Notre équipe et notre communauté sont là pour vous aider 7 jours sur 7.
           </p>
@@ -295,13 +303,11 @@ export default function ServicesPage() {
 
         <div className="flex items-center gap-4 shrink-0 flex-wrap">
           <a
-            href="https://wa.me/33600000000?text=Bonjour%20Dabari%2C%20j%27ai%20une%20question"
-            target="_blank"
-            rel="noopener noreferrer"
+            href={`mailto:${CONTACT_EMAIL}?subject=${encodeURIComponent("Question Dabari")}`}
             className="inline-flex items-center gap-2 bg-[#1D6B45] hover:bg-[#154d31] text-white font-extrabold text-xs sm:text-sm px-5 py-3 rounded-xl shadow-md transition-all hover:scale-102"
           >
-            <Headphones size={16} />
-            <span>Support WhatsApp 7j/7</span>
+            <Mail size={16} />
+            <span>Nous écrire</span>
           </a>
           <div className="flex items-center gap-2 text-xs text-slate-400">
             <ShieldCheck size={16} className="text-emerald-400" />

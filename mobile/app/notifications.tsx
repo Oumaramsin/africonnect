@@ -281,7 +281,7 @@ export default function NotificationsScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── 1. HEADER MODERNE DABARI ── */}
         <View style={styles.header}>
@@ -693,7 +693,9 @@ export default function NotificationsScreen() {
           visible={Boolean(deleteModalState?.visible)}
           transparent
           animationType="fade"
-          onRequestClose={() => !isDeleting && setDeleteModalState(null)}
+          onRequestClose={() => {
+            if (!isDeleting) setDeleteModalState(null);
+          }}
         >
           <View style={styles.modalBackdrop}>
             <View style={styles.modalCard}>

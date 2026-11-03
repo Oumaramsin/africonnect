@@ -7,7 +7,16 @@ export interface AddressValidationResult {
   isValid: boolean;
   normalizedAddress?: string;
   error?: string;
+  /**
+   * Vrai si l'adresse est acceptée sans avoir pu être vérifiée : service de géocodage injoignable
+   * (hors ligne, délai dépassé, service en panne). Le serveur revalide l'adresse à l'enregistrement.
+   */
+  unverified?: boolean;
 }
+
+/** Message à afficher à côté d'une adresse acceptée sans vérification. */
+export const UNVERIFIED_ADDRESS_NOTICE =
+  "Adresse non vérifiée (service d'adresses injoignable) : elle sera contrôlée à l'enregistrement.";
 
 // Liste de villes et capitales africaines et internationales courantes pour validation rapide
 const KNOWN_INTERNATIONAL_CITIES = [
@@ -34,8 +43,40 @@ const KNOWN_COUNTRIES = [
 ];
 
 /**
+ * Interroge un service de géocodage avec un délai maximal (lecture du corps comprise).
+ * Renvoie `null` si le service n'a pas répondu correctement (hors ligne, délai dépassé, erreur HTTP) :
+ * l'adresse ne peut alors pas être jugée inexistante.
+ */
+async function fetchGeocoding<T>(url: string, timeoutMs: number, init?: RequestInit): Promise<T | null> {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const res = await fetch(url, { ...init, signal: controller.signal });
+    if (!res.ok) {
+      console.warn(`[verifyAddressExists] Service de géocodage indisponible (HTTP ${res.status}) :`, new URL(url).host);
+      return null;
+    }
+    return (await res.json()) as T;
+  } catch (err) {
+    console.warn("[verifyAddressExists] Service de géocodage injoignable :", new URL(url).host, err);
+    return null;
+  } finally {
+    clearTimeout(timeoutId);
+  }
+}
+
+/** Adresse acceptée telle quelle faute de pouvoir la vérifier (le serveur la revalide). */
+const acceptUnverified = (address: string): AddressValidationResult => ({
+  isValid: true,
+  normalizedAddress: address,
+  unverified: true,
+});
+
+/**
  * Vérifie si une adresse saisie correspond à un endroit géographique réel.
  * Priorise l'API Adresse BAN pour la France, puis la détection internationale / OpenStreetMap.
+ * Si les services de géocodage sont injoignables, l'adresse est acceptée avec `unverified: true`
+ * au lieu d'être déclarée introuvable.
  */
 export async function verifyAddressExists(
   address: string,
@@ -64,36 +105,29 @@ export async function verifyAddressExists(
     /\b\d{5}\b/.test(clean); // Code postal français à 5 chiffres
 
   // 1. Test avec l'API officielle Adresse data.gouv.fr (France)
-  try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 3500);
+  const banUrl = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
+    clean
+  )}&limit=1`;
+  const banData = await fetchGeocoding<{
+    features?: { properties?: { score?: number; label?: string } }[];
+  }>(banUrl, 3500);
 
-    const banUrl = `https://api-adresse.data.gouv.fr/search/?q=${encodeURIComponent(
-      clean
-    )}&limit=1`;
-    const res = await fetch(banUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
+  if (banData) {
+    const first = banData.features?.[0];
+    const score = first?.properties?.score || 0;
 
-    if (res.ok) {
-      const data = await res.json();
-      const first = data.features?.[0];
-      const score = first?.properties?.score || 0;
-
-      // Un score >= 0.42 garantit une correspondance réelle sur une commune, voie ou numéro en France
-      if (score >= 0.42 && first?.properties?.label) {
-        return {
-          isValid: true,
-          normalizedAddress: first.properties.label,
-        };
-      }
+    // Un score >= 0.42 garantit une correspondance réelle sur une commune, voie ou numéro en France
+    if (score >= 0.42 && first?.properties?.label) {
+      return {
+        isValid: true,
+        normalizedAddress: first.properties.label,
+      };
     }
-  } catch (err) {
-    // Si l'API BAN est temporairement injoignable, on continue les vérifications secondaires
-    console.warn("[verifyAddressExists] Erreur API BAN:", err);
   }
 
-  // Si l'utilisateur est explicitement en France et que l'API BAN n'a rien trouvé avec un bon score
+  // Adresse explicitement française : seule l'API BAN fait foi
   if (isExplicitFrance) {
+    if (!banData) return acceptUnverified(clean);
     return {
       isValid: false,
       error:
@@ -114,33 +148,24 @@ export async function verifyAddressExists(
   }
 
   // 3. Fallback géocodage OpenStreetMap (Nominatim) pour l'international
-  try {
-    const osmController = new AbortController();
-    const osmTimeout = setTimeout(() => osmController.abort(), 3000);
+  const osmUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
+    clean
+  )}&format=json&limit=1`;
+  const osmData = await fetchGeocoding<{ display_name?: string }[]>(osmUrl, 3000, {
+    headers: {
+      Accept: "application/json",
+    },
+  });
 
-    const osmUrl = `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(
-      clean
-    )}&format=json&limit=1`;
-    const osmRes = await fetch(osmUrl, {
-      signal: osmController.signal,
-      headers: {
-        Accept: "application/json",
-      },
-    });
-    clearTimeout(osmTimeout);
-
-    if (osmRes.ok) {
-      const osmData = await osmRes.json();
-      if (Array.isArray(osmData) && osmData.length > 0 && osmData[0]?.display_name) {
-        return {
-          isValid: true,
-          normalizedAddress: osmData[0].display_name,
-        };
-      }
-    }
-  } catch (osmErr) {
-    console.warn("[verifyAddressExists] Erreur OSM fallback:", osmErr);
+  if (Array.isArray(osmData) && osmData.length > 0 && osmData[0]?.display_name) {
+    return {
+      isValid: true,
+      normalizedAddress: osmData[0].display_name,
+    };
   }
+
+  // OpenStreetMap n'a pas répondu : impossible de conclure, le serveur revalidera
+  if (osmData === null) return acceptUnverified(clean);
 
   // Si aucun service n'a reconnu l'endroit
   return {

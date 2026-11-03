@@ -6,25 +6,42 @@ import Navbar from '../components/Navbar'
 import Footer from '../components/Footer'
 import BottomNavWrapper from '../components/BottomNavWrapper'
 import KeyboardViewportHelper from '../components/KeyboardViewportHelper'
+import NetworkStatusBanner from '../components/NetworkStatusBanner'
+import { serializeJsonLd, jsonLdGraph } from '@/lib/jsonLd'
+import {
+  CONTACT_EMAIL,
+  SITE_DESCRIPTION,
+  SITE_LOCALE,
+  SITE_NAME,
+  SITE_TITLE,
+  SITE_URL,
+  THEME_COLOR,
+  absoluteUrl,
+} from '@/lib/site'
 
 const inter = Inter({ subsets: ['latin'] })
 
+// Pas de maximumScale : bloquer le zoom gêne l'accessibilité (WCAG 1.4.4)
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
-  maximumScale: 1,
   viewportFit: 'cover',
   interactiveWidget: 'resizes-content',
+  themeColor: THEME_COLOR,
 }
 
+// Valeurs par défaut du site. Les pages publiques définissent leurs propres canonical et Open Graph
+// (src/lib/site.ts) : aucune URL ici, sinon toutes les pages hériteraient de celle de l'accueil.
+// Icônes : fichiers src/app/icon.png et src/app/apple-icon.png ; image de partage :
+// src/app/opengraph-image.tsx ; manifeste : src/app/manifest.ts.
 export const metadata: Metadata = {
-  metadataBase: new URL('https://dabari.app'),
+  metadataBase: new URL(SITE_URL),
   title: {
-    default: 'Dabari - Plateforme Diaspora Africaine | Traiteurs & GP Sécurisé',
-    template: '%s | Dabari',
+    default: SITE_TITLE,
+    template: `%s | ${SITE_NAME}`,
   },
-  description:
-    'La plateforme de référence pour la diaspora africaine : commandez auprès des meilleurs traiteurs traditionnels et expédiez vos colis en toute sécurité avec nos voyageurs GP certifiés.',
+  description: SITE_DESCRIPTION,
+  applicationName: SITE_NAME,
   keywords: [
     'Dabari',
     'traiteur africain',
@@ -39,37 +56,29 @@ export const metadata: Metadata = {
     'livraison plats africains',
     'sequestre securise colis',
   ],
-  authors: [{ name: 'Dabari' }],
-  creator: 'Dabari',
-  publisher: 'Dabari',
+  authors: [{ name: SITE_NAME }],
+  creator: SITE_NAME,
+  publisher: SITE_NAME,
   formatDetection: {
     email: false,
     address: false,
     telephone: false,
   },
+  appleWebApp: {
+    capable: true,
+    title: SITE_NAME,
+    statusBarStyle: 'default',
+  },
   openGraph: {
     type: 'website',
-    locale: 'fr_FR',
-    url: 'https://dabari.app',
-    siteName: 'Dabari',
-    title: 'Dabari - Plateforme Diaspora Africaine | Traiteurs & GP Sécurisé',
+    locale: SITE_LOCALE,
+    siteName: SITE_NAME,
+    title: SITE_TITLE,
     description:
       'Traiteurs d\'exception et transport de colis GP de confiance pour la diaspora africaine. Paiement sous séquestre sécurisé.',
-    images: [
-      {
-        url: '/icon.png',
-        width: 512,
-        height: 512,
-        alt: 'Dabari - Plateforme Diaspora Africaine',
-      },
-    ],
   },
   twitter: {
     card: 'summary_large_image',
-    title: 'Dabari - Plateforme Diaspora Africaine',
-    description:
-      'Traiteurs d\'exception et transport de colis GP de confiance pour la diaspora africaine.',
-    images: ['/icon.png'],
   },
   robots: {
     index: true,
@@ -82,11 +91,35 @@ export const metadata: Metadata = {
       'max-snippet': -1,
     },
   },
-  icons: {
-    icon: '/icon.png',
-    apple: '/icon.png',
-  },
 }
+
+const organizationId = `${SITE_URL}/#organization`
+
+const siteJsonLd = jsonLdGraph(
+  {
+    '@type': 'Organization',
+    '@id': organizationId,
+    name: SITE_NAME,
+    url: SITE_URL,
+    logo: absoluteUrl('/icon.png'),
+    description: SITE_DESCRIPTION,
+    email: CONTACT_EMAIL,
+    contactPoint: {
+      '@type': 'ContactPoint',
+      contactType: 'customer service',
+      email: CONTACT_EMAIL,
+      availableLanguage: ['French'],
+    },
+  },
+  {
+    '@type': 'WebSite',
+    '@id': `${SITE_URL}/#website`,
+    url: SITE_URL,
+    name: SITE_NAME,
+    inLanguage: 'fr-FR',
+    publisher: { '@id': organizationId },
+  },
+)
 
 export default function RootLayout({
   children,
@@ -96,9 +129,6 @@ export default function RootLayout({
   return (
     <html lang="fr" className="scroll-smooth min-h-full">
       <head>
-        <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
-        <meta name="theme-color" content="#1D6B45" />
-        <meta name="apple-mobile-web-app-capable" content="yes" />
         <Script
           id="iframe-buster"
           strategy="beforeInteractive"
@@ -108,46 +138,15 @@ export default function RootLayout({
         />
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{
-            __html: JSON.stringify({
-              '@context': 'https://schema.org',
-              '@graph': [
-                {
-                  '@type': 'Organization',
-                  '@id': 'https://dabari.app/#organization',
-                  name: 'Dabari',
-                  url: 'https://dabari.app',
-                  logo: 'https://dabari.app/icon.png',
-                  description:
-                    'La plateforme de référence pour la diaspora africaine : commandez auprès des meilleurs traiteurs traditionnels et expédiez vos colis en toute sécurité avec nos voyageurs GP certifiés.',
-                  contactPoint: {
-                    '@type': 'ContactPoint',
-                    contactType: 'customer service',
-                    availableLanguage: ['French', 'English'],
-                  },
-                },
-                {
-                  '@type': 'WebSite',
-                  '@id': 'https://dabari.app/#website',
-                  url: 'https://dabari.app',
-                  name: 'Dabari',
-                  publisher: {
-                    '@id': 'https://dabari.app/#organization',
-                  },
-                  potentialAction: {
-                    '@type': 'SearchAction',
-                    target: 'https://dabari.app/traiteur?search={search_term_string}',
-                    'query-input': 'required name=search_term_string',
-                  },
-                },
-              ],
-            }),
-          }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(siteJsonLd) }}
         />
       </head>
       <body
         className={`${inter.className} min-h-screen flex flex-col bg-slate-50 text-slate-900 antialiased overflow-x-clip max-w-full selection:bg-[#1D6B45]/20 selection:text-[#1D6B45]`}
       >
+        {/* Bandeau hors ligne / connexion rétablie */}
+        <NetworkStatusBanner />
+
         {/* Navigation supérieure (Desktop & Mobile) */}
         <Navbar />
 

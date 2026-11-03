@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -14,8 +14,8 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { CartItem } from "../../utils/types/traiteur";
-import { deleteSecureToken, getSecureToken } from "../../utils/storage";
-import { apiFetch } from "../../utils/api";
+import { CART_STORAGE_KEY, deleteSecureToken, getSecureToken } from "../../utils/storage";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
@@ -27,6 +27,21 @@ if (Platform.OS !== "web") {
     DateTimePicker = null;
   }
 }
+
+/** Vrai si l'élément relu du stockage a bien la forme d'une ligne de panier. */
+const isValidCartItem = (item: unknown): item is CartItem => {
+  const line = item as Partial<CartItem> | null;
+  return Boolean(
+    line &&
+      typeof line === "object" &&
+      line.dish &&
+      typeof line.dish.id === "string" &&
+      Number.isFinite(Number(line.dish.price)) &&
+      typeof line.quantity === "number" &&
+      line.quantity > 0 &&
+      typeof line.traiteur_id === "string",
+  );
+};
 
 export default function CommanderScreen() {
   const router = useRouter();
@@ -45,6 +60,10 @@ export default function CommanderScreen() {
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Panier relu du stockage mais inexploitable (données corrompues) : il est vidé et signalé
+  const [cartError, setCartError] = useState<string | null>(null);
+  // Verrou synchrone contre la double soumission (l'état `loading` n'est pas encore à jour au 2e appui)
+  const submittingRef = useRef(false);
 
   // Calendrier & Horloge
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
@@ -132,13 +151,33 @@ export default function CommanderScreen() {
         router.push("/accueil");
         return;
       }
-      const carts = await getSecureToken("dabari_cart");
+      const carts = await getSecureToken(CART_STORAGE_KEY);
       if (!carts) {
         router.push("/accueil");
         return;
       }
       setIsLoggedIn(true);
-      const data = JSON.parse(carts);
+      let data: CartItem[] | null = null;
+      try {
+        const parsed: unknown = JSON.parse(carts);
+        if (Array.isArray(parsed) && parsed.every(isValidCartItem)) {
+          data = parsed;
+        }
+      } catch {
+        data = null;
+      }
+      if (!data) {
+        // Panier illisible : on le vide pour ne pas bloquer les prochaines commandes
+        await deleteSecureToken(CART_STORAGE_KEY);
+        setCartError(
+          "Votre panier n'a pas pu être relu et a été vidé. Ajoutez de nouveau vos plats depuis la page du traiteur.",
+        );
+        return;
+      }
+      if (data.length === 0) {
+        router.push("/accueil");
+        return;
+      }
       setCart(data);
     };
     load();
@@ -173,7 +212,8 @@ export default function CommanderScreen() {
   };
 
   const onSubmit = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
@@ -190,10 +230,11 @@ export default function CommanderScreen() {
         const scheduled = new Date(y, m - 1, d, hh, mm, 0);
         if (scheduled.getTime() < Date.now()) {
           setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
-          setLoading(false);
           return;
         }
       }
+      // Corps déterministe (aucune valeur générée ici) : relancer la même commande après une
+      // coupure renvoie le même corps, donc la même clé d'idempotence, sans créer de doublon
       const formattedDate = deliveryTime.includes(":")
         ? `${deliveryDate}T${deliveryTime}:00`
         : `${deliveryDate}T12:00:00`;
@@ -213,23 +254,46 @@ export default function CommanderScreen() {
           })),
         }),
       });
-      const dataR = await response.json();
+      // Le statut fait foi : une réponse 2xx au corps illisible (coupure) reste une commande créée
+      const dataR = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(dataR.message || "Erreur dans la commande du panier");
-        setLoading(false);
+        // Saisie et panier conservés : l'utilisateur peut corriger ou relancer
+        setError(getApiErrorMessage(dataR, "Erreur dans la commande du panier"));
         return;
       }
 
-      await deleteSecureToken("dabari_cart");
+      // Le panier n'est vidé qu'une fois la commande enregistrée
+      await deleteSecureToken(CART_STORAGE_KEY);
       setSuccess(true);
     } catch (e: unknown) {
-      const err = e as { message?: string };
-      console.error("Erreur commande:", err);
-      setError(err?.message || "Une erreur est survenue. Réessaie.");
+      console.error("Erreur commande:", e);
+      setError(getErrorMessage(e, "Une erreur est survenue. Réessaie."));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
+
+  if (cartError) {
+    return (
+      <SafeAreaView style={{ flex: 1, backgroundColor: "#F3F4F6" }}>
+        <View style={styles.successContainer}>
+          <View style={[styles.successIconCircle, { backgroundColor: "#FEE2E2" }]}>
+            <Ionicons name="cart-outline" size={56} color="#B91C1C" />
+          </View>
+          <Text style={styles.successTitle}>Panier indisponible</Text>
+          <Text style={styles.successDesc}>{cartError}</Text>
+
+          <TouchableOpacity
+            style={styles.successHomeBtn}
+            onPress={() => router.replace("/traiteur")}
+          >
+            <Text style={styles.successHomeBtnText}>Voir les traiteurs</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
 
   if (!isLoggedIn) {
     return (
@@ -271,7 +335,7 @@ export default function CommanderScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#165034" />
+        <StatusBar barStyle="light-content" />
 
         {/* Top Header Card (Gradient Vert) */}
         <View style={styles.headerCard}>

@@ -1,4 +1,6 @@
 import nodemailer from "nodemailer";
+import type { Transporter } from "nodemailer";
+import { isSyntheticEmail, normalizeEmail } from "../utils/validation";
 
 interface SendEmailParams {
   to: string;
@@ -18,13 +20,20 @@ export const escapeHtml = (str?: string | number | null): string => {
     .replace(/'/g, "&#039;");
 };
 
+/** Adresse masquée pour les journaux (« a***@domaine.fr ») : jamais d'adresse complète dans les logs. */
+const maskEmail = (email: string): string => {
+  const at = email.lastIndexOf("@");
+  if (at <= 0) return "***";
+  return `${email.charAt(0)}***@${email.slice(at + 1)}`;
+};
+
 export const sanitizeDigits = (str?: string | null): string => {
   if (!str) return "";
   return str.replace(/\D/g, "");
 };
 
-let testAccountTransporter: nodemailer.Transporter | null = null;
-let productionTransporter: nodemailer.Transporter | null = null;
+let testAccountTransporter: Transporter | null = null;
+let productionTransporter: Transporter | null = null;
 
 const getTransporter = async () => {
   const host = process.env.SMTP_HOST || "ssl0.ovh.net";
@@ -35,6 +44,11 @@ const getTransporter = async () => {
   const isDummyPass = !pass || pass === "votre_mot_de_passe_smtp";
 
   if (isDummyPass) {
+    // En production, jamais de bascule vers Ethereal : les codes de vérification / réinitialisation
+    // finiraient dans les logs (lien de prévisualisation) au lieu de la boîte mail de l'utilisateur.
+    if (process.env.NODE_ENV === "production") {
+      throw new Error("SMTP non configuré (SMTP_PASS manquant) : envoi d'e-mail impossible en production.");
+    }
     if (!testAccountTransporter) {
       const testAccount = await nodemailer.createTestAccount();
       testAccountTransporter = nodemailer.createTransport({
@@ -59,8 +73,10 @@ const getTransporter = async () => {
         user,
         pass,
       },
+      // Certificat SMTP toujours vérifié (protège les identifiants SMTP d'une interception) ;
+      // désactivable uniquement de façon explicite pour un serveur de test local.
       tls: {
-        rejectUnauthorized: process.env.NODE_ENV === "production",
+        rejectUnauthorized: process.env.SMTP_ALLOW_INVALID_CERT !== "true",
       },
     });
   }
@@ -72,13 +88,20 @@ const getTransporter = async () => {
 };
 
 export const sendEmail = async ({ to, subject, html }: SendEmailParams) => {
+  // Un seul destinataire valide (pas de liste "a@x.fr, b@y.fr" détournable en relais de spam) et
+  // jamais d'adresse technique @dabari.app des comptes téléphone (aucune boîte mail réelle derrière).
+  const recipient = normalizeEmail(to);
+  if (!recipient || isSyntheticEmail(recipient)) {
+    return { success: false, skipped: true };
+  }
+
   try {
     const { transporter, isEthereal } = await getTransporter();
     const from = process.env.SMTP_FROM || '"Dabari" <contact@dabari.app>';
 
     const info = await transporter.sendMail({
       from,
-      to,
+      to: recipient,
       subject,
       html,
     });
@@ -86,7 +109,7 @@ export const sendEmail = async ({ to, subject, html }: SendEmailParams) => {
     if (isEthereal) {
       const previewUrl = nodemailer.getTestMessageUrl(info);
       console.log("\n=======================================================");
-      console.log(`[E-MAIL SIMULATION ETHEREAL] À: ${to}`);
+      console.log(`[E-MAIL SIMULATION ETHEREAL] À: ${maskEmail(recipient)}`);
       console.log(`[SUJET] ${subject}`);
       console.log(`🔗 LIEN DE PRÉVISUALISATION VISUELLE :`);
       console.log(`${previewUrl}`);
@@ -94,10 +117,16 @@ export const sendEmail = async ({ to, subject, html }: SendEmailParams) => {
       return { success: true, simulated: true, previewUrl };
     }
 
-    console.log(`[EMAIL ENVOYÉ] ID: ${info.messageId} | À: ${to}`);
+    console.log(`[EMAIL ENVOYÉ] ID: ${info.messageId} | À: ${maskEmail(recipient)}`);
     return { success: true, messageId: info.messageId };
   } catch (error) {
-    console.error("[EMAIL ERREUR] Échec d'envoi d'e-mail:", error);
+    // Les erreurs SMTP citent souvent l'adresse refusée : seuls le code et le message masqué sont journalisés
+    const err = error as { code?: unknown; responseCode?: unknown; message?: unknown };
+    const details = `${err?.code ?? ""} ${err?.responseCode ?? ""} ${typeof err?.message === "string" ? err.message : ""}`;
+    console.error(
+      `[EMAIL ERREUR] Échec d'envoi d'e-mail à ${maskEmail(recipient)} :`,
+      details.replace(/[^\s<>"'(),;:]+@[^\s<>"'(),;:]+/g, (address) => maskEmail(address)).trim(),
+    );
     return { success: false, error };
   }
 };
@@ -284,7 +313,7 @@ export const sendOrderNotificationToClientMail = async (data: {
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
-            ${title}
+            ${escapeHtml(title)}
           </p>
 
           <div style="background-color: #FAF7F2; border-left: 4px solid ${isRefused ? '#C62828' : '#1D6B45'}; border-radius: 8px; padding: 18px; margin: 20px 0;">
@@ -453,7 +482,7 @@ export const sendGpRequestStatusToSenderMail = async (data: {
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
-            ${title}
+            ${escapeHtml(title)}
           </p>
 
           <div style="background-color: #FAF7F2; border-left: 4px solid ${isRefused ? '#C62828' : '#1D6B45'}; border-radius: 8px; padding: 18px; margin: 20px 0;">
@@ -512,7 +541,7 @@ export const sendEmailVerificationCodeMail = async (data: {
         
         <div style="padding: 30px 24px; text-align: center;">
           <h2 style="color: #1A202C; margin-top: 0; font-size: 22px;">
-            Bienvenue sur Dabari${data.name ? `, ${data.name}` : ""} !
+            Bienvenue sur Dabari${data.name ? `, ${escapeHtml(data.name)}` : ""} !
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6; max-width: 480px; margin: 0 auto 20px auto;">

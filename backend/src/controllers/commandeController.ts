@@ -1,9 +1,18 @@
 import { Request, Response } from "express";
 import {
+  getPublicErrorMessage,
+  isOptionalTextWithin,
+  parseStrictBoolean,
+  sendErrorResponse,
+} from "../utils/validation";
+import {
   getAuthUserId,
   isUserAdmin,
   isValidUUID,
+  ACOMPTE_MAX_POURCENTAGE,
+  ACOMPTE_TYPES,
   COMMANDE_TRAITEUR_STATUS,
+  DevisConditionsInput,
   ORDER_PLAT_STATUS,
   GP_REQUEST_STATUS,
 } from "../utils/types";
@@ -97,6 +106,10 @@ export const updateCommandeTraiteurStatusController = async (
       });
     }
 
+    if (!isOptionalTextWithin(message_traiteur, 1000)) {
+      return res.status(400).json({ success: false, error: "Le message ne doit pas dépasser 1 000 caractères." });
+    }
+
     const commande = await updateCommandeTraiteurStatus(
       id,
       statut,
@@ -112,7 +125,7 @@ export const updateCommandeTraiteurStatusController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateCommandeTraiteurStatusController:", error);
-    res.status(400).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -142,6 +155,10 @@ export const updateOrderPlatStatusController = async (
       });
     }
 
+    if (!isOptionalTextWithin(message, 1000) || !isOptionalTextWithin(notes, 1000)) {
+      return res.status(400).json({ success: false, error: "Le message ne doit pas dépasser 1 000 caractères." });
+    }
+
     const order = await updateOrderPlatStatus(
       id,
       status,
@@ -157,7 +174,7 @@ export const updateOrderPlatStatusController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateOrderPlatStatusController:", error);
-    res.status(400).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -187,6 +204,10 @@ export const updateGpRequestStatusController = async (
       });
     }
 
+    if (!isOptionalTextWithin(message, 1000)) {
+      return res.status(400).json({ success: false, error: "Le message ne doit pas dépasser 1 000 caractères." });
+    }
+
     const request = await updateGpRequestStatus(
       id,
       status,
@@ -202,7 +223,7 @@ export const updateGpRequestStatusController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateGpRequestStatusController:", error);
-    res.status(400).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -219,6 +240,10 @@ export const updateGpDelayController = async (req: Request, res: Response) => {
 
     if (!isValidUUID(id)) {
       return res.status(400).json({ success: false, error: "Identifiant de demande GP invalide." });
+    }
+
+    if (!isOptionalTextWithin(delay_reason, 500)) {
+      return res.status(400).json({ success: false, error: "Le motif du retard ne doit pas dépasser 500 caractères." });
     }
 
     if (!arrival_date) {
@@ -252,7 +277,7 @@ export const updateGpDelayController = async (req: Request, res: Response) => {
     console.error("Erreur dans updateGpDelayController:", error);
     res.status(400).json({
       success: false,
-      error: error.message || "Erreur lors de l'enregistrement du retard.",
+      error: getPublicErrorMessage(error, "Erreur lors de l'enregistrement du retard."),
     });
   }
 };
@@ -282,10 +307,7 @@ export const updateClientCommandeTraiteurController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateClientCommandeTraiteurController:", error);
-    res.status(400).json({
-      success: false,
-      error: error.message || "Erreur lors de la modification.",
-    });
+    sendErrorResponse(res, error, "Erreur lors de la modification.");
   }
 };
 
@@ -314,10 +336,7 @@ export const updateClientOrderPlatController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateClientOrderPlatController:", error);
-    res.status(400).json({
-      success: false,
-      error: error.message || "Erreur lors de la modification.",
-    });
+    sendErrorResponse(res, error, "Erreur lors de la modification.");
   }
 };
 
@@ -346,10 +365,7 @@ export const updateClientGpRequestController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateClientGpRequestController:", error);
-    res.status(400).json({
-      success: false,
-      error: error.message || "Erreur lors de la modification.",
-    });
+    sendErrorResponse(res, error, "Erreur lors de la modification.");
   }
 };
 
@@ -385,10 +401,7 @@ export const cancelClientOrderController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans cancelClientOrderController:", error);
-    res.status(400).json({
-      success: false,
-      error: error.message || "Erreur lors de l'annulation.",
-    });
+    sendErrorResponse(res, error, "Erreur lors de l'annulation.");
   }
 };
 
@@ -476,6 +489,67 @@ const mapDevisErrorToStatus = (error: any): number => {
   return 400;
 };
 
+/** Erreurs des actions de devis : statut et code d'une HttpError (409...), sinon déduits du message. */
+const sendDevisError = (res: Response, error: unknown, fallback: string) =>
+  sendErrorResponse(res, error, fallback, mapDevisErrorToStatus(error));
+
+const DEVIS_TEXT_MAX_LENGTH = 3000;
+
+/**
+ * Conditions envoyées par le traiteur (JSON sérialisé, ou texte libre des anciennes versions) :
+ * seuls le texte, le type et le pourcentage d'acompte sont retenus, le reste est ignoré.
+ */
+const parseDevisConditionsInput = (raw: string): { value?: DevisConditionsInput; error?: string } => {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{")) {
+    return trimmed.length > DEVIS_TEXT_MAX_LENGTH
+      ? { error: "Le texte des conditions ne doit pas dépasser 3 000 caractères." }
+      : { value: { texte: trimmed } };
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { error: "Les conditions du devis sont illisibles." };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { error: "Les conditions du devis sont illisibles." };
+  }
+
+  const value: DevisConditionsInput = {};
+  if (parsed.texte !== undefined && parsed.texte !== null) {
+    if (typeof parsed.texte !== "string" || parsed.texte.length > DEVIS_TEXT_MAX_LENGTH) {
+      return { error: "Le texte des conditions doit être un texte de 3 000 caractères maximum." };
+    }
+    value.texte = parsed.texte.trim();
+  }
+  if (parsed.acompte_type !== undefined && parsed.acompte_type !== null) {
+    if (!ACOMPTE_TYPES.includes(parsed.acompte_type)) {
+      return { error: "Type d'acompte invalide (aucun, obligatoire ou optionnel)." };
+    }
+    value.acompte_type = parsed.acompte_type;
+  }
+  // Le pourcentage est ignoré (forcé à 0) quand aucun acompte n'est demandé
+  const rawPourcentage = parsed.acompte_pourcentage;
+  if (value.acompte_type !== "aucun" && rawPourcentage !== undefined && rawPourcentage !== null && rawPourcentage !== "") {
+    const pourcentage =
+      typeof rawPourcentage === "number"
+        ? rawPourcentage
+        : typeof rawPourcentage === "string"
+          ? Number(rawPourcentage.trim().replace(",", "."))
+          : NaN;
+    if (!Number.isFinite(pourcentage) || pourcentage < 0 || pourcentage > ACOMPTE_MAX_POURCENTAGE) {
+      return { error: `Le pourcentage d'acompte doit être compris entre 0 et ${ACOMPTE_MAX_POURCENTAGE} %.` };
+    }
+    value.acompte_pourcentage = pourcentage;
+  }
+  return { value };
+};
+
+/** Vrai si la valeur est fournie mais n'est pas une chaîne (tableau, objet, nombre...). */
+const isNonStringValue = (value: unknown) => value !== undefined && value !== null && typeof value !== "string";
+
 export const setupCommandeTraiteurDevisController = async (
   req: Request,
   res: Response,
@@ -494,7 +568,10 @@ export const setupCommandeTraiteurDevisController = async (
     }
 
     const { prix_devis, conditions_devis, auto_sign, traiteur_signature } = req.body;
-    const parsedPrix = parseFloat(String(prix_devis).replace(",", "."));
+    const parsedPrix =
+      typeof prix_devis === "number" || typeof prix_devis === "string"
+        ? parseFloat(String(prix_devis).replace(",", "."))
+        : NaN;
 
     if (isNaN(parsedPrix) || parsedPrix <= 0 || parsedPrix > 1000000) {
       return res.status(400).json({
@@ -503,25 +580,47 @@ export const setupCommandeTraiteurDevisController = async (
       });
     }
 
-    if (conditions_devis && typeof conditions_devis === "string" && conditions_devis.length > 5000) {
+    // Types vérifiés avant les longueurs : un tableau ou un objet n'est jamais accepté comme texte
+    if (isNonStringValue(conditions_devis)) {
+      return res.status(400).json({ success: false, error: "Les conditions du devis doivent être un texte." });
+    }
+    if (isNonStringValue(traiteur_signature)) {
+      return res.status(400).json({ success: false, error: "Le nom du signataire doit être un texte." });
+    }
+
+    if (typeof conditions_devis === "string" && conditions_devis.length > 5000) {
       return res.status(400).json({
         success: false,
         error: "Les conditions du devis ne doivent pas dépasser 5 000 caractères.",
       });
     }
 
-    if (traiteur_signature && typeof traiteur_signature === "string" && traiteur_signature.length > 500) {
+    if (typeof traiteur_signature === "string" && traiteur_signature.length > 500) {
       return res.status(400).json({
         success: false,
         error: "Le nom du signataire ne doit pas dépasser 500 caractères.",
       });
     }
 
+    const autoSign = parseStrictBoolean(auto_sign);
+    if (autoSign === null) {
+      return res.status(400).json({ success: false, error: "Le champ auto_sign doit valoir true ou false." });
+    }
+
+    let conditions: DevisConditionsInput | undefined;
+    if (typeof conditions_devis === "string" && conditions_devis.trim()) {
+      const parsedConditions = parseDevisConditionsInput(conditions_devis);
+      if (parsedConditions.error) {
+        return res.status(400).json({ success: false, error: parsedConditions.error });
+      }
+      conditions = parsedConditions.value;
+    }
+
     const commande = await setupCommandeTraiteurDevis(id, userId, isAdmin, {
       prix_devis: parsedPrix,
-      conditions_devis: conditions_devis ? String(conditions_devis).trim() : undefined,
-      auto_sign: Boolean(auto_sign),
-      traiteur_signature: traiteur_signature ? String(traiteur_signature).trim() : undefined,
+      conditions,
+      auto_sign: autoSign ?? false,
+      traiteur_signature: typeof traiteur_signature === "string" ? traiteur_signature.trim() : undefined,
     });
 
     res.json({
@@ -531,8 +630,7 @@ export const setupCommandeTraiteurDevisController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans setupCommandeTraiteurDevisController:", error);
-    const status = mapDevisErrorToStatus(error);
-    res.status(status).json({ success: false, error: error.message || "Erreur lors de la configuration du devis." });
+    sendDevisError(res, error, "Erreur lors de la configuration du devis.");
   }
 };
 
@@ -554,14 +652,17 @@ export const refuseCommandeTraiteurDevisController = async (
     }
 
     const { motif } = req.body;
-    if (motif && typeof motif === "string" && motif.length > 1000) {
+    if (isNonStringValue(motif)) {
+      return res.status(400).json({ success: false, error: "Le motif du refus doit être un texte." });
+    }
+    if (typeof motif === "string" && motif.length > 1000) {
       return res.status(400).json({
         success: false,
         error: "Le motif du refus ne doit pas dépasser 1 000 caractères.",
       });
     }
 
-    const cleanMotif = motif && typeof motif === "string" ? motif.trim() : undefined;
+    const cleanMotif = typeof motif === "string" && motif.trim() ? motif.trim() : undefined;
     const commande = await refuseCommandeTraiteurDevis(id, userId, isAdmin, cleanMotif);
 
     res.json({
@@ -571,8 +672,7 @@ export const refuseCommandeTraiteurDevisController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans refuseCommandeTraiteurDevisController:", error);
-    const status = mapDevisErrorToStatus(error);
-    res.status(status).json({ success: false, error: error.message || "Erreur lors du refus du devis." });
+    sendDevisError(res, error, "Erreur lors du refus du devis.");
   }
 };
 
@@ -593,16 +693,41 @@ export const signCommandeTraiteurDevisController = async (
       return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
     }
 
-    const { signature } = req.body;
+    const { signature, prix_devis_attendu } = req.body;
     if (!signature || typeof signature !== "string" || !signature.trim()) {
       return res.status(400).json({ success: false, error: "La signature est requise." });
+    }
+
+    // Montant lu par le signataire (facultatif) : la signature est refusée s'il a changé depuis
+    let expectedPrice: number | undefined;
+    if (prix_devis_attendu !== undefined && prix_devis_attendu !== null && prix_devis_attendu !== "") {
+      const parsedExpected =
+        typeof prix_devis_attendu === "number"
+          ? prix_devis_attendu
+          : typeof prix_devis_attendu === "string"
+            ? Number(prix_devis_attendu.trim().replace(",", "."))
+            : NaN;
+      if (!Number.isFinite(parsedExpected) || parsedExpected < 0) {
+        return res.status(400).json({ success: false, error: "Le montant de devis attendu est invalide." });
+      }
+      expectedPrice = parsedExpected;
     }
 
     if (signature.length > 250000) {
       return res.status(400).json({ success: false, error: "La signature transmise est trop volumineuse." });
     }
 
-    const commande = await signCommandeTraiteurDevis(id, userId, isAdmin, signature.trim());
+    // Format attendu : "Nom du signataire" éventuellement suivi de " | " et d'un tracé PNG en data URL
+    const [signerName, ...drawingParts] = signature.split(" | ");
+    const drawing = drawingParts.join(" | ");
+    if (
+      signerName.trim().length > 200 ||
+      (drawing && !/^data:image\/png;base64,[A-Za-z0-9+/=]+$/.test(drawing))
+    ) {
+      return res.status(400).json({ success: false, error: "Format de signature invalide." });
+    }
+
+    const commande = await signCommandeTraiteurDevis(id, userId, isAdmin, signature.trim(), expectedPrice);
 
     res.json({
       success: true,
@@ -611,8 +736,7 @@ export const signCommandeTraiteurDevisController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans signCommandeTraiteurDevisController:", error);
-    const status = mapDevisErrorToStatus(error);
-    res.status(status).json({ success: false, error: error.message || "Erreur lors de la signature du devis." });
+    sendDevisError(res, error, "Erreur lors de la signature du devis.");
   }
 };
 
@@ -633,8 +757,9 @@ export const payerAcompteCommandeTraiteurDevisController = async (
       return res.status(400).json({ success: false, error: "Identifiant de devis invalide." });
     }
 
+    // La référence de transaction éventuellement envoyée (transaction_ref) est ignorée : aucun
+    // paiement réel n'a lieu, la référence est générée par le serveur.
     const rawAction = req.body?.action;
-    const transaction_ref = req.body?.transaction_ref;
     const action =
       typeof rawAction === "string" ? rawAction.trim().toLowerCase() : "";
 
@@ -650,36 +775,30 @@ export const payerAcompteCommandeTraiteurDevisController = async (
       });
     }
 
-    const cleanRef =
-      transaction_ref && typeof transaction_ref === "string"
-        ? transaction_ref.slice(0, 100).trim()
-        : undefined;
-
-    const commande = await payerAcompteCommandeTraiteurDevis(
+    const { commande, outcome } = await payerAcompteCommandeTraiteurDevis(
       id,
       userId,
       isAdmin,
       action,
-      cleanRef,
     );
 
     res.json({
       success: true,
       data: { commande },
       message:
-        action === "verser"
+        outcome === "verse"
           ? "Acompte consigné sous séquestre Dabari avec succès."
-          : action === "refuser_acompte"
+          : outcome === "jour_j"
           ? "Choix de règlement sans acompte enregistré."
-          : "Statut de l'acompte réinitialisé.",
+          : outcome === "annule"
+          ? "Statut de l'acompte réinitialisé."
+          : action === "verser"
+          ? "L'acompte de ce devis est déjà enregistré."
+          : "Aucune modification : ce choix est déjà enregistré.",
     });
   } catch (error: any) {
     console.error("Erreur dans payerAcompteCommandeTraiteurDevisController:", error);
-    const status = mapDevisErrorToStatus(error);
-    res.status(status).json({
-      success: false,
-      error: error.message || "Erreur lors de la gestion de l'acompte.",
-    });
+    sendDevisError(res, error, "Erreur lors de la gestion de l'acompte.");
   }
 };
 

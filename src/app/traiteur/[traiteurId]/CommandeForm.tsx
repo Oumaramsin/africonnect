@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import {
   CheckCircle2,
@@ -13,8 +13,9 @@ import {
   Loader2,
 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
-import { getValidToken, authFetch } from "@/lib/auth";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { hasSession, authFetch, apiErrorMessage, sendErrorMessage } from "@/lib/auth";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
+import { formatWhatsAppUrl } from "@/lib/types/traiteur";
 
 type Props = {
   traiteurId: string;
@@ -51,6 +52,12 @@ export default function CommandeForm({
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [validatingAddress, setValidatingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Erreur d'envoi, affichée dans la modale de confirmation (qui reste ouverte pour réessayer)
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Adresse acceptée sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
   const [form, setForm] = useState<FormState>({
     date_evenement: "",
     nb_personnes: "",
@@ -60,8 +67,7 @@ export default function CommandeForm({
   });
 
   useEffect(() => {
-    const token = getValidToken();
-    setIsLoggedIn(Boolean(token));
+    setIsLoggedIn(hasSession());
   }, []);
 
   const updateField = (field: keyof FormState, value: string) => {
@@ -101,25 +107,32 @@ export default function CommandeForm({
       if (check.normalizedAddress && check.normalizedAddress !== form.adresse.trim()) {
         updateField("adresse", check.normalizedAddress);
       }
+      setAddressUnverified(Boolean(check.unverified));
+      setSubmitError(null);
       setShowConfirmModal(true);
     } catch (err: any) {
       console.warn("Erreur validation adresse:", err);
+      setAddressUnverified(true);
+      setSubmitError(null);
       setShowConfirmModal(true);
     } finally {
       setValidatingAddress(false);
     }
   };
 
+  // Même saisie = même corps : une relance après une coupure réutilise la clé d'idempotence
   const confirmOrder = async () => {
-    setLoading(true);
+    if (submittingRef.current) return;
     setError(null);
-    const token = getValidToken();
-    if (!token) {
+    setSubmitError(null);
+    if (!hasSession()) {
+      setShowConfirmModal(false);
       setError("Session expirée. Veuillez vous reconnecter.");
       setIsLoggedIn(false);
-      setLoading(false);
       return;
     }
+    submittingRef.current = true;
+    setLoading(true);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
       const response = await authFetch(
@@ -141,15 +154,15 @@ export default function CommandeForm({
       );
       const data = await response.json();
       if (!response.ok) {
-        setError(data.error || data.message || "Erreur lors de la demande de devis");
-        setLoading(false);
+        setSubmitError(apiErrorMessage(data, "Erreur lors de la demande de devis"));
         return;
       }
       setShowConfirmModal(false);
       setSuccess(true);
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau");
+    } catch (err: unknown) {
+      setSubmitError(sendErrorMessage(err, "Erreur lors de l'envoi de la demande de devis."));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -181,10 +194,10 @@ export default function CommandeForm({
     }
 
     if (success) {
-      const waNumber = whatsapp
-        ? whatsapp.replace(/\+/g, "").replace(/\s/g, "")
-        : "";
-      const waUrl = `https://wa.me/${waNumber}?text=Bonjour%2C%20je%20viens%20de%20passer%20une%20demande%20de%20devis%20sur%20Dabari.`;
+      const waUrl = formatWhatsAppUrl(
+        whatsapp,
+        "Bonjour, je viens de passer une demande de devis sur Dabari.",
+      );
 
       return (
         <div className="bg-[#E8F5E9] border border-[#1D6B45]/20 rounded-3xl p-6 sm:p-8 text-center shadow-sm">
@@ -198,9 +211,9 @@ export default function CommandeForm({
             {traiteurName} a bien reçu votre demande et vous contactera
             rapidement avec une proposition sur-mesure.
           </p>
-          {whatsapp && (
+          {waUrl && (
             <button
-              onClick={() => window.open(waUrl, "_blank")}
+              onClick={() => window.open(waUrl, "_blank", "noopener,noreferrer")}
               className="inline-flex items-center gap-2 bg-[#25D366] text-white px-5 py-3 rounded-xl font-bold text-sm hover:bg-[#1da851] transition-colors shadow-sm"
             >
               <MessageSquare size={16} /> Contacter sur WhatsApp
@@ -383,6 +396,21 @@ export default function CommandeForm({
                 ?
               </p>
 
+              {addressUnverified && (
+                <p className="-mt-3 mb-4 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                  {UNVERIFIED_ADDRESS_NOTICE}
+                </p>
+              )}
+
+              {submitError && (
+                <div
+                  role="alert"
+                  className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-xl px-3 py-2.5 text-xs font-medium text-left"
+                >
+                  {submitError}
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -396,9 +424,9 @@ export default function CommandeForm({
                   type="button"
                   onClick={confirmOrder}
                   disabled={loading}
-                  className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#0F4A30] transition-colors shadow-md flex items-center justify-center"
+                  className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#0F4A30] transition-colors shadow-md flex items-center justify-center disabled:opacity-60"
                 >
-                  {loading ? "Envoi..." : "Confirmer"}
+                  {loading ? "Envoi..." : submitError ? "Réessayer" : "Confirmer"}
                 </button>
               </div>
             </div>

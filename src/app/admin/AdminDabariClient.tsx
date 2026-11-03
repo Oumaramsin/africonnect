@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   ChefHat,
   Plane,
@@ -24,7 +24,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import Link from "next/link";
-import { decodeToken, authFetch, getValidToken } from "@/lib/auth";
+import { apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
 
 type Profile = {
   id: string;
@@ -101,11 +101,20 @@ const ZONES = [
   "Toulouse",
 ];
 
+// Mot de passe temporaire aléatoire (générateur cryptographique), toujours ≥ 8 caractères
+const generateTempPassword = () => {
+  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = crypto.getRandomValues(new Uint8Array(14));
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("") + "A1!";
+};
+
 export default function AdminDabariClient({
+  currentUserId,
   traiteurs: initialTraiteurs,
   gpListings: initialGpListings,
   profiles: initialProfiles,
 }: {
+  currentUserId: string;
   traiteurs: Traiteur[];
   gpListings: GpListing[];
   profiles: Profile[];
@@ -121,14 +130,14 @@ export default function AdminDabariClient({
   const [tempPassword, setTempPassword] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
 
-  const token = getValidToken();
-  const currentUserId = token ? decodeToken(token)?.userId : null;
-
   const [roleModal, setRoleModal] = useState<{
     profile: Profile;
     targetIsAdmin: boolean;
   } | null>(null);
   const [roleLoading, setRoleLoading] = useState(false);
+  // Mot de passe temporaire de la dernière création restée sans réponse : réutilisé si l'on relance
+  // la même création, pour renvoyer le même corps (clé d'idempotence) et afficher le bon mot de passe
+  const pendingUserRef = useRef<{ form: string; password: string } | null>(null);
 
   // Modal de suppression personnalisé
   const [deleteModal, setDeleteModal] = useState<{
@@ -271,13 +280,18 @@ export default function AdminDabariClient({
       userForm.email ||
       `${userForm.phone.replace(/\+/g, "").replace(/\s/g, "")}@dabari.app`;
 
-    const pwd = Math.random().toString(36).slice(-8) + "A1!";
+    const formKey = JSON.stringify(userForm);
+    const pwd =
+      pendingUserRef.current?.form === formKey
+        ? pendingUserRef.current.password
+        : generateTempPassword();
+    pendingUserRef.current = { form: formKey, password: pwd };
     const nameParts = userForm.full_name.trim().split(" ");
     const firstname = nameParts[0] || userForm.full_name;
     const lastname = nameParts.slice(1).join(" ") || " ";
 
     try {
-      const res = await fetch(
+      const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/auth/register`,
         {
           method: "POST",
@@ -295,10 +309,11 @@ export default function AdminDabariClient({
 
       const data = await res.json();
       if (!res.ok) {
-        setError(data.error || data.message || "Erreur création utilisateur");
+        setError(apiErrorMessage(data, "Erreur création utilisateur"));
         setLoading(false);
         return;
       }
+      pendingUserRef.current = null;
 
       const newProfile: Profile = {
         id: data.user?.id || data.id,
@@ -314,8 +329,7 @@ export default function AdminDabariClient({
       showSuccess(`Utilisateur ${userForm.full_name} créé !`);
       setUserForm({ full_name: "", phone: "", email: "" });
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue.");
+      setError(sendErrorMessage(err, "Une erreur est survenue."));
     } finally {
       setLoading(false);
     }
@@ -350,7 +364,7 @@ export default function AdminDabariClient({
       );
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la création d'un traiteur");
+        setError(apiErrorMessage(data, "Erreur lors de la création d'un traiteur"));
         setLoading(false);
         return;
       }
@@ -635,10 +649,10 @@ export default function AdminDabariClient({
       <div className="bg-gradient-to-r from-[#1D6B45] via-[#165637] to-[#0F4A30] text-white border-b border-emerald-900/30">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-10">
           <Link
-            href="/dashboard"
+            href="/"
             className="inline-flex items-center gap-1.5 text-white/80 hover:text-white text-xs font-semibold mb-4 bg-white/10 px-3.5 py-1.5 rounded-xl backdrop-blur-xs transition-colors"
           >
-            <ArrowLeft size={14} /> Retour au Dashboard
+            <ArrowLeft size={14} /> Retour à l&apos;accueil
           </Link>
 
           <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 pt-2">

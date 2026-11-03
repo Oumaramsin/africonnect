@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -33,8 +33,8 @@ import {
 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
 import Image from "next/image";
-import { getValidToken, removeToken, authFetch } from "@/lib/auth";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { hasSession, authFetch, apiErrorMessage, sendErrorMessage } from "@/lib/auth";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
 
 const schema = z
   .object({
@@ -107,6 +107,15 @@ export default function CommanderPage() {
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [pendingData, setPendingData] = useState<FormData | null>(null);
+  const [validatingAddress, setValidatingAddress] = useState(false);
+  // Adresse acceptée sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Erreur d'envoi, affichée dans la modale de confirmation (qui reste ouverte pour réessayer)
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Identifiant de la commande créée, renvoyé par l'API (numéro affiché au client)
+  const [orderId, setOrderId] = useState<string | null>(null);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
   // Date de livraison par défaut : demain à 12:30
   const defaultDeliveryDate = useMemo(() => {
@@ -178,6 +187,7 @@ export default function CommanderPage() {
   };
 
   const handlePreSubmit = async (data: FormData) => {
+    if (validatingAddress || loading) return;
     // Sécurisation Safari/Mobile : s'assurer que date et heure sont bien peuplées
     const safeData: FormData = {
       ...data,
@@ -185,8 +195,11 @@ export default function CommanderPage() {
       delivery_time: data.delivery_time?.trim() || defaultDeliveryTime,
     };
 
+    let unverified = false;
     if (data.delivery_type === "delivery" && data.delivery_address?.trim()) {
+      setValidatingAddress(true);
       const check = await verifyAddressExists(data.delivery_address.trim());
+      setValidatingAddress(false);
       if (!check.isValid) {
         setError(
           check.error ||
@@ -194,6 +207,7 @@ export default function CommanderPage() {
         );
         return;
       }
+      unverified = Boolean(check.unverified);
       if (
         check.normalizedAddress &&
         check.normalizedAddress !== data.delivery_address.trim()
@@ -214,13 +228,14 @@ export default function CommanderPage() {
     }
 
     setError(null);
+    setSubmitError(null);
+    setAddressUnverified(unverified);
     setPendingData(safeData);
     setShowConfirmModal(true);
   };
 
   useEffect(() => {
-    const token = getValidToken();
-    if (token) {
+    if (hasSession()) {
       setIsLoggedIn(true);
     } else {
       router.push("/login");
@@ -249,10 +264,12 @@ export default function CommanderPage() {
   const totalItems = cart.reduce((sum, i) => sum + i.quantity, 0);
   const traiteurName = cart[0]?.traiteur_name || "Traiteur Dabari";
 
+  // Même commande = même corps : une relance après une coupure réutilise la clé d'idempotence et
+  // l'API renvoie la commande déjà créée au lieu d'en créer une seconde
   const onSubmit = async (data: FormData) => {
-    if (cart.length === 0) return;
-    setLoading(true);
+    if (cart.length === 0 || submittingRef.current) return;
     setError(null);
+    setSubmitError(null);
 
     const safeDate = data.delivery_date?.trim() || defaultDeliveryDate;
     const safeTime = data.delivery_time?.trim() || defaultDeliveryTime;
@@ -262,20 +279,21 @@ export default function CommanderPage() {
     if (!isNaN(sy) && !isNaN(sm) && !isNaN(sd) && !isNaN(shh) && !isNaN(smm)) {
       const scheduled = new Date(sy, sm - 1, sd, shh, smm, 0);
       if (scheduled.getTime() < Date.now()) {
-        setError("L'heure de livraison ne peut pas être antérieure à l'heure actuelle.");
-        setLoading(false);
+        setSubmitError(
+          "L'heure de livraison ne peut pas être antérieure à l'heure actuelle. Modifiez le créneau.",
+        );
         return;
       }
     }
 
-    try {
-      const token = getValidToken();
-      if (!token) {
-        removeToken();
-        router.push("/login");
-        return;
-      }
+    if (!hasSession()) {
+      router.push("/login");
+      return;
+    }
 
+    submittingRef.current = true;
+    setLoading(true);
+    try {
       const apiUrl =
         process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
       const response = await authFetch(`${apiUrl}/traiteur/order`, {
@@ -302,23 +320,24 @@ export default function CommanderPage() {
 
       const dataR = await response.json();
       if (!response.ok) {
-        setError(
-          dataR.error ||
-            dataR.message ||
-            "Erreur lors de la validation de la commande",
+        setSubmitError(
+          apiErrorMessage(dataR, "Erreur lors de la validation de la commande"),
         );
-        setLoading(false);
         return;
       }
 
+      const createdId = dataR.data?.commande?.id;
+      setOrderId(typeof createdId === "string" ? createdId : null);
       localStorage.removeItem("dabari_cart");
       setShowConfirmModal(false);
       setSuccess(true);
     } catch (e: unknown) {
-      const err = e as { message?: string };
-      console.error("Erreur commande:", err);
-      setError(err?.message || "Une erreur est survenue lors de la commande.");
+      console.error("Erreur commande:", e);
+      setSubmitError(
+        sendErrorMessage(e, "Une erreur est survenue lors de la commande."),
+      );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -342,9 +361,11 @@ export default function CommanderPage() {
           <div className="w-20 h-20 bg-[#E8F5E9] text-[#1D6B45] rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xs">
             <CheckCircle2 size={42} />
           </div>
-          <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-[#E8F5E9] text-[#1D6B45] mb-3">
-            Commande n° DAB-{Date.now().toString().slice(-6)}
-          </span>
+          {orderId && (
+            <span className="inline-block px-3 py-1 rounded-full text-xs font-bold bg-[#E8F5E9] text-[#1D6B45] mb-3">
+              Commande n° DAB-{orderId.slice(0, 8).toUpperCase()}
+            </span>
+          )}
           <h2 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-3 tracking-tight">
             Commande validée avec succès !
           </h2>
@@ -955,13 +976,13 @@ export default function CommanderPage() {
                 <button
                   type="submit"
                   form="checkout-form"
-                  disabled={loading || !isFormValid}
+                  disabled={loading || validatingAddress || !isFormValid}
                   className="w-full bg-[#1D6B45] text-white py-4 px-6 rounded-2xl font-bold text-base hover:bg-[#155235] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md hover:shadow-lg cursor-pointer flex items-center justify-center gap-2 group"
                 >
-                  {loading ? (
+                  {loading || validatingAddress ? (
                     <div className="flex items-center gap-2">
                       <div className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Transmission en cours...</span>
+                      <span>{validatingAddress ? "Vérification de l'adresse..." : "Transmission en cours..."}</span>
                     </div>
                   ) : (
                     <>
@@ -995,7 +1016,7 @@ export default function CommanderPage() {
       </div>
 
       {/* Floating Sticky Bar Mobile */}
-      <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
+      <div className="fixed bottom-above-nav inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
         <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
           <div>
             <span className="text-[11px] text-slate-400 block font-medium">
@@ -1008,10 +1029,10 @@ export default function CommanderPage() {
           <button
             type="submit"
             form="checkout-form"
-            disabled={loading || !isFormValid}
+            disabled={loading || validatingAddress || !isFormValid}
             className="flex-1 max-w-[220px] bg-[#1D6B45] text-white py-3.5 px-4 rounded-2xl font-bold text-sm hover:bg-[#155235] transition-all disabled:opacity-40 disabled:cursor-not-allowed shadow-md text-center cursor-pointer flex items-center justify-center gap-1.5"
           >
-            {loading ? (
+            {loading || validatingAddress ? (
               <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
             ) : (
               <span>Valider ({total.toFixed(2)} €)</span>
@@ -1072,12 +1093,28 @@ export default function CommanderPage() {
               </div>
             </div>
 
+            {addressUnverified && pendingData.delivery_type === "delivery" && (
+              <p className="-mt-3 mb-4 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-left">
+                {UNVERIFIED_ADDRESS_NOTICE}
+              </p>
+            )}
+
+            {submitError && (
+              <div
+                role="alert"
+                className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-2xl px-4 py-3 text-xs font-medium flex items-start gap-2 text-left"
+              >
+                <AlertCircle size={16} className="shrink-0 text-red-600 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
                 disabled={loading}
-                className="flex-1 py-3.5 rounded-2xl border border-slate-200 text-slate-700 font-bold text-xs sm:text-sm hover:bg-slate-50 transition-colors cursor-pointer"
+                className="flex-1 py-3.5 rounded-2xl border border-slate-200 text-slate-700 font-bold text-xs sm:text-sm hover:bg-slate-50 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Modifier
               </button>
@@ -1085,9 +1122,9 @@ export default function CommanderPage() {
                 type="button"
                 onClick={() => onSubmit(pendingData)}
                 disabled={loading}
-                className="flex-1 py-3.5 rounded-2xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#155235] transition-all shadow-md flex items-center justify-center cursor-pointer"
+                className="flex-1 py-3.5 rounded-2xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#155235] transition-all shadow-md flex items-center justify-center cursor-pointer disabled:opacity-60"
               >
-                {loading ? "Validation..." : "Oui, commander"}
+                {loading ? "Validation..." : submitError ? "Réessayer" : "Oui, commander"}
               </button>
             </div>
           </div>

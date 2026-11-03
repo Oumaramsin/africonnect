@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useRef, useState, useMemo } from "react";
 import {
   StyleSheet,
   Text,
@@ -17,10 +17,12 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { getSecureToken, saveSecureToken } from "../../../utils/storage";
+import { CART_STORAGE_KEY, getSecureToken, saveSecureToken } from "../../../utils/storage";
 import { CartItem, Dish, Traiteur } from "../../../utils/types/traiteur";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../../../utils/api";
+import { showErrorAlert } from "../../../utils/alerts";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
+import LoadErrorState from "../../../components/LoadErrorState";
 
 function DishCard({
   dish,
@@ -190,44 +192,73 @@ export default function TraiteurDetailScreen() {
 
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
   const [loading, setLoading] = useState(true);
+  // Échec du chargement (connexion ou réponse de l'API) : distinct d'une fiche introuvable (404)
+  const [loadError, setLoadError] = useState<{ message: string; offline: boolean } | null>(null);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [cart, setCart] = useState<CartItem[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [selectedDishModal, setSelectedDishModal] = useState<Dish | null>(null);
+  // Numéro du chargement en cours : la réponse d'un chargement remplacé (autre fiche, écran quitté) est ignorée
+  const loadSeqRef = useRef(0);
 
   // Vérifier la connexion utilisateur
   useEffect(() => {
     (async () => {
-      const token = await getSecureToken("token");
-      setIsLoggedIn(Boolean(token));
+      try {
+        const token = await getSecureToken("token");
+        setIsLoggedIn(Boolean(token));
+      } catch (err) {
+        console.warn("Lecture de la session impossible:", err);
+      }
     })();
   }, []);
 
   // Récupération de la fiche traiteur
-  useEffect(() => {
-    let ignore = false;
-    async function fetchTraiteurData() {
-      setLoading(true);
-      try {
-        const response = await apiFetch(`/traiteur/${traiteurId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (!ignore) {
-            setTraiteur(data.data?.traiteur || null);
-          }
-        }
-      } catch (err) {
-        console.error("Erreur chargement traiteur:", err);
-      } finally {
-        if (!ignore) setLoading(false);
-      }
+  const loadTraiteur = useCallback(async () => {
+    const seq = ++loadSeqRef.current;
+    setLoading(true);
+    setLoadError(null);
+    if (!traiteurId) {
+      setTraiteur(null);
+      setLoading(false);
+      return;
     }
-    fetchTraiteurData();
-    return () => {
-      ignore = true;
-    };
+    try {
+      const response = await apiFetch(`/traiteur/${encodeURIComponent(String(traiteurId))}`);
+      const data = await response.json();
+      if (seq !== loadSeqRef.current) return;
+      if (response.status === 404) {
+        // Seul cas « introuvable » : la fiche n'existe pas (ou plus)
+        setTraiteur(null);
+        return;
+      }
+      if (!response.ok) {
+        setLoadError({
+          message: getApiErrorMessage(data, "Impossible de charger la fiche de ce traiteur."),
+          offline: false,
+        });
+        return;
+      }
+      setTraiteur(data.data?.traiteur || null);
+    } catch (err) {
+      if (seq !== loadSeqRef.current) return;
+      console.error("Erreur chargement traiteur:", err);
+      setLoadError({
+        message: getErrorMessage(err, "Impossible de charger la fiche de ce traiteur."),
+        offline: isNetworkError(err),
+      });
+    } finally {
+      if (seq === loadSeqRef.current) setLoading(false);
+    }
   }, [traiteurId]);
+
+  useEffect(() => {
+    loadTraiteur();
+    return () => {
+      loadSeqRef.current++;
+    };
+  }, [loadTraiteur]);
 
   // Plats disponibles
   const availableDishes = useMemo(() => {
@@ -313,7 +344,17 @@ export default function TraiteurDetailScreen() {
   };
 
   const goToCheckout = async () => {
-    await saveSecureToken("dabari_cart", JSON.stringify(cart));
+    // L'écran de commande relit le panier enregistré : sans lui, la commande serait vide
+    try {
+      await saveSecureToken(CART_STORAGE_KEY, JSON.stringify(cart));
+    } catch (err) {
+      console.error("Erreur enregistrement panier:", err);
+      showErrorAlert(
+        "Panier non enregistré",
+        "Impossible d'enregistrer votre panier sur cet appareil. Veuillez réessayer.",
+      );
+      return;
+    }
     router.push("/traiteur/commander");
   };
 
@@ -346,9 +387,29 @@ export default function TraiteurDetailScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.centerContainer} edges={["top"]}>
-          <StatusBar barStyle="light-content" backgroundColor="#165034" />
+          <StatusBar barStyle="light-content" />
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Chargement du chef traiteur...</Text>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  // Chargement impossible (connexion, serveur) : on propose de réessayer plutôt que « introuvable »
+  if (loadError && !traiteur) {
+    return (
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.centerContainer} edges={["top"]}>
+          <StatusBar barStyle="light-content" />
+          <LoadErrorState
+            title="Impossible de charger ce traiteur"
+            message={loadError.message}
+            offline={loadError.offline}
+            onRetry={loadTraiteur}
+            secondaryLabel="Retour aux traiteurs"
+            onSecondary={() => router.push("/traiteur")}
+            style={styles.loadErrorBox}
+          />
         </SafeAreaView>
       </View>
     );
@@ -358,7 +419,7 @@ export default function TraiteurDetailScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.centerContainer} edges={["top"]}>
-          <StatusBar barStyle="light-content" backgroundColor="#165034" />
+          <StatusBar barStyle="light-content" />
           <Ionicons name="alert-circle-outline" size={48} color="#FFFFFF" />
           <Text style={styles.notFoundTitle}>Traiteur introuvable</Text>
           <TouchableOpacity
@@ -376,7 +437,7 @@ export default function TraiteurDetailScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#165034" />
+        <StatusBar barStyle="light-content" />
 
         <AppKeyboardScrollView
           style={styles.mainScrollView}
@@ -747,6 +808,10 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 16,
     fontWeight: "800",
+  },
+  loadErrorBox: {
+    alignSelf: "stretch",
+    padding: 0,
   },
   backToListBtn: {
     flexDirection: "row",

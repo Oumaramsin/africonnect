@@ -9,6 +9,8 @@ authRouter.post('/resend-code', AuthController.resendCode);
 authRouter.post('/login', AuthController.login);
 authRouter.post('/forgot-password', AuthController.forgotPassword);
 authRouter.post('/reset-password', AuthController.resetPassword);
+authRouter.post('/logout', AuthController.logout);
+authRouter.get('/me', AuthMiddleware.authenticate, AuthController.me);
 authRouter.get('/user/:id', AuthMiddleware.authenticate , AuthController.getUserById);
 authRouter.patch('/:id', AuthMiddleware.authenticate , AuthController.updateUserById);
 authRouter.delete('/:id', AuthMiddleware.authenticate , AuthController.deleteUserById);

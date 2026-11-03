@@ -1,5 +1,5 @@
 import { Response } from "express";
-import { AuthenticatedRequest, getAuthUserId, isUserAdmin, isValidUUID } from "../utils/types";
+import { AuthenticatedRequest, getAuthUserId, isValidUUID } from "../utils/types";
 import {
   getUserNotifications,
   markNotificationAsRead,
@@ -31,8 +31,8 @@ export const markAsRead = async (req: AuthenticatedRequest, res: Response) => {
     if (!userId) {
       return res.status(401).json({ message: "Non autorisé" });
     }
-    if (!id) {
-      return res.status(400).json({ message: "Identifiant manquant" });
+    if (!id || !isValidUUID(id)) {
+      return res.status(400).json({ message: "Identifiant notification manquant ou invalide" });
     }
 
     await markNotificationAsRead(id, userId);
@@ -70,8 +70,7 @@ export const removeNotification = async (req: AuthenticatedRequest, res: Respons
       return res.status(400).json({ message: "Identifiant notification manquant ou invalide" });
     }
 
-    const isAdmin = isUserAdmin(req);
-    const result = await deleteNotification(id, userId, isAdmin);
+    const result = await deleteNotification(id, userId);
     return res.json({ success: true, count: result.count });
   } catch (error) {
     console.error("Erreur suppression notification:", error);
@@ -86,8 +85,7 @@ export const clearNotifications = async (req: AuthenticatedRequest, res: Respons
       return res.status(401).json({ message: "Non autorisé" });
     }
 
-    const isAdmin = isUserAdmin(req);
-    const result = await clearAllNotifications(userId, isAdmin);
+    const result = await clearAllNotifications(userId);
     return res.json({ success: true, count: result.count });
   } catch (error) {
     console.error("Erreur suppression toutes notifications:", error);

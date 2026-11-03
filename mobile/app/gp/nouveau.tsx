@@ -1,4 +1,4 @@
-import React, { useCallback, useMemo, useState } from "react";
+import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
-import { apiFetch } from "../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../utils/api";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "../../components/AddressAutocomplete";
@@ -83,6 +83,9 @@ export default function NouveauGpScreen() {
   const [showSuccessModal, setShowSuccessModal] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [loading, setLoading] = useState(false);
+  // Verrou contre la double publication (un second appui peut précéder le rendu du bouton désactivé)
+  const submittingRef = useRef(false);
+  const [validatingAddresses, setValidatingAddresses] = useState(false);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,17 +101,22 @@ export default function NouveauGpScreen() {
     }, []),
   );
 
+  // La modale reste ouverte pendant la publication : en cas d'échec, le message s'y affiche et
+  // « Réessayer » renvoie exactement la même annonce (même clé d'idempotence, pas de doublon).
   const onSubmit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
 
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
     try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        setShowConfirmModal(false);
+        router.push("/login");
+        return;
+      }
+
       const response = await apiFetch("/gp", {
         method: "POST",
         body: JSON.stringify({
@@ -131,20 +139,20 @@ export default function NouveauGpScreen() {
 
       const dataR = await response.json();
       if (!response.ok) {
-        setError(
-          dataR.error || dataR.message || "Erreur lors de la publication.",
-        );
-        setShowConfirmModal(false);
-        setLoading(false);
+        // Saisie conservée : le message s'affiche dans la modale (et au-dessus du bouton si elle est fermée)
+        setError(getApiErrorMessage(dataR, "Erreur lors de la publication."));
         return;
       }
 
       setShowConfirmModal(false);
       setShowSuccessModal(true);
     } catch (err) {
-      setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
-      setShowConfirmModal(false);
+      // Coupure ou délai dépassé : issue inconnue, la relance renvoie la même annonce sans doublon
+      setError(
+        getErrorMessage(err, "Impossible de contacter le serveur. Vérifiez votre connexion."),
+      );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -296,12 +304,14 @@ export default function NouveauGpScreen() {
   const isKgInvalid = isNaN(kgNum) || kgNum <= 0;
   const isPriceInvalid = isNaN(priceNum) || priceNum <= 0;
 
+  // Un message d'erreur ne bloque pas le bouton : après un échec d'envoi ou une adresse corrigée,
+  // l'utilisateur doit pouvoir relancer (les champs invalides sont vérifiés ci-dessous).
   const isSubmitDisabled =
-    Boolean(error) ||
     Boolean(dateError) ||
     isKgInvalid ||
     isPriceInvalid ||
     loading ||
+    validatingAddresses ||
     !departureCity.trim() ||
     !departureCountry.trim() ||
     !arrivalCity.trim() ||
@@ -370,27 +380,32 @@ export default function NouveauGpScreen() {
       return;
     }
 
-    // Validation des adresses françaises
-    if (departureCountry.trim().toLowerCase() === "france") {
-      const checkPickup = await verifyAddressExists(pickupAddress.trim(), "France");
-      if (!checkPickup.isValid) {
-        setError(
-          checkPickup.error ||
-            "L'adresse de dépôt n'a pas été trouvée en France. Veuillez sélectionner une adresse existante dans les suggestions."
-        );
-        return;
+    // Validation des adresses françaises (quelques secondes sur un réseau lent : bouton désactivé)
+    setValidatingAddresses(true);
+    try {
+      if (departureCountry.trim().toLowerCase() === "france") {
+        const checkPickup = await verifyAddressExists(pickupAddress.trim(), "France");
+        if (!checkPickup.isValid) {
+          setError(
+            checkPickup.error ||
+              "L'adresse de dépôt n'a pas été trouvée en France. Veuillez sélectionner une adresse existante dans les suggestions."
+          );
+          return;
+        }
       }
-    }
 
-    if (arrivalCountry.trim().toLowerCase() === "france") {
-      const checkDropoff = await verifyAddressExists(dropoffAddress.trim(), "France");
-      if (!checkDropoff.isValid) {
-        setError(
-          checkDropoff.error ||
-            "L'adresse de récupération n'a pas été trouvée en France. Veuillez sélectionner une adresse existante dans les suggestions."
-        );
-        return;
+      if (arrivalCountry.trim().toLowerCase() === "france") {
+        const checkDropoff = await verifyAddressExists(dropoffAddress.trim(), "France");
+        if (!checkDropoff.isValid) {
+          setError(
+            checkDropoff.error ||
+              "L'adresse de récupération n'a pas été trouvée en France. Veuillez sélectionner une adresse existante dans les suggestions."
+          );
+          return;
+        }
       }
+    } finally {
+      setValidatingAddresses(false);
     }
 
     setError(null);
@@ -400,7 +415,7 @@ export default function NouveauGpScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         <View style={styles.headerCard}>
           <TouchableOpacity
@@ -1025,8 +1040,14 @@ export default function NouveauGpScreen() {
             disabled={isSubmitDisabled}
             onPress={handlePreSubmit}
           >
-            <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
-            <Text style={styles.submitBtnText}>Publier mon annonce</Text>
+            {validatingAddresses ? (
+              <ActivityIndicator size="small" color="#FFFFFF" />
+            ) : (
+              <Ionicons name="paper-plane" size={18} color="#FFFFFF" />
+            )}
+            <Text style={styles.submitBtnText}>
+              {validatingAddresses ? "Vérification des adresses..." : "Publier mon annonce"}
+            </Text>
           </TouchableOpacity>
         </AppKeyboardScrollView>
 
@@ -1110,7 +1131,9 @@ export default function NouveauGpScreen() {
           transparent
           animationType="fade"
           visible={showConfirmModal}
-          onRequestClose={() => !loading && setShowConfirmModal(false)}
+          onRequestClose={() => {
+            if (!loading) setShowConfirmModal(false);
+          }}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
@@ -1185,18 +1208,28 @@ export default function NouveauGpScreen() {
                 </View>
               </View>
 
+              {/* Échec de la publication : affiché dans la modale, au-dessus des boutons */}
+              {Boolean(error) && (
+                <View style={[styles.errorBanner, styles.modalErrorBanner]}>
+                  <Ionicons name="alert-circle" size={20} color="#B91C1C" />
+                  <Text style={styles.errorBannerText}>{error}</Text>
+                </View>
+              )}
+
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity
-                  style={styles.modalCancelBtn}
+                  style={[styles.modalCancelBtn, loading && styles.modalBtnDisabled]}
                   disabled={loading}
                   onPress={() => setShowConfirmModal(false)}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.modalCancelBtnText}>Annuler</Text>
+                  <Text style={styles.modalCancelBtnText}>
+                    {error ? "Modifier" : "Annuler"}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.modalConfirmBtn}
+                  style={[styles.modalConfirmBtn, loading && styles.modalBtnDisabled]}
                   disabled={loading}
                   onPress={onSubmit}
                   activeOpacity={0.8}
@@ -1204,7 +1237,9 @@ export default function NouveauGpScreen() {
                   {loading ? (
                     <ActivityIndicator size="small" color="#FFFFFF" />
                   ) : (
-                    <Text style={styles.modalConfirmBtnText}>Oui, publier</Text>
+                    <Text style={styles.modalConfirmBtnText}>
+                      {error ? "Réessayer" : "Oui, publier"}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1216,7 +1251,11 @@ export default function NouveauGpScreen() {
           transparent
           animationType="fade"
           visible={showSuccessModal}
-          onRequestClose={() => setShowSuccessModal(false)}
+          onRequestClose={() => {
+            // Fermer la confirmation quitte le formulaire : il ne peut plus être republié par erreur
+            setShowSuccessModal(false);
+            router.replace("/profil/gp");
+          }}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
@@ -1428,6 +1467,13 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#B91C1C",
+  },
+  modalErrorBanner: {
+    width: "100%",
+    marginBottom: 12,
+  },
+  modalBtnDisabled: {
+    opacity: 0.6,
   },
 
   /* Cards Formulaire */

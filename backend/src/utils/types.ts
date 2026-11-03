@@ -6,6 +6,7 @@ export interface AuthUserPayload extends JwtPayload {
   role?: string;
   full_name?: string;
   email?: string;
+  pwd?: string;
 }
 
 export interface AuthenticatedRequest extends Request {
@@ -79,6 +80,19 @@ export interface DevisConditionsMetadata {
   acompte_choix_jour_j?: boolean;
 }
 
+/**
+ * Seuls champs des conditions de devis acceptés du traiteur : le montant de l'acompte est calculé
+ * par le serveur et l'état du règlement (payé, date, référence, choix du jour J) vient de la base.
+ */
+export interface DevisConditionsInput {
+  texte?: string;
+  acompte_type?: "aucun" | "obligatoire" | "optionnel";
+  acompte_pourcentage?: number;
+}
+
+export const ACOMPTE_TYPES = ["aucun", "obligatoire", "optionnel"] as const;
+export const ACOMPTE_MAX_POURCENTAGE = 80;
+
 export const parseDevisConditionsMeta = (
   raw?: string | null,
 ): DevisConditionsMetadata => {
@@ -122,10 +136,11 @@ export const parseDevisConditionsMeta = (
           !isNaN(parsed.acompte_pourcentage)
             ? Math.min(100, Math.max(0, parsed.acompte_pourcentage))
             : 30,
-        acompte_paye: Boolean(parsed.acompte_paye),
-        acompte_paye_at: parsed.acompte_paye_at || null,
-        acompte_transaction_ref: parsed.acompte_transaction_ref || null,
-        acompte_choix_jour_j: Boolean(parsed.acompte_choix_jour_j),
+        acompte_paye: parsed.acompte_paye === true,
+        acompte_paye_at: typeof parsed.acompte_paye_at === "string" ? parsed.acompte_paye_at : null,
+        acompte_transaction_ref:
+          typeof parsed.acompte_transaction_ref === "string" ? parsed.acompte_transaction_ref : null,
+        acompte_choix_jour_j: parsed.acompte_choix_jour_j === true,
       };
     }
   } catch {
@@ -144,8 +159,9 @@ export const serializeDevisConditionsMeta = (
   return JSON.stringify({
     texte: meta.texte || "",
     acompte_type: meta.acompte_type || "optionnel",
-    acompte_montant: meta.acompte_montant || 0,
-    acompte_pourcentage: meta.acompte_pourcentage || 30,
+    acompte_montant: meta.acompte_montant ?? 0,
+    // `??` et non `||` : un acompte de 0 % (type « aucun ») ne doit pas redevenir 30 %
+    acompte_pourcentage: meta.acompte_pourcentage ?? 30,
     acompte_paye: Boolean(meta.acompte_paye),
     acompte_paye_at: meta.acompte_paye_at || null,
     acompte_transaction_ref: meta.acompte_transaction_ref || null,

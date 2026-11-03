@@ -12,30 +12,27 @@
       "barStyle": "light-content",
       "translucent": false
     },
-    "splash": {
-      "image": "./assets/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#FFFFFF"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "com.dabari.app",
       "infoPlist": {
-        "NSCameraUsageDescription": "Dabari utilise votre appareil photo pour vous permettre de photographier vos plats et colis.",
         "NSPhotoLibraryUsageDescription": "Dabari a besoin d'accéder à votre galerie pour importer des photos de vos plats traiteur et annonces GP."
       }
     },
     "android": {
       "softwareKeyboardLayoutMode": "resize",
+      "allowBackup": false,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#FFFFFF"
       },
       "package": "com.dabari.app",
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE"
+        "READ_EXTERNAL_STORAGE"
+      ],
+      "blockedPermissions": [
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.CAMERA"
       ]
     },
     "web": {
@@ -43,17 +40,32 @@
     },
     "plugins": [
       "expo-router",
-      "expo-secure-store",
+      [
+        "expo-secure-store",
+        {
+          "faceIDPermission": false
+        }
+      ],
       "@react-native-community/datetimepicker",
       [
         "expo-image-picker",
         {
           "photosPermission": "Autorisez Dabari à accéder à vos photos pour vos annonces et plats.",
-          "cameraPermission": "Autorisez Dabari à accéder à votre appareil photo."
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ],
       "expo-status-bar",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-font",
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash.png",
+          "resizeMode": "contain",
+          "backgroundColor": "#FFFFFF"
+        }
+      ]
     ]
   }
 }

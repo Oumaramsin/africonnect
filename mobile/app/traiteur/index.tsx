@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback } from "react";
+import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,15 +10,17 @@ import {
   TextInput,
   ActivityIndicator,
   Modal,
-  Alert,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Traiteur, TraiteurRequest } from "../../utils/types/traiteur";
-import { apiFetch } from "../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../../utils/api";
 import { getSecureToken } from "../../utils/storage";
+import { showSuccessAlert } from "../../utils/alerts";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
+import LoadErrorState from "../../components/LoadErrorState";
 
 const CUISINE_FILTERS = [
   "Toutes",
@@ -31,6 +33,32 @@ const CUISINE_FILTERS = [
   "Afrique de l'Ouest",
 ];
 
+/** Échec de chargement affichable : message en français et nature (connexion ou réponse de l'API). */
+type LoadError = { message: string; offline: boolean };
+
+const toLoadError = (err: unknown, fallback: string): LoadError => ({
+  message: getErrorMessage(err, fallback),
+  offline: isNetworkError(err),
+});
+
+/**
+ * Organisateur d'une annonce : l'API ne transmet plus aux traiteurs que « Prénom N. » et la ville
+ * du client (ni nom complet, ni coordonnées) ; tous ces champs peuvent donc manquer.
+ */
+const getClientDisplayName = (req: TraiteurRequest): string =>
+  req.client?.full_name?.trim() || "Organisateur";
+
+/** Initiales affichées dans la pastille (« Awa D. » → « AD »). */
+const getInitials = (name: string): string => {
+  const initials = name
+    .split(/\s+/)
+    .map((word) => word.replace(/[^A-Za-zÀ-ÿ]/g, "").charAt(0))
+    .filter(Boolean)
+    .slice(0, 2)
+    .join("");
+  return (initials || "CL").toUpperCase();
+};
+
 export default function TraiteurScreen() {
   const router = useRouter();
 
@@ -39,6 +67,12 @@ export default function TraiteurScreen() {
   const [requests, setRequests] = useState<TraiteurRequest[]>([]);
   const [loadingTraiteurs, setLoadingTraiteurs] = useState(true);
   const [loadingRequests, setLoadingRequests] = useState(false);
+  // Échecs de chargement ; *Loaded indique qu'une liste a déjà été reçue (elle reste alors affichée)
+  const [traiteursError, setTraiteursError] = useState<LoadError | null>(null);
+  const [requestsError, setRequestsError] = useState<LoadError | null>(null);
+  const [traiteursLoaded, setTraiteursLoaded] = useState(false);
+  const [requestsLoaded, setRequestsLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCuisine, setSelectedCuisine] = useState("Toutes");
   const [showCuisineModal, setShowCuisineModal] = useState(false);
@@ -67,66 +101,134 @@ export default function TraiteurScreen() {
   const [proposedPrice, setProposedPrice] = useState("");
   const [proposalMessage, setProposalMessage] = useState("");
   const [sendingProposal, setSendingProposal] = useState(false);
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  // Verrou synchrone contre le double envoi (double appui avant le nouveau rendu)
+  const sendingProposalRef = useRef(false);
 
-  // Chargement des traiteurs
-  const fetchTraiteurs = useCallback(async () => {
-    setLoadingTraiteurs(true);
+  // Les annonces ne sont proposées qu'aux traiteurs : les autres restent sur la liste des chefs
+  const currentTab = isTraiteurUser ? activeTab : "traiteurs";
+
+  // Chargement des traiteurs (silent : rafraîchissement sans indicateur plein écran)
+  const fetchTraiteurs = useCallback(async (silent = false) => {
+    if (!silent) setLoadingTraiteurs(true);
     try {
       const response = await apiFetch("/traiteur");
-      if (response.ok) {
-        const data = await response.json();
-        setTraiteurs(data.data?.activeTraiteur || []);
+      const data = await response.json();
+      if (!response.ok) {
+        setTraiteursError({
+          message: getApiErrorMessage(data, "Impossible de charger les traiteurs pour le moment."),
+          offline: false,
+        });
+        return;
       }
+      setTraiteurs(data.data?.activeTraiteur || []);
+      setTraiteursLoaded(true);
+      setTraiteursError(null);
     } catch (err) {
       console.error("Erreur chargement traiteurs:", err);
+      setTraiteursError(toLoadError(err, "Impossible de charger les traiteurs pour le moment."));
     } finally {
       setLoadingTraiteurs(false);
     }
   }, []);
 
-  // Chargement des demandes de devis
-  const fetchRequests = useCallback(async () => {
-    setLoadingRequests(true);
+  // Chargement des annonces de devis : réservé aux traiteurs connectés (401/403 pour les autres)
+  const fetchRequests = useCallback(async (silent = false) => {
+    if (!silent) setLoadingRequests(true);
     try {
       const response = await apiFetch("/traiteur/requests");
-      if (response.ok) {
-        const data = await response.json();
-        setRequests(data.data?.requests || []);
+      const data = await response.json();
+      if (response.status === 401 || response.status === 403) {
+        // Plus de profil traiteur (ou session expirée) : la section est simplement masquée
+        setIsTraiteurUser(false);
+        setActiveTab("traiteurs");
+        setRequests([]);
+        setRequestsError(null);
+        return;
       }
+      if (!response.ok) {
+        setRequestsError({
+          message: getApiErrorMessage(data, "Impossible de charger les annonces pour le moment."),
+          offline: false,
+        });
+        return;
+      }
+      setRequests(data.data?.requests || []);
+      setRequestsLoaded(true);
+      setRequestsError(null);
     } catch (err) {
       console.error("Erreur chargement demandes devis:", err);
+      setRequestsError(toLoadError(err, "Impossible de charger les annonces pour le moment."));
     } finally {
       setLoadingRequests(false);
     }
   }, []);
 
-  useEffect(() => {
-    fetchTraiteurs();
-    fetchRequests();
-  }, [fetchTraiteurs, fetchRequests]);
+  // Propositions déjà envoyées par le traiteur (pour ne pas proposer deux fois la même annonce)
+  const fetchSentProposals = useCallback(async () => {
+    try {
+      const propRes = await apiFetch("/traiteur/proposals/me");
+      if (!propRes.ok) return;
+      const propData = await propRes.json();
+      setSentRequestIds((propData.data?.proposals || []).map((p: any) => p.request_id));
+    } catch (err) {
+      // Liste conservée : l'API refuse de toute façon une proposition en double
+      console.warn("Erreur chargement propositions envoyées:", err);
+    }
+  }, []);
 
-  // Détection profil traiteur et propositions déjà envoyées
-  useEffect(() => {
-    (async () => {
+  /**
+   * Profil traiteur de l'utilisateur : seule une réponse de /traiteur/me confirmant le profil ouvre
+   * l'accès aux annonces. Un invité n'appelle jamais /traiteur/requests (un 401 le déconnecterait).
+   */
+  const loadTraiteurAccess = useCallback(
+    async (silent = false) => {
       try {
         const token = await getSecureToken("token");
-        if (!token) return;
+        if (!token) {
+          setIsTraiteurUser(false);
+          return;
+        }
         const meRes = await apiFetch("/traiteur/me");
+        // Réponse inattendue : l'état courant est conservé jusqu'au prochain essai
         if (!meRes.ok) return;
         const meData = await meRes.json();
-        if (meData?.isTraiteur) {
-          setIsTraiteurUser(true);
-          const propRes = await apiFetch("/traiteur/proposals/me");
-          if (propRes.ok) {
-            const propData = await propRes.json();
-            setSentRequestIds((propData.data?.proposals || []).map((p: any) => p.request_id));
-          }
+        if (!meData?.isTraiteur) {
+          setIsTraiteurUser(false);
+          setActiveTab("traiteurs");
+          setRequests([]);
+          return;
         }
-      } catch {
-        // silencieux
+        setIsTraiteurUser(true);
+        await Promise.all([fetchRequests(silent), fetchSentProposals()]);
+      } catch (err) {
+        // Vérification impossible (connexion) : les annonces restent masquées jusqu'au prochain essai
+        console.warn("Vérification du profil traiteur impossible:", err);
       }
-    })();
-  }, []);
+    },
+    [fetchRequests, fetchSentProposals],
+  );
+
+  const loadAll = useCallback(
+    async (silent = false) => {
+      await Promise.all([fetchTraiteurs(silent), loadTraiteurAccess(silent)]);
+    },
+    [fetchTraiteurs, loadTraiteurAccess],
+  );
+
+  useEffect(() => {
+    loadAll();
+  }, [loadAll]);
+
+  // Tirer pour rafraîchir : les listes affichées restent visibles pendant le chargement
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await loadAll(true);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadAll]);
 
   // Filtrage des traiteurs
   const filteredTraiteurs = useMemo(() => {
@@ -154,30 +256,47 @@ export default function TraiteurScreen() {
       const matchesQuery =
         !query ||
         r.title?.toLowerCase().includes(query) ||
-        r.event_type.toLowerCase().includes(query) ||
-        r.location.toLowerCase().includes(query) ||
-        r.food_preferences.toLowerCase().includes(query);
+        r.event_type?.toLowerCase().includes(query) ||
+        r.location?.toLowerCase().includes(query) ||
+        r.client?.city?.toLowerCase().includes(query) ||
+        r.food_preferences?.toLowerCase().includes(query);
 
       return matchesQuery;
     });
   }, [requests, searchQuery]);
 
+  const openProposalModal = (req: TraiteurRequest) => {
+    setProposalError(null);
+    setSelectedRequestForProposal(req);
+  };
+
+  // Fermeture bloquée pendant l'envoi : le résultat doit s'afficher dans la modale
+  const closeProposalModal = () => {
+    if (sendingProposalRef.current) return;
+    setProposalError(null);
+    setSelectedRequestForProposal(null);
+  };
+
   // Envoi d'une proposition tarifaire par un traiteur
   const handleSendProposal = async () => {
-    if (!selectedRequestForProposal) return;
+    if (!selectedRequestForProposal || sendingProposalRef.current) return;
+    setProposalError(null);
     const numPrice = parseFloat(proposedPrice.replace(",", "."));
     if (isNaN(numPrice) || numPrice <= 0) {
-      Alert.alert("Montant invalide", "Veuillez saisir un tarif proposé valide en euros.");
+      setProposalError("Veuillez saisir un tarif proposé valide en euros.");
       return;
     }
     if (!proposalMessage.trim()) {
-      Alert.alert("Message requis", "Veuillez préciser votre offre ou le menu proposé.");
+      setProposalError("Veuillez préciser votre offre ou le menu proposé.");
       return;
     }
 
+    const requestId = selectedRequestForProposal.id;
+    sendingProposalRef.current = true;
     setSendingProposal(true);
     try {
-      const res = await apiFetch(`/traiteur/requests/${selectedRequestForProposal.id}/proposals`, {
+      // Saisie conservée en cas d'échec : une relance renvoie le même corps (même clé d'idempotence)
+      const res = await apiFetch(`/traiteur/requests/${requestId}/proposals`, {
         method: "POST",
         body: JSON.stringify({
           proposed_price: numPrice,
@@ -187,18 +306,21 @@ export default function TraiteurScreen() {
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de l'envoi de la proposition.");
+        // Dont 409 IDEMPOTENCY_IN_PROGRESS : la même proposition est encore en cours de traitement
+        setProposalError(getApiErrorMessage(data, "Erreur lors de l'envoi de la proposition."));
+        return;
       }
 
-      setSentRequestIds((prev) => [...prev, selectedRequestForProposal.id]);
-      Alert.alert("Proposition transmise", "Votre devis a été envoyé à l'organisateur avec succès !");
+      setSentRequestIds((prev) => [...prev, requestId]);
       setSelectedRequestForProposal(null);
       setProposedPrice("");
       setProposalMessage("");
-      fetchRequests();
-    } catch (e: any) {
-      Alert.alert("Erreur", e.message || "Impossible d'envoyer la proposition.");
+      showSuccessAlert("Proposition transmise", "Votre devis a été envoyé à l'organisateur avec succès !");
+      fetchRequests(true);
+    } catch (e) {
+      setProposalError(getErrorMessage(e, "Impossible d'envoyer la proposition."));
     } finally {
+      sendingProposalRef.current = false;
       setSendingProposal(false);
     }
   };
@@ -206,7 +328,7 @@ export default function TraiteurScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── 1. HEADER COMPACT (NAVIGATION, ONGLETS & RECHERCHE) ── */}
         <View style={styles.headerCard}>
@@ -231,38 +353,41 @@ export default function TraiteurScreen() {
           {/* Sélecteur d'Onglets Unifié (comme sur le Web) */}
           <View style={styles.tabBarContainer}>
             <TouchableOpacity
-              style={[styles.tabButton, activeTab === "traiteurs" && styles.tabButtonActive]}
+              style={[styles.tabButton, currentTab === "traiteurs" && styles.tabButtonActive]}
               onPress={() => setActiveTab("traiteurs")}
               activeOpacity={0.85}
             >
               <Ionicons
                 name="restaurant-outline"
                 size={14}
-                color={activeTab === "traiteurs" ? "#0B3B24" : "rgba(255,255,255,0.85)"}
+                color={currentTab === "traiteurs" ? "#0B3B24" : "rgba(255,255,255,0.85)"}
               />
               <Text
-                style={[styles.tabButtonText, activeTab === "traiteurs" && styles.tabButtonTextActive]}
+                style={[styles.tabButtonText, currentTab === "traiteurs" && styles.tabButtonTextActive]}
               >
                 Chefs & Traiteurs ({traiteurs.length})
               </Text>
             </TouchableOpacity>
 
-            <TouchableOpacity
-              style={[styles.tabButton, activeTab === "demandes" && styles.tabButtonActive]}
-              onPress={() => setActiveTab("demandes")}
-              activeOpacity={0.85}
-            >
-              <Ionicons
-                name="document-text-outline"
-                size={14}
-                color={activeTab === "demandes" ? "#0B3B24" : "rgba(255,255,255,0.85)"}
-              />
-              <Text
-                style={[styles.tabButtonText, activeTab === "demandes" && styles.tabButtonTextActive]}
+            {/* Annonces des clients : onglet réservé aux traiteurs (profil vérifié par /traiteur/me) */}
+            {isTraiteurUser && (
+              <TouchableOpacity
+                style={[styles.tabButton, currentTab === "demandes" && styles.tabButtonActive]}
+                onPress={() => setActiveTab("demandes")}
+                activeOpacity={0.85}
               >
-                Annonces de Devis ({requests.length})
-              </Text>
-            </TouchableOpacity>
+                <Ionicons
+                  name="document-text-outline"
+                  size={14}
+                  color={currentTab === "demandes" ? "#0B3B24" : "rgba(255,255,255,0.85)"}
+                />
+                <Text
+                  style={[styles.tabButtonText, currentTab === "demandes" && styles.tabButtonTextActive]}
+                >
+                  Annonces de Devis ({requests.length})
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
 
           {/* ── 2. BARRE DE RECHERCHE & BOUTON FILTRER COMPACTS (1 SEULE LIGNE !) ── */}
@@ -272,7 +397,7 @@ export default function TraiteurScreen() {
               <TextInput
                 style={styles.searchInput}
                 placeholder={
-                  activeTab === "traiteurs"
+                  currentTab === "traiteurs"
                     ? "Rechercher chef, ville, plat..."
                     : "Rechercher événement, ville..."
                 }
@@ -289,7 +414,7 @@ export default function TraiteurScreen() {
               )}
             </View>
 
-            {activeTab === "traiteurs" && (
+            {currentTab === "traiteurs" && (
               <TouchableOpacity
                 style={[styles.filterBtn, selectedCuisine !== "Toutes" && styles.filterBtnActive]}
                 onPress={() => setShowCuisineModal(true)}
@@ -324,6 +449,14 @@ export default function TraiteurScreen() {
           style={styles.mainScrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
           extraScrollHeight={140}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#1D6B45"
+              colors={["#1D6B45"]}
+            />
+          }
         >
           {/* Action Publier une Demande de Devis (Dans le ScrollView pour ne plus saturer l'écran !) */}
           <TouchableOpacity
@@ -358,21 +491,42 @@ export default function TraiteurScreen() {
               <Text style={styles.reassuranceText}>Séquestre Dabari</Text>
             </View>
           </View>
-          {activeTab === "traiteurs" ? (
+
+          {/* Actualisation échouée : la liste déjà chargée reste affichée, avec un message discret */}
+          {currentTab === "traiteurs" && traiteursError && traiteursLoaded && !loadingTraiteurs && (
+            <StaleDataNotice error={traiteursError} onRetry={handleRefresh} retrying={refreshing} />
+          )}
+          {currentTab === "demandes" && requestsError && requestsLoaded && !loadingRequests && (
+            <StaleDataNotice error={requestsError} onRetry={handleRefresh} retrying={refreshing} />
+          )}
+
+          {currentTab === "traiteurs" ? (
             /* ── ONGLET 1 : CHEFS & TRAITEURS ── */
             loadingTraiteurs ? (
               <View style={styles.centerContainer}>
                 <ActivityIndicator size="large" color="#1D6B45" />
                 <Text style={styles.loadingText}>Chargement des chefs partenaires...</Text>
               </View>
+            ) : traiteursError && !traiteursLoaded ? (
+              <LoadErrorState
+                title="Impossible de charger les traiteurs"
+                message={traiteursError.message}
+                offline={traiteursError.offline}
+                onRetry={() => loadAll()}
+                style={styles.loadErrorBox}
+              />
             ) : filteredTraiteurs.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <View style={styles.emptyIconBox}>
                   <Ionicons name="restaurant-outline" size={38} color="#94A3B8" />
                 </View>
-                <Text style={styles.emptyTitle}>Aucun traiteur trouvé</Text>
+                <Text style={styles.emptyTitle}>
+                  {traiteurs.length === 0 ? "Aucun traiteur disponible" : "Aucun traiteur trouvé"}
+                </Text>
                 <Text style={styles.emptySubtitle}>
-                  Aucun traiteur ne correspond à vos critères de recherche.
+                  {traiteurs.length === 0
+                    ? "Aucun chef partenaire n'est disponible pour le moment. Revenez bientôt !"
+                    : "Aucun traiteur ne correspond à vos critères de recherche."}
                 </Text>
                 {(searchQuery.length > 0 || selectedCuisine !== "Toutes") && (
                   <TouchableOpacity
@@ -512,122 +666,137 @@ export default function TraiteurScreen() {
               })
             )
           ) : (
-            /* ── ONGLET 2 : ANNONCES DE DEVIS & ÉVÉNEMENTS ── */
+            /* ── ONGLET 2 : ANNONCES DE DEVIS & ÉVÉNEMENTS (traiteurs uniquement) ── */
             loadingRequests ? (
               <View style={styles.centerContainer}>
                 <ActivityIndicator size="large" color="#1D6B45" />
                 <Text style={styles.loadingText}>Chargement des annonces d'événements...</Text>
               </View>
+            ) : requestsError && !requestsLoaded ? (
+              <LoadErrorState
+                title="Impossible de charger les annonces"
+                message={requestsError.message}
+                offline={requestsError.offline}
+                onRetry={() => fetchRequests()}
+                style={styles.loadErrorBox}
+              />
             ) : filteredRequests.length === 0 ? (
               <View style={styles.emptyContainer}>
                 <View style={styles.emptyIconBox}>
                   <Ionicons name="document-text-outline" size={38} color="#94A3B8" />
                 </View>
-                <Text style={styles.emptyTitle}>Aucune annonce publiée</Text>
-                <Text style={styles.emptySubtitle}>
-                  Soyez le premier à publier une recherche de traiteur pour votre événement !
+                <Text style={styles.emptyTitle}>
+                  {requests.length === 0 ? "Aucune annonce ouverte" : "Aucune annonce trouvée"}
                 </Text>
-                <TouchableOpacity
-                  style={styles.publishFirstBtn}
-                  onPress={() => router.push("/traiteur/demande")}
-                >
-                  <Ionicons name="add-circle-outline" size={16} color="#FFFFFF" />
-                  <Text style={styles.publishFirstBtnText}>Publier ma demande</Text>
-                </TouchableOpacity>
+                <Text style={styles.emptySubtitle}>
+                  {requests.length === 0
+                    ? "Les nouvelles recherches de traiteur publiées par les clients apparaîtront ici."
+                    : "Aucune annonce ne correspond à votre recherche."}
+                </Text>
               </View>
             ) : (
-              filteredRequests.map((req) => (
-                <View key={req.id} style={styles.requestCard}>
-                  {/* Header : Client + Type d'événement */}
-                  <View style={styles.requestCardHeader}>
-                    <View style={styles.clientAvatarBox}>
-                      {req.client?.avatar_url ? (
-                        <Image
-                          source={{ uri: req.client.avatar_url }}
-                          style={styles.clientAvatarImage}
-                        />
-                      ) : (
-                        <Text style={styles.clientAvatarInitials}>
-                          {req.client?.full_name?.slice(0, 2).toUpperCase() || "CL"}
+              filteredRequests.map((req) => {
+                const clientName = getClientDisplayName(req);
+                const eventDate = req.event_date ? new Date(req.event_date) : null;
+                const hasEventDate = Boolean(eventDate && !isNaN(eventDate.getTime()));
+
+                return (
+                  <View key={req.id} style={styles.requestCard}>
+                    {/* Header : Client + Type d'événement */}
+                    <View style={styles.requestCardHeader}>
+                      <View style={styles.clientAvatarBox}>
+                        {req.client?.avatar_url ? (
+                          <Image
+                            source={{ uri: req.client.avatar_url }}
+                            style={styles.clientAvatarImage}
+                          />
+                        ) : (
+                          <Text style={styles.clientAvatarInitials}>{getInitials(clientName)}</Text>
+                        )}
+                      </View>
+
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.requestTitle}>
+                          {req.title || `Événement ${req.event_type || ""}`.trim()}
                         </Text>
+                        <View style={styles.clientSubRow}>
+                          <Text style={styles.requestAuthor}>{clientName}</Text>
+                          <Text style={styles.dotSeparator}>•</Text>
+                          <Ionicons name="location-outline" size={11} color="#64748B" />
+                          <Text style={styles.requestLocationText} numberOfLines={1}>
+                            {req.location || req.client?.city || "Lieu à préciser"}
+                          </Text>
+                        </View>
+                      </View>
+
+                      {Boolean(req.event_type) && (
+                        <View style={styles.eventTypeBadge}>
+                          <Text style={styles.eventTypeBadgeText}>{req.event_type}</Text>
+                        </View>
                       )}
                     </View>
 
-                    <View style={{ flex: 1 }}>
-                      <Text style={styles.requestTitle}>{req.title || `Événement ${req.event_type}`}</Text>
-                      <View style={styles.clientSubRow}>
-                        <Text style={styles.requestAuthor}>
-                          {req.client?.full_name || "Organisateur"}
+                    {/* Informations clés : Date, Nombre de personnes, Budget */}
+                    <View style={styles.requestMetaGrid}>
+                      <View style={styles.requestMetaCol}>
+                        <Ionicons name="calendar-outline" size={13} color="#1D6B45" />
+                        <Text style={styles.requestMetaText}>
+                          {hasEventDate && eventDate
+                            ? eventDate.toLocaleDateString("fr-FR", {
+                                day: "numeric",
+                                month: "short",
+                              })
+                            : "Date à définir"}
                         </Text>
-                        <Text style={styles.dotSeparator}>•</Text>
-                        <Ionicons name="location-outline" size={11} color="#64748B" />
-                        <Text style={styles.requestLocationText} numberOfLines={1}>
-                          {req.location}
+                      </View>
+                      <View style={styles.requestMetaCol}>
+                        <Ionicons name="people-outline" size={13} color="#1D6B45" />
+                        <Text style={styles.requestMetaText}>{req.guest_count || "?"} pers.</Text>
+                      </View>
+                      <View style={styles.requestMetaCol}>
+                        <Ionicons name="cash-outline" size={13} color="#D4870A" />
+                        <Text style={[styles.requestMetaText, { color: "#166534", fontWeight: "800" }]}>
+                          {req.budget ? `${Number(req.budget).toFixed(0)} €` : "À définir"}
                         </Text>
                       </View>
                     </View>
 
-                    <View style={styles.eventTypeBadge}>
-                      <Text style={styles.eventTypeBadgeText}>{req.event_type}</Text>
+                    {/* Description et préférences */}
+                    <View style={styles.requestDetailsBox}>
+                      {Boolean(req.description) && (
+                        <Text style={styles.requestDescText} numberOfLines={2}>
+                          {req.description}
+                        </Text>
+                      )}
+                      {Boolean(req.food_preferences) && (
+                        <View style={styles.requestPrefRow}>
+                          <Ionicons name="restaurant-outline" size={12} color="#64748B" />
+                          <Text style={styles.requestPrefValue} numberOfLines={1}>
+                            Souhaits : {req.food_preferences}
+                          </Text>
+                        </View>
+                      )}
                     </View>
-                  </View>
 
-                  {/* Informations clés : Date, Nombre de personnes, Budget */}
-                  <View style={styles.requestMetaGrid}>
-                    <View style={styles.requestMetaCol}>
-                      <Ionicons name="calendar-outline" size={13} color="#1D6B45" />
-                      <Text style={styles.requestMetaText}>
-                        {new Date(req.event_date).toLocaleDateString("fr-FR", {
-                          day: "numeric",
-                          month: "short",
-                        })}
-                      </Text>
-                    </View>
-                    <View style={styles.requestMetaCol}>
-                      <Ionicons name="people-outline" size={13} color="#1D6B45" />
-                      <Text style={styles.requestMetaText}>{req.guest_count || "?"} pers.</Text>
-                    </View>
-                    <View style={styles.requestMetaCol}>
-                      <Ionicons name="cash-outline" size={13} color="#D4870A" />
-                      <Text style={[styles.requestMetaText, { color: "#166534", fontWeight: "800" }]}>
-                        {req.budget ? `${Number(req.budget).toFixed(0)} €` : "À définir"}
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Description et préférences */}
-                  <View style={styles.requestDetailsBox}>
-                    {Boolean(req.description) && (
-                      <Text style={styles.requestDescText} numberOfLines={2}>
-                        {req.description}
-                      </Text>
+                    {/* Action ou Statut traiteur */}
+                    {sentRequestIds.includes(req.id) ? (
+                      <View style={styles.alreadySentRow}>
+                        <Ionicons name="checkmark-circle" size={15} color="#059669" />
+                        <Text style={styles.alreadySentText}>Votre devis a été transmis à l'organisateur</Text>
+                      </View>
+                    ) : (
+                      <TouchableOpacity
+                        style={styles.proposeBtn}
+                        onPress={() => openProposalModal(req)}
+                        activeOpacity={0.85}
+                      >
+                        <Ionicons name="send" size={13} color="#FFFFFF" />
+                        <Text style={styles.proposeBtnText}>Faire une proposition de devis</Text>
+                      </TouchableOpacity>
                     )}
-                    <View style={styles.requestPrefRow}>
-                      <Ionicons name="restaurant-outline" size={12} color="#64748B" />
-                      <Text style={styles.requestPrefValue} numberOfLines={1}>
-                        Souhaits : {req.food_preferences}
-                      </Text>
-                    </View>
                   </View>
-
-                  {/* Action ou Statut traiteur */}
-                  {sentRequestIds.includes(req.id) ? (
-                    <View style={styles.alreadySentRow}>
-                      <Ionicons name="checkmark-circle" size={15} color="#059669" />
-                      <Text style={styles.alreadySentText}>Votre devis a été transmis à l'organisateur</Text>
-                    </View>
-                  ) : (
-                    <TouchableOpacity
-                      style={styles.proposeBtn}
-                      onPress={() => setSelectedRequestForProposal(req)}
-                      activeOpacity={0.85}
-                    >
-                      <Ionicons name="send" size={13} color="#FFFFFF" />
-                      <Text style={styles.proposeBtnText}>Faire une proposition de devis</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              ))
+                );
+              })
             )
           )}
         </AppKeyboardScrollView>
@@ -638,7 +807,7 @@ export default function TraiteurScreen() {
             transparent
             animationType="slide"
             visible={Boolean(selectedRequestForProposal)}
-            onRequestClose={() => setSelectedRequestForProposal(null)}
+            onRequestClose={closeProposalModal}
           >
             <View style={styles.modalOverlay}>
               <View style={styles.modalCard}>
@@ -646,12 +815,14 @@ export default function TraiteurScreen() {
                   <View>
                     <Text style={styles.modalTitle}>Proposer un Devis</Text>
                     <Text style={styles.modalSubtitle}>
-                      {selectedRequestForProposal.title || `Événement ${selectedRequestForProposal.event_type}`}
+                      {selectedRequestForProposal.title ||
+                        `Événement ${selectedRequestForProposal.event_type || ""}`.trim()}
                     </Text>
                   </View>
                   <TouchableOpacity
-                    style={styles.modalCloseBtn}
-                    onPress={() => setSelectedRequestForProposal(null)}
+                    style={[styles.modalCloseBtn, sendingProposal && styles.btnDisabled]}
+                    onPress={closeProposalModal}
+                    disabled={sendingProposal}
                   >
                     <Ionicons name="close" size={20} color="#64748B" />
                   </TouchableOpacity>
@@ -678,16 +849,25 @@ export default function TraiteurScreen() {
                     onChangeText={setProposalMessage}
                   />
 
+                  {/* Erreur affichée dans la modale (et non derrière elle) ; la saisie est conservée */}
+                  {proposalError && (
+                    <View style={styles.modalErrorBox}>
+                      <Ionicons name="alert-circle-outline" size={16} color="#B91C1C" />
+                      <Text style={styles.modalErrorText}>{proposalError}</Text>
+                    </View>
+                  )}
+
                   <View style={styles.modalActionRow}>
                     <TouchableOpacity
-                      style={styles.modalCancelBtn}
-                      onPress={() => setSelectedRequestForProposal(null)}
+                      style={[styles.modalCancelBtn, sendingProposal && styles.btnDisabled]}
+                      onPress={closeProposalModal}
+                      disabled={sendingProposal}
                     >
                       <Text style={styles.modalCancelBtnText}>Annuler</Text>
                     </TouchableOpacity>
 
                     <TouchableOpacity
-                      style={styles.modalSubmitBtn}
+                      style={[styles.modalSubmitBtn, sendingProposal && styles.btnDisabled]}
                       onPress={handleSendProposal}
                       disabled={sendingProposal}
                     >
@@ -780,6 +960,39 @@ export default function TraiteurScreen() {
           </View>
         </Modal>
       </SafeAreaView>
+    </View>
+  );
+}
+
+/** Message discret : l'actualisation a échoué, la liste déjà chargée reste affichée. */
+function StaleDataNotice({
+  error,
+  onRetry,
+  retrying,
+}: {
+  error: LoadError;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <View style={styles.staleNotice}>
+      <Ionicons
+        name={error.offline ? "cloud-offline-outline" : "alert-circle-outline"}
+        size={16}
+        color="#B45309"
+      />
+      <Text style={styles.staleNoticeText}>Liste non actualisée. {error.message}</Text>
+      <TouchableOpacity
+        onPress={onRetry}
+        disabled={retrying}
+        hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+      >
+        {retrying ? (
+          <ActivityIndicator size="small" color="#B45309" />
+        ) : (
+          <Text style={styles.staleNoticeRetry}>Réessayer</Text>
+        )}
+      </TouchableOpacity>
     </View>
   );
 }
@@ -1147,19 +1360,31 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  publishFirstBtn: {
+  loadErrorBox: {
+    paddingHorizontal: 0,
+    paddingVertical: 24,
+  },
+  staleNotice: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
-    backgroundColor: "#1D6B45",
+    gap: 8,
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FDE68A",
+    borderWidth: 1,
     borderRadius: 12,
-    paddingHorizontal: 16,
+    paddingHorizontal: 12,
     paddingVertical: 10,
-    marginTop: 10,
   },
-  publishFirstBtnText: {
-    color: "#FFFFFF",
+  staleNoticeText: {
+    flex: 1,
     fontSize: 12,
+    color: "#92400E",
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  staleNoticeRetry: {
+    fontSize: 12,
+    color: "#B45309",
     fontWeight: "800",
   },
   traiteurCard: {
@@ -1594,5 +1819,27 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
+  },
+  modalErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+    borderWidth: 1,
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginTop: 6,
+  },
+  modalErrorText: {
+    flex: 1,
+    fontSize: 12,
+    color: "#B91C1C",
+    fontWeight: "600",
+    lineHeight: 16,
+  },
+  btnDisabled: {
+    opacity: 0.6,
   },
 });

@@ -1,47 +1,71 @@
+import crypto from "crypto";
 import bcrypt from "bcryptjs";
-import jwt from "jsonwebtoken";
 import { db as prisma } from "../db";
 import { sendEmail, sendEmailVerificationCodeMail, escapeHtml } from "./emailService";
+import { signToken } from "../utils/jwt";
+import { AttemptLimiter } from "../utils/attemptLimiter";
+import {
+  generateNumericCode,
+  isSyntheticEmail,
+  isValidPassword,
+  PASSWORD_MIN_LENGTH,
+  safeEqual,
+} from "../utils/validation";
+
+const CODE_TTL_MS = 15 * 60 * 1000;
+const MAX_CODE_ATTEMPTS = 5;
+
+// 5 essais de code par compte et par 15 minutes, même si de nouveaux codes sont demandés entre-temps
+// (le compteur n'est remis à zéro qu'après un succès) : la force brute devient impossible même avec plusieurs IP.
+const codeAttempts = new AttemptLimiter(MAX_CODE_ATTEMPTS, CODE_TTL_MS);
+// Verrouillage ciblé des connexions sur 15 minutes : 10 échecs par couple (identifiant, IP), pour
+// qu'un attaquant ne puisse pas bloquer la victime depuis sa propre adresse, et un plafond global
+// de 50 échecs par identifiant contre une attaque distribuée sur de nombreuses IP.
+const LOGIN_WINDOW_MS = 15 * 60 * 1000;
+const loginAttemptsByIp = new AttemptLimiter(10, LOGIN_WINDOW_MS);
+const loginAttemptsGlobal = new AttemptLimiter(50, LOGIN_WINDOW_MS);
+// Un seul e-mail de code par adresse et par minute (anti-bombardement de boîte mail).
+const emailCooldown = new AttemptLimiter(1, 60 * 1000);
+
+// Hash factice comparé quand le compte n'existe pas : temps de réponse identique (anti-énumération).
+const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 10);
+
+const authError = (code: string, customMessage: string) => {
+  const error: any = new Error(code);
+  error.customMessage = customMessage;
+  return error;
+};
 
 class AuthService {
-  static registerUser = async (
-    firstname: string,
-    lastname: string,
-    email?: string,
-    phone?: string,
-    password?: string,
-    address?: string,
-  ) => {
-    const hashedPassword = await bcrypt.hash(password || "", 10);
+  static registerUser = async (data: {
+    firstname: string;
+    lastname: string;
+    email: string | null;
+    phone: string | null;
+    password: string;
+    address?: string;
+  }) => {
+    const hashedPassword = await bcrypt.hash(data.password, 10);
 
-    const isEmailRegistration = Boolean(
-      email &&
-      email.trim() !== "" &&
-      !email.toLowerCase().endsWith("@dabari.app") &&
-      !email.toLowerCase().endsWith("@africonnect.com")
-    );
-    const verifyCode = isEmailRegistration
-      ? Math.floor(100000 + Math.random() * 900000).toString()
-      : null;
-    const verifyExpires = isEmailRegistration
-      ? new Date(Date.now() + 15 * 60 * 1000)
-      : null;
+    const isEmailRegistration = Boolean(data.email && !isSyntheticEmail(data.email));
+    const verifyCode = isEmailRegistration ? generateNumericCode() : null;
+    const verifyExpires = isEmailRegistration ? new Date(Date.now() + CODE_TTL_MS) : null;
 
     const newUser = await prisma.user.create({
       data: {
-        email: email || null,
-        phone: phone || null,
+        email: data.email,
+        phone: data.phone,
         password: hashedPassword,
         is_email_verified: !isEmailRegistration, // true par défaut pour inscription téléphone, false pour email
         email_verify_code: verifyCode,
         email_verify_expires: verifyExpires,
         profile: {
           create: {
-            full_name: `${firstname} ${lastname}`,
-            email: email || null,
-            phone: phone || null,
-            whatsapp: phone || null, // whatsapp par défaut sur le numéro de téléphone
-            city: address,
+            full_name: `${data.firstname} ${data.lastname}`.trim(),
+            email: data.email,
+            phone: data.phone,
+            whatsapp: data.phone, // whatsapp par défaut sur le numéro de téléphone
+            city: data.address,
           },
         },
       },
@@ -50,11 +74,12 @@ class AuthService {
       },
     });
 
-    if (isEmailRegistration && email && verifyCode) {
+    if (isEmailRegistration && data.email && verifyCode) {
+      emailCooldown.hit(`verify:${data.email}`);
       sendEmailVerificationCodeMail({
-        to: email,
+        to: data.email,
         code: verifyCode,
-        name: firstname,
+        name: data.firstname,
       }).catch((err) =>
         console.error("⚠️ Erreur envoi mail de vérification:", err),
       );
@@ -85,11 +110,16 @@ class AuthService {
   };
 
   static findUserByEmail = async (email: string) => {
-    return prisma.user.findUnique({
+    const exact = await prisma.user.findUnique({
       where: { email: email },
-      include: {
-        profile: true,
-      },
+      include: { profile: true },
+    });
+    if (exact) return exact;
+
+    // Comptes historiques enregistrés avec des majuscules
+    return prisma.user.findFirst({
+      where: { email: { equals: email, mode: "insensitive" } },
+      include: { profile: true },
     });
   };
 
@@ -118,36 +148,51 @@ class AuthService {
     });
   };
 
+  /** Enregistre un code erroné ; au-delà du seuil, le code est invalidé en base. */
+  private static registerCodeFailure = async (userId: string) => {
+    if (codeAttempts.hit(userId) >= MAX_CODE_ATTEMPTS) {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { email_verify_code: null },
+      });
+    }
+  };
+
+  private static assertCodeUsable = (user: { id: string; email_verify_expires: Date | null }) => {
+    if (codeAttempts.isBlocked(user.id)) {
+      throw authError(
+        "TOO_MANY_ATTEMPTS",
+        "Trop de tentatives incorrectes. Veuillez patienter 15 minutes puis demander un nouveau code.",
+      );
+    }
+    if (user.email_verify_expires && new Date() > user.email_verify_expires) {
+      throw authError(
+        "EXPIRED_CODE",
+        "Le code a expiré (délai de 15 minutes dépassé). Veuillez demander un nouveau code.",
+      );
+    }
+  };
+
   static verifyEmailCode = async (email: string, code: string) => {
     const user = await this.findUserByEmail(email);
 
     if (!user) {
-      throw new Error("Utilisateur introuvable.");
+      throw authError("INVALID_CODE", "Code de vérification incorrect.");
     }
 
+    // Aucun jeton n'est délivré ici : seul un code valide (ou la connexion) ouvre une session.
     if (user.is_email_verified) {
-      const token = jwt.sign(
-        {
-          userId: user.id,
-          full_name: user.profile?.full_name || "",
-          role: user.role,
-        },
-        process.env.JWT_SECRET || "fallback_secret",
-        { expiresIn: "7d" },
-      );
-      return { message: "Email déjà vérifié.", token };
+      return { message: "Adresse e-mail déjà vérifiée. Vous pouvez vous connecter." };
     }
 
-    // Vérification de l'expiration (15 minutes) sans supprimer le compte utilisateur
-    if (user.email_verify_expires && new Date() > user.email_verify_expires) {
-      const error: any = new Error("EXPIRED_CODE");
-      error.customMessage = "Le code de vérification a expiré. Veuillez cliquer sur 'Renvoyer un nouveau code'.";
-      throw error;
+    this.assertCodeUsable(user);
+
+    if (!user.email_verify_code || !safeEqual(user.email_verify_code, code.trim())) {
+      await this.registerCodeFailure(user.id);
+      throw authError("INVALID_CODE", "Code de vérification incorrect.");
     }
 
-    if (user.email_verify_code !== code.trim()) {
-      throw new Error("Code de vérification incorrect.");
-    }
+    codeAttempts.reset(user.id);
 
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
@@ -159,33 +204,39 @@ class AuthService {
       include: { profile: true },
     });
 
-    const token = jwt.sign(
-      {
-        userId: updatedUser.id,
-        full_name: updatedUser.profile?.full_name || "",
-        role: updatedUser.role,
-      },
-      process.env.JWT_SECRET || "fallback_secret",
-      { expiresIn: "7d" },
-    );
+    const token = signToken({
+      id: updatedUser.id,
+      role: updatedUser.role,
+      password: updatedUser.password,
+      full_name: updatedUser.profile?.full_name,
+    });
 
     return { message: "Email vérifié avec succès !", token };
   };
 
   static resendVerifyCode = async (email: string) => {
-    const user = await this.findUserByEmail(email);
+    const genericResponse = {
+      message:
+        "Si un compte en attente de vérification existe pour cette adresse, un nouveau code vient de vous être envoyé.",
+    };
 
-    if (!user) {
-      throw new Error("Aucun compte trouvé avec cet e-mail.");
+    const cooldownKey = `verify:${email}`;
+    if (emailCooldown.isBlocked(cooldownKey)) {
+      throw authError(
+        "RESEND_COOLDOWN",
+        "Veuillez patienter une minute avant de demander un nouveau code.",
+      );
     }
+    emailCooldown.hit(cooldownKey);
 
-    if (user.is_email_verified) {
-      throw new Error("Cet e-mail est déjà vérifié.");
+    const user = await this.findUserByEmail(email);
+    if (!user || user.is_email_verified || !user.email || isSyntheticEmail(user.email)) {
+      return genericResponse;
     }
 
     // Génération d'un nouveau code avec nouveau délai de 15 minutes
-    const newCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const newExpires = new Date(Date.now() + 15 * 60 * 1000);
+    const newCode = generateNumericCode();
+    const newExpires = new Date(Date.now() + CODE_TTL_MS);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -196,81 +247,126 @@ class AuthService {
     });
 
     sendEmailVerificationCodeMail({
-      to: email,
+      to: user.email,
       code: newCode,
       name: user.profile?.full_name || undefined,
     }).catch((err) => console.error("⚠️ Erreur réenvoi mail:", err));
 
-    return { message: "Un nouveau code a été envoyé à votre adresse e-mail." };
+    return genericResponse;
   };
 
-  static loginUser = async (emailOrPhone: string, password: string) => {
-    const isEmail = emailOrPhone.includes("@");
+  static loginUser = async (emailOrPhone: string, password: string, clientIp: string) => {
+    const identifier = emailOrPhone.trim();
+    const attemptKey = identifier.toLowerCase();
+    const pairKey = `${attemptKey}|${clientIp}`;
 
+    if (loginAttemptsByIp.isBlocked(pairKey) || loginAttemptsGlobal.isBlocked(attemptKey)) {
+      throw authError(
+        "TOO_MANY_ATTEMPTS",
+        "Trop de tentatives de connexion pour ce compte. Veuillez réessayer dans 15 minutes.",
+      );
+    }
+
+    const isEmail = identifier.includes("@");
     const user = isEmail
-      ? await this.findUserByEmail(emailOrPhone)
-      : await this.findUserByPhone(emailOrPhone);
+      ? await this.findUserByEmail(identifier.toLowerCase())
+      : await this.findUserByPhone(identifier);
 
-    if (!user) {
-      throw new Error("User not found");
+    // Message unique que le compte existe ou non (anti-énumération des comptes)
+    const isMatch = await bcrypt.compare(password, user?.password || DUMMY_PASSWORD_HASH);
+    if (!user || !isMatch) {
+      loginAttemptsByIp.hit(pairKey);
+      loginAttemptsGlobal.hit(attemptKey);
+      throw authError("INVALID_CREDENTIALS", "Identifiants incorrects.");
     }
-    const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch) {
-      throw new Error("invalid password");
-    }
+    // Seul le compteur de ce couple est remis à zéro : le plafond global expire avec sa fenêtre
+    loginAttemptsByIp.reset(pairKey);
 
-    // Vérification e-mail
-    if (isEmail && !user.is_email_verified) {
+    // Vérification e-mail obligatoire quel que soit l'identifiant utilisé (e-mail ou téléphone)
+    if (!user.is_email_verified) {
       if (user.email_verify_expires && new Date() > user.email_verify_expires) {
         await prisma.user.delete({ where: { id: user.id } });
-        const error: any = new Error("EXPIRED_ACCOUNT");
-        error.customMessage = "Le délai de 15 minutes est dépassé. Votre inscription a été annulée, veuillez vous réinscrire.";
-        throw error;
+        throw authError(
+          "EXPIRED_ACCOUNT",
+          "Le délai de 15 minutes est dépassé. Votre inscription a été annulée, veuillez vous réinscrire.",
+        );
       }
-      const error: any = new Error("UNVERIFIED_EMAIL");
-      error.customMessage = "Veuillez vérifier votre adresse e-mail avant de vous connecter.";
-      throw error;
+      throw authError(
+        "UNVERIFIED_EMAIL",
+        "Veuillez vérifier votre adresse e-mail avant de vous connecter.",
+      );
     }
 
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        full_name: user.profile?.full_name || "",
-        role: user.role,
-      },
-      process.env.JWT_SECRET || "fallback_secret",
-      { expiresIn: "7d" },
-    );
-    return token;
+    return signToken({
+      id: user.id,
+      role: user.role,
+      password: user.password,
+      full_name: user.profile?.full_name,
+    });
   };
+
   static deleteUserById = async (id: string) => {
     const user = await prisma.user.findUnique({
       where: { id },
+      select: { id: true },
     });
 
     if (!user) {
       return null;
     }
 
-    return await prisma.user.delete({
-      where: { id },
+    return await prisma.$transaction(async (tx) => {
+      // La suppression du profil passe les relations à NULL : sans désactivation préalable, le
+      // traiteur et les annonces GP resteraient publiés (et commandables) sans propriétaire.
+      await tx.traiteur.updateMany({
+        where: { user_id: id },
+        data: { is_active: false },
+      });
+      await tx.gpListing.updateMany({
+        where: { gp_id: id },
+        data: { is_active: false },
+      });
+      return await tx.user.delete({
+        where: { id },
+        select: { id: true },
+      });
     });
   };
 
-  static forgotPassword = async (email: string) => {
-    const trimmedEmail = email.trim().toLowerCase();
-    const user = await this.findUserByEmail(trimmedEmail);
+  /** Vrai si un e-mail de code a été envoyé à cette adresse il y a moins d'une minute. */
+  static isVerifyEmailCoolingDown = (email: string) => emailCooldown.isBlocked(`verify:${email}`);
 
-    if (!user) {
-      // Pour des raisons de sécurité (anti-énumération), renvoi d'un message générique
-      return {
-        message:
-          "Si cette adresse e-mail correspond à un compte Dabari, un code de réinitialisation vous a été envoyé.",
-      };
+  /** Vrai si le mot de passe correspond au hash enregistré du compte. */
+  static passwordMatches = async (user: { password: string }, password: string) =>
+    bcrypt.compare(password, user.password);
+
+  static forgotPassword = async (email: string) => {
+    // Pour des raisons de sécurité (anti-énumération), même réponse que le compte existe ou non
+    const genericResponse = {
+      message:
+        "Si cette adresse e-mail correspond à un compte Dabari, un code de réinitialisation vous a été envoyé.",
+    };
+
+    const cooldownKey = `reset:${email}`;
+    if (isSyntheticEmail(email) || emailCooldown.isBlocked(cooldownKey)) {
+      return genericResponse;
+    }
+    emailCooldown.hit(cooldownKey);
+
+    const user = await this.findUserByEmail(email);
+    if (!user || !user.email || isSyntheticEmail(user.email)) {
+      return genericResponse;
     }
 
-    const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-    const resetExpires = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+    // Compte non vérifié : pas de code de réinitialisation. Il remplacerait le code d'inscription et
+    // repousserait l'expiration de l'inscription en attente (adresse e-mail squattée indéfiniment).
+    // L'utilisateur termine son inscription (renvoi du code) ou se réinscrit.
+    if (!user.is_email_verified) {
+      return genericResponse;
+    }
+
+    const resetCode = generateNumericCode();
+    const resetExpires = new Date(Date.now() + CODE_TTL_MS);
 
     await prisma.user.update({
       where: { id: user.id },
@@ -282,8 +378,9 @@ class AuthService {
 
     const userName = user.profile?.full_name || "Cher utilisateur";
 
-    await sendEmail({
-      to: trimmedEmail,
+    // Envoi non bloquant : le temps de réponse ne révèle pas l'existence du compte
+    sendEmail({
+      to: user.email,
       subject: "Dabari - Réinitialisation de votre mot de passe",
       html: `
         <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
@@ -296,7 +393,7 @@ class AuthService {
                 Sécurité & Authentification
               </p>
             </div>
-            
+
             <div style="padding: 32px 24px; text-align: center;">
               <h2 style="color: #1A202C; margin-top: 0; font-size: 20px; font-weight: 700;">
                 Réinitialisation de mot de passe
@@ -332,10 +429,7 @@ class AuthService {
       console.error("[Auth] Erreur envoi email reset password:", err);
     });
 
-    return {
-      message:
-        "Si cette adresse e-mail correspond à un compte Dabari, un code de réinitialisation vous a été envoyé.",
-    };
+    return genericResponse;
   };
 
   static resetPassword = async (
@@ -343,38 +437,32 @@ class AuthService {
     code: string,
     newPassword: string,
   ) => {
-    const trimmedEmail = email.trim().toLowerCase();
     const trimmedCode = code.trim();
 
-    if (!newPassword || newPassword.length < 6) {
-      const error: any = new Error("SHORT_PASSWORD");
-      error.customMessage =
-        "Le nouveau mot de passe doit comporter au moins 6 caractères.";
-      throw error;
+    if (!isValidPassword(newPassword)) {
+      throw authError(
+        "SHORT_PASSWORD",
+        `Le nouveau mot de passe doit comporter entre ${PASSWORD_MIN_LENGTH} et 128 caractères.`,
+      );
     }
 
-    const user = await this.findUserByEmail(trimmedEmail);
+    const user = await this.findUserByEmail(email);
     if (!user) {
-      const error: any = new Error("USER_NOT_FOUND");
-      error.customMessage = "Utilisateur introuvable.";
-      throw error;
+      throw authError("INVALID_CODE", "Le code de réinitialisation est incorrect.");
     }
 
-    if (user.email_verify_expires && new Date() > user.email_verify_expires) {
-      const error: any = new Error("EXPIRED_CODE");
-      error.customMessage =
-        "Ce code a expiré (délai de 15 minutes dépassé). Veuillez refaire une demande.";
-      throw error;
+    this.assertCodeUsable(user);
+
+    if (!user.email_verify_code || !safeEqual(user.email_verify_code, trimmedCode)) {
+      await this.registerCodeFailure(user.id);
+      throw authError("INVALID_CODE", "Le code de réinitialisation est incorrect.");
     }
 
-    if (!user.email_verify_code || user.email_verify_code !== trimmedCode) {
-      const error: any = new Error("INVALID_CODE");
-      error.customMessage = "Le code de réinitialisation est incorrect.";
-      throw error;
-    }
+    codeAttempts.reset(user.id);
 
     const hashedPassword = await bcrypt.hash(newPassword, 10);
 
+    // Le nouveau hash change l'empreinte des jetons : toutes les anciennes sessions sont révoquées.
     const updatedUser = await prisma.user.update({
       where: { id: user.id },
       data: {
@@ -386,15 +474,12 @@ class AuthService {
       include: { profile: true },
     });
 
-    const token = jwt.sign(
-      {
-        userId: updatedUser.id,
-        full_name: updatedUser.profile?.full_name || "",
-        role: updatedUser.role,
-      },
-      process.env.JWT_SECRET || "fallback_secret",
-      { expiresIn: "7d" },
-    );
+    const token = signToken({
+      id: updatedUser.id,
+      role: updatedUser.role,
+      password: updatedUser.password,
+      full_name: updatedUser.profile?.full_name,
+    });
 
     return {
       message: "Votre mot de passe a été réinitialisé avec succès !",

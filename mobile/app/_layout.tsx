@@ -4,6 +4,7 @@ import React from "react";
 import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import BottomNav from "../components/BottomNav";
+import NetworkBanner from "../components/NetworkBanner";
 
 export default function RootLayout() {
   return (
@@ -24,6 +25,7 @@ export default function RootLayout() {
           }}
         />
         <BottomNav />
+        <NetworkBanner />
       </View>
     </SafeAreaProvider>
   );

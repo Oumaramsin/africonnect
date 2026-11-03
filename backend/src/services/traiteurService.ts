@@ -10,11 +10,81 @@ import {
   TRAITEUR_REQUEST_STATUS,
   TRAITEUR_PROPOSAL_STATUS,
 } from "../utils/types";
-import { deleteFromR2 } from "./storageService";
+import { HttpError } from "../utils/validation";
+import {
+  hideClientDetailsUntilAccepted,
+  LOCATION_PLACEHOLDER,
+  toCoarseLocation,
+  toPublicClient,
+} from "../utils/privacy";
+import { deleteFromR2, isOwnStorageUrl } from "./storageService";
 import {
   sendNewOrderToTraiteurMail,
   sendOrderNotificationToClientMail,
 } from "./emailService";
+
+// Données de profil exposées publiquement (pages traiteurs consultables sans compte) :
+// jamais l'e-mail, le téléphone personnel ni le rôle.
+const PUBLIC_PROFILE_SELECT = {
+  id: true,
+  full_name: true,
+  avatar_url: true,
+} as const;
+
+// Coordonnées d'un client transmises au traiteur dont la proposition a été acceptée
+const CLIENT_CONTACT_SELECT = {
+  id: true,
+  full_name: true,
+  avatar_url: true,
+  phone: true,
+  whatsapp: true,
+  email: true,
+  city: true,
+} as const;
+
+const MAX_DISH_IMAGES = 10;
+
+/**
+ * Les images doivent provenir de notre stockage (endpoint /upload). Les valeurs déjà enregistrées
+ * restent acceptées telles quelles pour ne pas bloquer l'édition des fiches existantes.
+ */
+const assertAllowedImageUrls = (urls: string[], alreadyStored: string[] = []) => {
+  if (urls.length > MAX_DISH_IMAGES) {
+    throw new Error(`${MAX_DISH_IMAGES} images maximum.`);
+  }
+  for (const url of urls) {
+    if (!isOwnStorageUrl(url) && !alreadyStored.includes(url)) {
+      throw new Error("Image invalide : veuillez téléverser vos photos via l'application.");
+    }
+  }
+};
+
+/**
+ * Supprime un média du stockage uniquement s'il n'est plus référencé par aucun autre plat
+ * ni profil traiteur (évite d'effacer l'image d'un autre utilisateur ou d'un autre plat).
+ */
+const deleteImageIfUnused = async (
+  url: string,
+  exclude: { dishId?: string; traiteurId?: string },
+) => {
+  const [dishRefs, traiteurRefs] = await Promise.all([
+    db.dish.count({
+      where: {
+        image_urls: { has: url },
+        ...(exclude.dishId ? { NOT: { id: exclude.dishId } } : {}),
+      },
+    }),
+    db.traiteur.count({
+      where: {
+        image_url: url,
+        ...(exclude.traiteurId ? { NOT: { id: exclude.traiteurId } } : {}),
+      },
+    }),
+  ]);
+  if (dishRefs + traiteurRefs === 0) {
+    await deleteFromR2(url);
+  }
+};
 
 export const getActiveTraiteur = async () => {
   return await db.traiteur.findMany({
@@ -37,7 +107,7 @@ export const getActiveTraiteur = async () => {
           created_at: "desc",
         },
       },
-      profile: true,
+      profile: { select: PUBLIC_PROFILE_SELECT },
     },
   });
 };
@@ -57,7 +127,7 @@ export const getTraiteurById = async (id: string) => {
           created_at: "desc",
         },
       },
-      profile: true,
+      profile: { select: PUBLIC_PROFILE_SELECT },
     },
   });
 };
@@ -73,6 +143,10 @@ export const createOrderTraiteur = async (
 
     if (!traiteur) {
       throw new Error("Traiteur introuvable");
+    }
+
+    if (!traiteur.is_active) {
+      throw new Error("Ce traiteur n'accepte pas de commandes actuellement.");
     }
 
     const client = commande.client_id
@@ -157,6 +231,10 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
       throw new Error("Traiteur introuvable");
     }
 
+    if (!traiteur.is_active) {
+      throw new Error("Ce traiteur n'accepte pas de commandes actuellement.");
+    }
+
     // Vérification de sécurité : vérifier que tous les plats existent et appartiennent à ce traiteur
     const dishIds = commande.items.map((i) => i.dish_id);
     const existingDishes = await tx.dish.findMany({
@@ -178,11 +256,12 @@ export const createDishesOrder = async (commande: CreateDishesOrderInput) => {
     const priceMap = new Map<string, number>();
     existingDishes.forEach((d) => priceMap.set(d.id, Number(d.price)));
 
+    // Le prix envoyé par le client n'est jamais utilisé : seul le tarif en base fait foi
     const verifiedItems = commande.items.map((item) => {
-      const realPrice = priceMap.get(item.dish_id) || Number(item.unit_price);
+      const realPrice = priceMap.get(item.dish_id) ?? 0;
       return {
         dish_id: item.dish_id,
-        quantity: item.quantity,
+        quantity: parseInt(String(item.quantity), 10),
         unit_price: realPrice,
       };
     });
@@ -288,6 +367,15 @@ export const getTraiteurByUserId = async (userId: string) => {
   });
 };
 
+/** Identifiant du profil traiteur de l'utilisateur (null s'il n'en a pas), sans charger les plats. */
+export const getTraiteurIdByUserId = async (userId: string): Promise<string | null> => {
+  const traiteur = await db.traiteur.findFirst({
+    where: { user_id: userId },
+    select: { id: true },
+  });
+  return traiteur?.id ?? null;
+};
+
 export const createTraiteurProfile = async (
   userId: string,
   data: CreateTraiteurProfileInput,
@@ -298,6 +386,10 @@ export const createTraiteurProfile = async (
     });
     if (existing) {
       throw new Error("Vous possédez déjà un profil traiteur actif.");
+    }
+
+    if (data.image_url) {
+      assertAllowedImageUrls([data.image_url]);
     }
 
     const traiteur = await tx.traiteur.create({
@@ -334,18 +426,11 @@ export const updateTraiteurProfile = async (
     throw new Error("Profil traiteur introuvable");
   }
 
-  // Suppression automatique de l'ancienne photo de profil du stockage si remplacée
-  if (
-    data.image_url &&
-    traiteur.image_url &&
-    data.image_url !== traiteur.image_url
-  ) {
-    await deleteFromR2(traiteur.image_url).catch((err) =>
-      console.warn("Échec suppression ancienne image traiteur:", err),
-    );
+  if (data.image_url) {
+    assertAllowedImageUrls([data.image_url], traiteur.image_url ? [traiteur.image_url] : []);
   }
 
-  return await db.traiteur.update({
+  const updated = await db.traiteur.update({
     where: { id: traiteur.id },
     data: {
       name: data.name,
@@ -356,12 +441,27 @@ export const updateTraiteurProfile = async (
       image_url: data.image_url || null,
     },
   });
+
+  // Suppression automatique de l'ancienne photo de profil du stockage si remplacée
+  if (
+    data.image_url &&
+    traiteur.image_url &&
+    data.image_url !== traiteur.image_url
+  ) {
+    await deleteImageIfUnused(traiteur.image_url, { traiteurId: traiteur.id }).catch((err) =>
+      console.warn("Échec suppression ancienne image traiteur:", err),
+    );
+  }
+
+  return updated;
 };
 
 export const addTraiteurDish = async (
   traiteurId: string,
   data: CreateDishInput,
 ) => {
+  assertAllowedImageUrls(data.image_urls || []);
+
   return await db.dish.create({
     data: {
       traiteur_id: traiteurId,
@@ -388,18 +488,11 @@ export const updateTraiteurDish = async (
     throw new Error("Plat introuvable ou non autorisé");
   }
 
-  // Suppression automatique des images retirées lors de l'édition du plat
-  if (data.image_urls && dish.image_urls) {
-    const keptUrls = data.image_urls;
-    const removedUrls = dish.image_urls.filter((url) => !keptUrls.includes(url));
-    for (const oldUrl of removedUrls) {
-      await deleteFromR2(oldUrl).catch((err) =>
-        console.warn("Échec suppression image plat:", err),
-      );
-    }
+  if (data.image_urls) {
+    assertAllowedImageUrls(data.image_urls, dish.image_urls || []);
   }
 
-  return await db.dish.update({
+  const updated = await db.dish.update({
     where: { id: dishId },
     data: {
       name: data.name,
@@ -410,6 +503,19 @@ export const updateTraiteurDish = async (
       is_available: data.is_available,
     },
   });
+
+  // Suppression automatique des images retirées lors de l'édition du plat
+  if (data.image_urls && dish.image_urls) {
+    const keptUrls = data.image_urls;
+    const removedUrls = dish.image_urls.filter((url) => !keptUrls.includes(url));
+    for (const oldUrl of removedUrls) {
+      await deleteImageIfUnused(oldUrl, { dishId }).catch((err) =>
+        console.warn("Échec suppression image plat:", err),
+      );
+    }
+  }
+
+  return updated;
 };
 
 export const deleteTraiteurDish = async (dishId: string, traiteurId: string) => {
@@ -421,19 +527,21 @@ export const deleteTraiteurDish = async (dishId: string, traiteurId: string) => 
     throw new Error("Plat introuvable ou non autorisé");
   }
 
+  const archived = await db.dish.update({
+    where: { id: dishId },
+    data: { is_archived: true },
+  });
+
   // Suppression de toutes les images du plat du stockage
   if (dish.image_urls && dish.image_urls.length > 0) {
     for (const url of dish.image_urls) {
-      await deleteFromR2(url).catch((err) =>
+      await deleteImageIfUnused(url, { dishId }).catch((err) =>
         console.warn("Échec suppression image plat:", err),
       );
     }
   }
 
-  return await db.dish.update({
-    where: { id: dishId },
-    data: { is_archived: true },
-  });
+  return archived;
 };
 
 export const createTraiteurRequest = async (
@@ -467,21 +575,36 @@ export const createTraiteurRequest = async (
   });
 };
 
-export const getAllTraiteurRequests = async () => {
-  return await db.traiteurRequest.findMany({
+/**
+ * Demandes ouvertes consultées par un traiteur : du client, seuls le prénom + initiale du nom et la
+ * ville ; lieu de l'événement réduit à une forme approximative ; seule la proposition du traiteur
+ * appelant est renvoyée (jamais les prix des concurrents).
+ */
+export const getAllTraiteurRequests = async (ownTraiteurId: string | null) => {
+  const requests = await db.traiteurRequest.findMany({
     where: {
       status: TRAITEUR_REQUEST_STATUS.OPEN,
     },
-    include: {
+    select: {
+      id: true,
+      title: true,
+      event_type: true,
+      guest_count: true,
+      event_date: true,
+      location: true,
+      food_preferences: true,
+      budget: true,
+      description: true,
+      status: true,
+      created_at: true,
       client: {
         select: {
-          id: true,
           full_name: true,
-          avatar_url: true,
           city: true,
         },
       },
       proposals: {
+        where: { traiteur_id: { in: ownTraiteurId ? [ownTraiteurId] : [] } },
         select: {
           id: true,
           traiteur_id: true,
@@ -495,6 +618,12 @@ export const getAllTraiteurRequests = async () => {
       created_at: "desc",
     },
   });
+
+  return requests.map(({ client, location, ...request }) => ({
+    ...request,
+    location: toCoarseLocation(location) ?? LOCATION_PLACEHOLDER,
+    client: toPublicClient(client),
+  }));
 };
 
 export const getMyTraiteurRequests = async (clientId: string) => {
@@ -536,8 +665,12 @@ export const getMyTraiteurRequests = async (clientId: string) => {
   });
 };
 
-export const getTraiteurRequestById = async (id: string) => {
-  return await db.traiteurRequest.findUnique({
+export const getTraiteurRequestById = async (
+  id: string,
+  requesterId: string,
+  isAdmin: boolean,
+) => {
+  const request = await db.traiteurRequest.findUnique({
     where: { id },
     include: {
       client: {
@@ -569,6 +702,29 @@ export const getTraiteurRequestById = async (id: string) => {
       },
     },
   });
+
+  if (!request || isAdmin || request.client_id === requesterId) {
+    return request;
+  }
+
+  // Vue restreinte pour les autres utilisateurs : jamais les propositions (prix, messages) des
+  // traiteurs concurrents ; coordonnées et adresse du client seulement si la proposition du
+  // traiteur appelant a été acceptée.
+  const ownTraiteurId = await getTraiteurIdByUserId(requesterId);
+  const ownProposals = request.proposals.filter(
+    (proposal) => ownTraiteurId !== null && proposal.traiteur_id === ownTraiteurId,
+  );
+  if (ownProposals.some((proposal) => proposal.status === TRAITEUR_PROPOSAL_STATUS.ACCEPTED)) {
+    return { ...request, proposals: ownProposals };
+  }
+
+  const { client_id: _clientId, client, location, ...publicRequest } = request;
+  return {
+    ...publicRequest,
+    location: toCoarseLocation(location) ?? LOCATION_PLACEHOLDER,
+    client: toPublicClient(client),
+    proposals: ownProposals,
+  };
 };
 
 export const cancelTraiteurRequest = async (id: string, clientId: string) => {
@@ -674,7 +830,6 @@ export const createTraiteurProposal = async (
 ) => {
   const traiteur = await db.traiteur.findFirst({
     where: { user_id: traiteurUserId },
-    include: { profile: true },
   });
 
   if (!traiteur) {
@@ -683,9 +838,15 @@ export const createTraiteurProposal = async (
     );
   }
 
+  if (!traiteur.is_active) {
+    throw new Error(
+      "Votre compte traiteur est suspendu : vous ne pouvez pas envoyer de proposition.",
+    );
+  }
+
   const request = await db.traiteurRequest.findUnique({
     where: { id: requestId },
-    include: { client: true },
+    select: { id: true, status: true, client_id: true, event_type: true },
   });
 
   if (!request || request.status !== TRAITEUR_REQUEST_STATUS.OPEN) {
@@ -696,38 +857,59 @@ export const createTraiteurProposal = async (
     throw new Error("Vous ne pouvez pas envoyer une proposition à votre propre annonce.");
   }
 
-  // Vérifier si une proposition existe déjà
-  const existingProposal = await db.traiteurProposal.findFirst({
-    where: {
-      request_id: requestId,
-      traiteur_id: traiteur.id,
-    },
-  });
+  const { proposal, isNew } = await db.$transaction(async (tx) => {
+    // Mise à jour conditionnelle sans effet : verrouille la demande tant qu'elle est ouverte. Une
+    // acceptation concurrente (qui la passe à « fulfilled ») ou un double envoi sont ainsi sérialisés.
+    const stillOpen = await tx.traiteurRequest.updateMany({
+      where: { id: requestId, status: TRAITEUR_REQUEST_STATUS.OPEN },
+      data: { status: TRAITEUR_REQUEST_STATUS.OPEN },
+    });
+    if (stillOpen.count !== 1) {
+      throw new HttpError(409, "Cette demande n'est plus ouverte aux propositions.");
+    }
 
-  if (existingProposal) {
-    // Mise à jour de la proposition existante
-    return await db.traiteurProposal.update({
-      where: { id: existingProposal.id },
+    // Vérifier si une proposition existe déjà
+    const existingProposal = await tx.traiteurProposal.findFirst({
+      where: {
+        request_id: requestId,
+        traiteur_id: traiteur.id,
+      },
+    });
+
+    if (existingProposal) {
+      if (existingProposal.status === TRAITEUR_PROPOSAL_STATUS.ACCEPTED) {
+        throw new HttpError(409, "Votre proposition a déjà été acceptée : elle ne peut plus être modifiée.");
+      }
+      // Mise à jour de la proposition existante
+      const updated = await tx.traiteurProposal.update({
+        where: { id: existingProposal.id },
+        data: {
+          proposed_price: Number(data.proposed_price),
+          message: data.message,
+          status: TRAITEUR_PROPOSAL_STATUS.PENDING,
+        },
+      });
+      return { proposal: updated, isNew: false };
+    }
+
+    const created = await tx.traiteurProposal.create({
       data: {
+        request_id: requestId,
+        traiteur_id: traiteur.id,
         proposed_price: Number(data.proposed_price),
         message: data.message,
         status: TRAITEUR_PROPOSAL_STATUS.PENDING,
       },
+      include: {
+        traiteur: true,
+      },
     });
-  }
-
-  const proposal = await db.traiteurProposal.create({
-    data: {
-      request_id: requestId,
-      traiteur_id: traiteur.id,
-      proposed_price: Number(data.proposed_price),
-      message: data.message,
-      status: TRAITEUR_PROPOSAL_STATUS.PENDING,
-    },
-    include: {
-      traiteur: true,
-    },
+    return { proposal: created, isNew: true };
   });
+
+  if (!isNew) {
+    return proposal;
+  }
 
   // Notifier le client
   if (request.client_id) {
@@ -759,19 +941,12 @@ export const getMyTraiteurProposals = async (traiteurUserId: string) => {
   });
   if (!traiteur) return [];
 
-  return await db.traiteurProposal.findMany({
+  const proposals = await db.traiteurProposal.findMany({
     where: { traiteur_id: traiteur.id },
     include: {
       request: {
         include: {
-          client: {
-            select: {
-              id: true,
-              full_name: true,
-              phone: true,
-              avatar_url: true,
-            },
-          },
+          client: { select: CLIENT_CONTACT_SELECT },
         },
       },
     },
@@ -779,6 +954,8 @@ export const getMyTraiteurProposals = async (traiteurUserId: string) => {
       created_at: "desc",
     },
   });
+  // Coordonnées et adresse du client uniquement pour les propositions acceptées
+  return proposals.map(hideClientDetailsUntilAccepted);
 };
 
 export const updateTraiteurProposalStatus = async (
@@ -796,7 +973,7 @@ export const updateTraiteurProposalStatus = async (
     include: {
       request: true,
       traiteur: {
-        include: { profile: true },
+        select: { user_id: true },
       },
     },
   });
@@ -805,18 +982,57 @@ export const updateTraiteurProposalStatus = async (
     throw new Error("Proposition introuvable ou non autorisée");
   }
 
+  if (proposal.status !== TRAITEUR_PROPOSAL_STATUS.PENDING) {
+    throw new Error("Cette proposition a déjà été traitée.");
+  }
+
+  if (
+    normalizedStatus === TRAITEUR_PROPOSAL_STATUS.ACCEPTED &&
+    proposal.request.status !== TRAITEUR_REQUEST_STATUS.OPEN
+  ) {
+    throw new Error("Cette demande n'est plus ouverte : impossible d'accepter une autre proposition.");
+  }
+
   return await db.$transaction(async (tx) => {
-    const updated = await tx.traiteurProposal.update({
-      where: { id: proposalId },
+    if (normalizedStatus === TRAITEUR_PROPOSAL_STATUS.ACCEPTED) {
+      // Fermeture conditionnelle de la demande : de deux acceptations simultanées (deux propositions
+      // différentes ou double clic), une seule passe ; l'autre échoue sans rien modifier.
+      const closed = await tx.traiteurRequest.updateMany({
+        where: {
+          id: proposal.request_id,
+          client_id: clientId,
+          status: TRAITEUR_REQUEST_STATUS.OPEN,
+        },
+        data: { status: TRAITEUR_REQUEST_STATUS.FULFILLED },
+      });
+      if (closed.count !== 1) {
+        throw new HttpError(
+          409,
+          "Cette demande n'est plus ouverte : une proposition a déjà été acceptée. Actualisez la page.",
+        );
+      }
+    }
+
+    // La proposition doit être encore en attente et inchangée (prix lu) au moment de la décision
+    const changed = await tx.traiteurProposal.updateMany({
+      where: {
+        id: proposalId,
+        status: TRAITEUR_PROPOSAL_STATUS.PENDING,
+        proposed_price: proposal.proposed_price,
+      },
       data: { status: normalizedStatus },
+    });
+    if (changed.count !== 1) {
+      throw new HttpError(
+        409,
+        "Cette proposition a été modifiée ou déjà traitée entre-temps. Actualisez la page puis réessayez.",
+      );
+    }
+    const updated = await tx.traiteurProposal.findUniqueOrThrow({
+      where: { id: proposalId },
     });
 
     if (normalizedStatus === TRAITEUR_PROPOSAL_STATUS.ACCEPTED) {
-      await tx.traiteurRequest.update({
-        where: { id: proposal.request_id },
-        data: { status: TRAITEUR_REQUEST_STATUS.FULFILLED },
-      });
-
       // Notifier le traiteur
       if (proposal.traiteur.user_id) {
         await tx.notification

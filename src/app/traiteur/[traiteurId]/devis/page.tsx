@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -30,10 +30,19 @@ import {
   LogIn,
   ShoppingBag,
 } from "lucide-react";
-import { type Traiteur, type Dish } from "@/lib/types/traiteur";
-import { getValidToken, authFetch } from "@/lib/auth";
+import { type Traiteur, type Dish, formatWhatsAppUrl } from "@/lib/types/traiteur";
+import {
+  hasSession,
+  authFetch,
+  apiErrorMessage,
+  loadErrorMessage,
+  sendErrorMessage,
+} from "@/lib/auth";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
+
+/** Date de demain au format AAAA-MM-JJ (date minimale de l'événement). */
+const tomorrowIsoDate = () => new Date(Date.now() + 86400000).toISOString().split("T")[0];
 
 const EVENT_TYPES = [
   { id: "Mariage", label: "Mariage", icon: Heart },
@@ -52,13 +61,13 @@ export default function TraiteurDevisPage() {
 
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
   const [loadingTraiteur, setLoadingTraiteur] = useState(true);
+  // Profil illisible (hors ligne, API en panne) : distinct d'un traiteur introuvable
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  // Form State
-  const tomorrowStr = useMemo(() => {
-    const d = new Date(Date.now() + 86400000);
-    return d.toISOString().split("T")[0];
-  }, []);
+  // Form State : date minimale calculée une fois (et non à chaque rendu)
+  const [tomorrowStr] = useState(tomorrowIsoDate);
 
   const [typeEvenement, setTypeEvenement] = useState("Mariage");
   const [customType, setCustomType] = useState("");
@@ -75,33 +84,47 @@ export default function TraiteurDevisPage() {
   const [submitting, setSubmitting] = useState(false);
   const [success, setSuccess] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Erreur d'envoi, affichée dans la modale de confirmation (qui reste ouverte pour réessayer)
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Adresse acceptée sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
   useEffect(() => {
-    const token = getValidToken();
-    setIsLoggedIn(Boolean(token));
+    setIsLoggedIn(hasSession());
   }, []);
 
   useEffect(() => {
     async function fetchTraiteur() {
       if (!id) return;
-      setLoadingTraiteur(true);
       try {
         const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
-        const response = await fetch(`${apiUrl}/traiteur/${id}`, {
+        const response = await authFetch(`${apiUrl}/traiteur/${id}`, {
           headers: { "Content-Type": "application/json" },
         });
-        if (response.ok) {
-          const data = await response.json();
-          setTraiteur(data.data?.traiteur || null);
+        const data = await response.json();
+        if (response.ok || response.status === 404) {
+          setLoadError(null);
+          setTraiteur(response.ok ? data.data?.traiteur || null : null);
+        } else {
+          setLoadError(apiErrorMessage(data, "Impossible de charger ce traiteur."));
         }
       } catch (err) {
         console.error("Erreur récupération traiteur:", err);
+        setLoadError(loadErrorMessage(err, "Impossible de charger ce traiteur."));
       } finally {
         setLoadingTraiteur(false);
       }
     }
     fetchTraiteur();
-  }, [id]);
+  }, [id, reloadKey]);
+
+  const retryLoadTraiteur = () => {
+    setLoadingTraiteur(true);
+    setLoadError(null);
+    setReloadKey((key) => key + 1);
+  };
 
   const parsedNb = parseInt(nbPersonnes, 10);
   const isFormValid = Boolean(
@@ -154,27 +177,34 @@ export default function TraiteurDevisPage() {
       if (check.normalizedAddress && check.normalizedAddress !== adresse.trim()) {
         setAdresse(check.normalizedAddress);
       }
+      setAddressUnverified(Boolean(check.unverified));
+      setSubmitError(null);
       setShowConfirmModal(true);
     } catch (err) {
       console.warn("Erreur validation adresse:", err);
+      setAddressUnverified(true);
+      setSubmitError(null);
       setShowConfirmModal(true);
     } finally {
       setValidatingAddress(false);
     }
   };
 
+  // Même saisie = même corps : une relance après une coupure réutilise la clé d'idempotence
   const confirmAndSubmit = async () => {
+    if (submittingRef.current) return;
     setError(null);
-    setSubmitting(true);
+    setSubmitError(null);
 
-    const token = getValidToken();
-    if (!token) {
+    if (!hasSession()) {
+      setShowConfirmModal(false);
       setError("Veuillez vous connecter pour envoyer votre demande de devis.");
       setIsLoggedIn(false);
-      setSubmitting(false);
       return;
     }
 
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
       const resolvedEventType = typeEvenement === "Autre" && customType.trim() ? customType.trim() : typeEvenement;
 
@@ -208,15 +238,18 @@ export default function TraiteurDevisPage() {
 
       const data = await response.json();
       if (!response.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de l'enregistrement de votre devis.");
+        setSubmitError(apiErrorMessage(data, "Erreur lors de l'enregistrement de votre devis."));
+        return;
       }
 
       setShowConfirmModal(false);
       setSuccess(true);
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue lors de l'envoi de la demande.");
+      setSubmitError(
+        sendErrorMessage(err, "Une erreur est survenue lors de l'envoi de la demande."),
+      );
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -226,6 +259,25 @@ export default function TraiteurDevisPage() {
       <div className="min-h-[70vh] flex flex-col items-center justify-center space-y-4">
         <div className="w-12 h-12 border-4 border-[#1D6B45] border-t-transparent rounded-full animate-spin" />
         <p className="text-slate-600 font-semibold text-sm">Chargement du profil traiteur...</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="max-w-3xl mx-auto px-4 py-16 text-center space-y-4">
+        <div className="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto text-amber-600">
+          <AlertCircle size={32} />
+        </div>
+        <h2 className="text-xl font-bold text-slate-900">Profil du traiteur indisponible</h2>
+        <p className="text-sm text-slate-500">{loadError}</p>
+        <button
+          type="button"
+          onClick={retryLoadTraiteur}
+          className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1D6B45] text-white text-xs font-bold shadow-md hover:bg-[#154d31] transition-all"
+        >
+          Réessayer
+        </button>
       </div>
     );
   }
@@ -250,13 +302,10 @@ export default function TraiteurDevisPage() {
     );
   }
 
-  const rawWhatsapp = traiteur.whatsapp || "";
-  const waNumber = rawWhatsapp.replace(/\+/g, "").replace(/\s/g, "");
-  const waUrl = waNumber
-    ? `https://wa.me/${waNumber}?text=Bonjour%20Chef%20${encodeURIComponent(
-        traiteur.name
-      )}%2C%20je%20viens%20de%20vous%20transmettre%20une%20demande%20de%20devis%20sur%20Dabari.`
-    : null;
+  const waUrl = formatWhatsAppUrl(
+    traiteur.whatsapp,
+    `Bonjour Chef ${traiteur.name}, je viens de vous transmettre une demande de devis sur Dabari.`
+  );
 
   if (success) {
     return (
@@ -745,6 +794,8 @@ export default function TraiteurDevisPage() {
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
+                disabled={submitting}
+                aria-label="Fermer"
                 className="w-8 h-8 rounded-full bg-slate-100 text-slate-400 hover:bg-slate-200 flex items-center justify-center transition-colors"
               >
                 <X size={16} />
@@ -782,9 +833,25 @@ export default function TraiteurDevisPage() {
               )}
             </div>
 
+            {addressUnverified && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                {UNVERIFIED_ADDRESS_NOTICE}
+              </p>
+            )}
+
             <p className="text-xs text-slate-500 text-center leading-relaxed">
               Êtes-vous certain(e) de vouloir transmettre cette demande de devis au chef {traiteur.name} ?
             </p>
+
+            {submitError && (
+              <div
+                role="alert"
+                className="p-3 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-medium flex items-start gap-2"
+              >
+                <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
 
             <div className="flex items-center gap-3 pt-2">
               <button
@@ -807,7 +874,7 @@ export default function TraiteurDevisPage() {
                     <span>Envoi en cours...</span>
                   </>
                 ) : (
-                  <span>Confirmer et envoyer</span>
+                  <span>{submitError ? "Réessayer l'envoi" : "Confirmer et envoyer"}</span>
                 )}
               </button>
             </div>

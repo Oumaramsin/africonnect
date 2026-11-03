@@ -11,13 +11,24 @@ import {
   sendGpRequestStatusToSenderMail,
 } from "./emailService";
 
+// Profil du transporteur exposé sur les annonces publiques : contact WhatsApp/téléphone
+// nécessaire à la mise en relation, mais jamais l'e-mail ni le rôle du compte.
+const PUBLIC_GP_PROFILE_SELECT = {
+  id: true,
+  full_name: true,
+  avatar_url: true,
+  city: true,
+  phone: true,
+  whatsapp: true,
+} as const;
+
 export const getAllGp = async () => {
   return await db.gpListing.findMany({
     where: {
       is_active: true,
     },
     include: {
-      gp: true,
+      gp: { select: PUBLIC_GP_PROFILE_SELECT },
     },
     orderBy: {
       created_at: "desc",
@@ -32,7 +43,7 @@ export const getGpById = async (id: string) => {
       is_active: true,
     },
     include: {
-      gp: true,
+      gp: { select: PUBLIC_GP_PROFILE_SELECT },
     },
   });
 };
@@ -69,31 +80,37 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
 
     // Sécurité Capacité : vérifier qu'il reste suffisamment de kilos
     const available = Number(gpListing.available_kg || 0);
+    const capacityError = `Capacité insuffisante sur ce trajet : il ne reste que ${available} kg disponibles.`;
     if (available < order.weight_kg) {
-      throw new Error(
-        `Capacité insuffisante sur ce trajet : il ne reste que ${available} kg disponibles.`,
-      );
+      throw new Error(capacityError);
     }
 
-    // Décrémentation atomique
-    await tx.gpListing.update({
-      where: { id: order.listing_id },
+    // Décrémentation atomique conditionnelle : deux réservations simultanées ne peuvent pas
+    // consommer plus de kilos qu'il n'en reste (pas de survente).
+    const reserved = await tx.gpListing.updateMany({
+      where: {
+        id: order.listing_id,
+        is_active: true,
+        available_kg: { gte: order.weight_kg },
+      },
       data: {
         available_kg: {
           decrement: order.weight_kg,
         },
       },
     });
+    if (reserved.count === 0) {
+      throw new Error(capacityError);
+    }
 
     const sender = order.sender_id
       ? await tx.profile.findUnique({ where: { id: order.sender_id } })
       : null;
 
-    // Calcul fiable du montant total basé sur le tarif de l'annonce
+    // Montant toujours recalculé côté serveur à partir du tarif de l'annonce :
+    // le montant envoyé par le client n'est jamais pris en compte.
     const pricePerKg = Number(gpListing.price_per_kg || 0);
-    const calculatedTotal = order.total_amount && order.total_amount > 0
-      ? order.total_amount
-      : pricePerKg * order.weight_kg;
+    const calculatedTotal = Math.round(pricePerKg * order.weight_kg * 100) / 100;
 
     const newOrder = await tx.gpRequest.create({
       data: {
@@ -229,7 +246,8 @@ export const updateGpListing = async (
 
   if (data.available_kg !== undefined) updateData.available_kg = Number(data.available_kg);
   if (data.price_per_kg !== undefined) updateData.price_per_kg = Number(data.price_per_kg);
-  if (data.is_active !== undefined) updateData.is_active = Boolean(data.is_active);
+  // Booléen strict (validé par le contrôleur) : Boolean("false") vaudrait true
+  if (typeof data.is_active === "boolean") updateData.is_active = data.is_active;
 
   if (data.departure_date) {
     const dDate = new Date(data.departure_date);

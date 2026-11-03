@@ -28,7 +28,13 @@ import {
   ExternalLink,
 } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { getValidToken, removeToken, authFetch } from "@/lib/auth";
+import {
+  hasSession,
+  authFetch,
+  apiErrorMessage,
+  loadErrorMessage,
+  sendErrorMessage,
+} from "@/lib/auth";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "@/components/AddressAutocomplete";
@@ -56,6 +62,10 @@ interface Gp {
   is_active: boolean;
 }
 
+/** Date de demain au format AAAA-MM-JJ (date de départ proposée par défaut). */
+const tomorrowIsoDate = () =>
+  new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().split("T")[0];
+
 export default function GpEspacePage() {
   const router = useRouter();
   const [view, setView] = useState<"annonces" | "edit">("annonces");
@@ -66,12 +76,12 @@ export default function GpEspacePage() {
   const [deleteGpId, setDeleteGpId] = useState<string | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  // Trajets illisibles (hors ligne, API en panne) : distinct d'un espace sans annonce
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
 
-  const defaultDepartureDate = useMemo(() => {
-    return new Date(Date.now() + 24 * 60 * 60 * 1000)
-      .toISOString()
-      .split("T")[0];
-  }, []);
+  // Date calculée une fois (et non à chaque rendu)
+  const [defaultDepartureDate] = useState(tomorrowIsoDate);
 
   const [formData, setFormData] = useState({
     departure_city: "",
@@ -146,7 +156,8 @@ export default function GpEspacePage() {
       );
       if (!response.ok) {
         const res = await response.json();
-        throw new Error(res.error || "Erreur lors de la suppression");
+        alert(apiErrorMessage(res, "Erreur lors de la suppression"));
+        return;
       }
 
       setGP((prev) =>
@@ -154,9 +165,8 @@ export default function GpEspacePage() {
       );
       setDeleteGpId(null);
     } catch (error: unknown) {
-      const err = error as { message?: string };
-      console.error("Erreur lors de la suppression :", err);
-      alert("Une erreur est survenue : " + (err.message || "Erreur"));
+      console.error("Erreur lors de la suppression :", error);
+      alert(sendErrorMessage(error, "Une erreur est survenue lors de la suppression."));
     } finally {
       setIsDeleting(false);
     }
@@ -224,7 +234,8 @@ export default function GpEspacePage() {
 
       const res = await response.json();
       if (!response.ok) {
-        throw new Error(res.error || "Erreur lors de la mise à jour");
+        alert(apiErrorMessage(res, "Erreur lors de la mise à jour"));
+        return;
       }
 
       const updatedGp = res.data?.gp || res.data;
@@ -238,9 +249,8 @@ export default function GpEspacePage() {
 
       setView("annonces");
     } catch (error: unknown) {
-      const err = error as { message?: string };
-      console.error("Erreur lors de la mise à jour :", err);
-      alert("Une erreur est survenue : " + (err.message || "Erreur"));
+      console.error("Erreur lors de la mise à jour :", error);
+      alert(sendErrorMessage(error, "Une erreur est survenue lors de la mise à jour."));
     } finally {
       setIsSaving(false);
     }
@@ -248,8 +258,7 @@ export default function GpEspacePage() {
 
   useEffect(() => {
     async function loadGP() {
-      const token = getValidToken();
-      if (!token) {
+      if (!hasSession()) {
         router.push("/login");
         return;
       }
@@ -264,24 +273,31 @@ export default function GpEspacePage() {
           },
         );
         if (response.status === 401) {
-          removeToken();
           router.push("/login");
           return;
         }
         const res = await response.json();
         if (!response.ok) {
-          console.error(res.error || "Erreur de chargement des trajets");
+          setLoadError(apiErrorMessage(res, "Erreur de chargement des trajets"));
           return;
         }
-        setGP(res.data.gp || []);
+        setLoadError(null);
+        setGP(res.data?.gp || []);
       } catch (err) {
         console.error("Erreur récupération GP me:", err);
+        setLoadError(loadErrorMessage(err, "Impossible de charger vos trajets."));
       } finally {
         setLoading(false);
       }
     }
     loadGP();
-  }, [router]);
+  }, [router, reloadKey]);
+
+  const retryLoadGp = () => {
+    setLoading(true);
+    setLoadError(null);
+    setReloadKey((key) => key + 1);
+  };
 
   // Statistiques calculées
   const activeCount = useMemo(
@@ -318,6 +334,30 @@ export default function GpEspacePage() {
         <p className="text-sm font-semibold text-slate-700">
           Chargement de votre espace GP...
         </p>
+      </div>
+    );
+  }
+
+  // Liste illisible : ne pas afficher « aucune annonce » à un GP qui en a peut-être
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-[#FAF7F2] flex items-center justify-center p-4">
+        <div className="max-w-md w-full bg-white rounded-3xl border border-slate-200/80 shadow-xs p-8 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertTriangle size={28} />
+          </div>
+          <h2 className="text-lg font-extrabold text-slate-900">
+            Espace GP momentanément indisponible
+          </h2>
+          <p className="text-sm text-slate-600 leading-relaxed">{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoadGp}
+            className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#1D6B45] hover:bg-[#155235] text-white text-sm font-bold transition-colors shadow-xs cursor-pointer"
+          >
+            Réessayer
+          </button>
+        </div>
       </div>
     );
   }

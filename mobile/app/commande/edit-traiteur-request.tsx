@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -13,8 +13,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { apiFetch } from "../../utils/api";
+import {
+  apiFetch,
+  getApiErrorCode,
+  getApiErrorMessage,
+  getErrorMessage,
+  isNetworkError,
+} from "../../utils/api";
 import AddressAutocomplete, { AddressFeature } from "../../components/AddressAutocomplete";
+import LoadErrorState from "../../components/LoadErrorState";
 import OrderEditModal, { DetailRowItem } from "../../components/OrderEditModal";
 import { showErrorAlert } from "../../utils/alerts";
 import { verifyAddressExists } from "../../utils/addressValidation";
@@ -38,6 +45,10 @@ export default function EditTraiteurRequestScreen() {
   const [request, setRequest] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [validatingAddress, setValidatingAddress] = useState(false);
+  // Échec du chargement (hors 404) : message + bouton Réessayer au lieu d'une redirection
+  const [loadError, setLoadError] = useState<{ message: string; offline: boolean } | null>(null);
+  // Verrou contre la double soumission (double appui avant la désactivation du bouton)
+  const saveLockRef = useRef(false);
 
   // DatePicker state
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
@@ -77,15 +88,26 @@ export default function EditTraiteurRequestScreen() {
 
   const loadRequestDetails = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await apiFetch(`/traiteur/requests/${id}`);
-      if (!res.ok) {
-        throw new Error("Impossible de charger la recherche de traiteur.");
-      }
+      const res = await apiFetch(`/traiteur/requests/${encodeURIComponent(String(id))}`);
       const data = await res.json();
-      const req = data.data?.request || data.request || data.data;
-      if (!req) {
-        throw new Error("Recherche traiteur introuvable.");
+      const req = res.ok ? data.data?.request || data.request || data.data : null;
+      // « Introuvable » seulement si l'API le dit (404) ; les autres échecs proposent de réessayer
+      if (res.status === 404 || (res.ok && !req)) {
+        showErrorAlert(
+          "Annonce introuvable",
+          getApiErrorMessage(data, "Recherche traiteur introuvable."),
+          () => router.replace("/commandes"),
+        );
+        return;
+      }
+      if (!res.ok) {
+        setLoadError({
+          message: getApiErrorMessage(data, "Impossible de charger la recherche de traiteur."),
+          offline: false,
+        });
+        return;
       }
 
       if (req.status !== "open") {
@@ -135,12 +157,12 @@ export default function EditTraiteurRequestScreen() {
         budget: initBudget,
         description: initDesc,
       });
-    } catch (e: any) {
-      showErrorAlert(
-        "Erreur",
-        e.message || "Erreur de chargement de l'annonce.",
-        () => router.replace("/commandes"),
-      );
+    } catch (e) {
+      // Coupure ou délai dépassé : on reste sur l'écran avec un bouton Réessayer
+      setLoadError({
+        message: getErrorMessage(e, "Erreur de chargement de l'annonce."),
+        offline: isNetworkError(e),
+      });
     } finally {
       setLoading(false);
     }
@@ -229,6 +251,8 @@ export default function EditTraiteurRequestScreen() {
   };
 
   const performSave = async () => {
+    if (saveLockRef.current) return;
+    saveLockRef.current = true;
     setIsSaving(true);
     try {
       const parsedGuest = guestCount.trim() ? parseInt(guestCount.trim(), 10) : null;
@@ -245,7 +269,7 @@ export default function EditTraiteurRequestScreen() {
         description: description.trim() || null,
       };
 
-      const res = await apiFetch(`/traiteur/requests/${id}`, {
+      const res = await apiFetch(`/traiteur/requests/${encodeURIComponent(String(id))}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -253,14 +277,26 @@ export default function EditTraiteurRequestScreen() {
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || data.message || "Erreur lors de la modification");
+        const message = getApiErrorMessage(data, "Erreur lors de la modification.");
+        if (getApiErrorCode(data) === "IDEMPOTENCY_IN_PROGRESS") {
+          // Enregistrement encore en cours côté serveur : la confirmation reste ouverte pour relancer
+          showErrorAlert("Enregistrement en cours", message);
+          return;
+        }
+        // Message affiché par-dessus la fenêtre de confirmation, puis retour au formulaire
+        // (saisie conservée) pour corriger ou relancer
+        showErrorAlert("Erreur", message, () => setShowConfirmModal(false));
+        return;
       }
 
       setShowConfirmModal(false);
       setShowSuccessModal(true);
-    } catch (e: any) {
-      showErrorAlert("Erreur", e.message || "Impossible de sauvegarder l'annonce.");
+    } catch (e) {
+      // Issue inconnue (coupure) : la confirmation reste ouverte pour relancer la même requête,
+      // que le serveur ne traitera pas deux fois
+      showErrorAlert("Erreur", getErrorMessage(e, "Impossible de sauvegarder l'annonce."));
     } finally {
+      saveLockRef.current = false;
       setIsSaving(false);
     }
   };
@@ -308,6 +344,24 @@ export default function EditTraiteurRequestScreen() {
         <SafeAreaView style={styles.centerContainer}>
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Chargement de l'annonce...</Text>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.centerContainer}>
+          <LoadErrorState
+            title="Impossible de charger l'annonce"
+            message={loadError.message}
+            offline={loadError.offline}
+            onRetry={loadRequestDetails}
+            secondaryLabel="Retour à mes commandes"
+            onSecondary={() => router.replace("/commandes")}
+            style={{ alignSelf: "stretch" }}
+          />
         </SafeAreaView>
       </View>
     );

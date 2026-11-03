@@ -82,31 +82,25 @@ export const markAllNotificationsAsRead = async (userId: string) => {
   });
 };
 
+// Toujours limité aux notifications de l'utilisateur, administrateurs compris :
+// "Tout effacer" depuis un compte admin supprimait auparavant les notifications de TOUS les utilisateurs.
 export const deleteNotification = async (
   notificationId: string,
   userId: string,
-  isAdmin: boolean = false,
 ) => {
   return await db.notification.deleteMany({
-    where: isAdmin
-      ? { id: notificationId }
-      : {
-          id: notificationId,
-          user_id: userId,
-        },
+    where: {
+      id: notificationId,
+      user_id: userId,
+    },
   });
 };
 
-export const clearAllNotifications = async (
-  userId: string,
-  isAdmin: boolean = false,
-) => {
+export const clearAllNotifications = async (userId: string) => {
   return await db.notification.deleteMany({
-    where: isAdmin
-      ? {}
-      : {
-          user_id: userId,
-        },
+    where: {
+      user_id: userId,
+    },
   });
 };
 

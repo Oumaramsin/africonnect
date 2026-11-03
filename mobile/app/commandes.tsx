@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,17 +10,24 @@ import {
   Modal,
   Linking,
   TextInput,
-  Alert,
   DeviceEventEmitter,
   KeyboardAvoidingView,
   Platform,
+  RefreshControl,
 } from "react-native";
 import AppKeyboardScrollView from "../components/AppKeyboardScrollView";
+import LoadErrorState from "../components/LoadErrorState";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useFocusEffect, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
-import { apiFetch } from "../utils/api";
+import {
+  apiFetch,
+  getApiErrorMessage,
+  getErrorMessage,
+  isNetworkError,
+} from "../utils/api";
+import { showErrorAlert, showSuccessAlert } from "../utils/alerts";
 import {
   TraiteurRequest,
   TraiteurProposal,
@@ -122,6 +129,14 @@ type GpRequest = {
 type Tab = "envoyees" | "receptions" | "recues";
 type ServiceFilter = "tout" | "traiteur" | "gp";
 
+/**
+ * Devis émis par le traiteur (prix fixé ou signature engagée) : le client ne peut plus modifier sa
+ * demande (même règle que l'API, qui répond 409 DEVIS_ALREADY_ISSUED).
+ */
+const isDevisIssued = (cmd: CommandeTraiteur) =>
+  (cmd.prix_devis !== null && cmd.prix_devis !== undefined && cmd.prix_devis !== "") ||
+  (Boolean(cmd.devis_status) && cmd.devis_status !== "draft");
+
 export default function CommandeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -146,7 +161,22 @@ export default function CommandeScreen() {
   const [isTraiteur, setIsTraiteur] = useState(false);
   const [isGp, setIsGp] = useState(false);
   const [loading, setLoading] = useState(true);
+  // Chargement : premier affichage (plein écran), rafraîchissement (tirer vers le bas) ou erreur
+  const [refreshing, setRefreshing] = useState(false);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<{
+    message: string;
+    offline: boolean;
+  } | null>(null);
+  const hasLoadedRef = useRef(false);
+  // Numéro du dernier chargement lancé : une réponse plus ancienne n'écrase pas une plus récente
+  const loadSeqRef = useRef(0);
+  // Commande ciblée par une notification : ouverte une seule fois, pas à chaque rafraîchissement
+  const autoOpenedCommandeRef = useRef<string | null>(null);
   const [statusActionNote, setStatusActionNote] = useState<string>("");
+  const [statusActionSubmitting, setStatusActionSubmitting] = useState(false);
+  const [statusActionError, setStatusActionError] = useState<string | null>(null);
+  const statusActionLockRef = useRef(false);
   const [confirmAction, setConfirmAction] = useState<{
     type:
       | "accepter_traiteur"
@@ -167,6 +197,8 @@ export default function CommandeScreen() {
   // Mes recherches de traiteur & propositions reçues
   const [myTraiteurRequests, setMyTraiteurRequests] = useState<TraiteurRequest[]>([]);
   const [proposalLoading, setProposalLoading] = useState<string | null>(null);
+  // Verrou immédiat (l'état React n'est appliqué qu'au rendu suivant) contre le double appui
+  const proposalLockRef = useRef(false);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
 
   const [commandesRecues, setCommandesRecues] = useState<CommandeTraiteur[]>(
@@ -181,7 +213,10 @@ export default function CommandeScreen() {
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   const handleUpdateDevisCommande = (updated: CommandeTraiteur) => {
-    setSelectedDevisCommande(updated);
+    // Ne rouvre pas le devis si l'utilisateur l'a fermé pendant la requête
+    setSelectedDevisCommande((prev) =>
+      prev && prev.id === updated.id ? updated : prev
+    );
     setCommandesEnvoyees((prev) =>
       prev.map((c) => (c.id === updated.id ? { ...c, ...updated } : c))
     );
@@ -227,11 +262,21 @@ export default function CommandeScreen() {
     newStatus: string;
     statusLabel: string;
   } | null>(null);
+  const [gpStatusError, setGpStatusError] = useState<string | null>(null);
+  const gpStatusLockRef = useRef(false);
+
+  const closeGpStatusConfirm = () => {
+    if (gpStatusLockRef.current) return;
+    setGpStatusConfirm(null);
+    setGpStatusError(null);
+  };
 
   const handleConfirmUpdateGpStatus = async () => {
-    if (!gpStatusConfirm) return;
+    if (!gpStatusConfirm || gpStatusLockRef.current) return;
+    gpStatusLockRef.current = true;
     const { id, newStatus, statusLabel } = gpStatusConfirm;
     setUpdatingGpStatusId(id);
+    setGpStatusError(null);
     try {
       const res = await apiFetch(`/commande/gp/${id}/status`, {
         method: "PATCH",
@@ -239,18 +284,25 @@ export default function CommandeScreen() {
         body: JSON.stringify({ status: newStatus }),
       });
       if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error || "Erreur lors de la mise à jour du statut GP");
+        const data = await res.json().catch(() => ({}));
+        // Erreur affichée dans la modale, qui reste ouverte pour pouvoir réessayer
+        setGpStatusError(
+          getApiErrorMessage(data, "Erreur lors de la mise à jour du statut GP."),
+        );
+        return;
       }
-      Alert.alert(
+      setGpStatusConfirm(null);
+      showSuccessAlert(
         "Étape validée",
         `Le colis est maintenant marqué « ${statusLabel} ». L'expéditeur a été notifié.`
       );
-      setGpStatusConfirm(null);
-      await loadAll();
-    } catch (e: any) {
-      Alert.alert("Erreur", e.message || "Erreur de mise à jour");
+      loadAll();
+    } catch (e) {
+      setGpStatusError(
+        getErrorMessage(e, "Erreur lors de la mise à jour du statut GP."),
+      );
     } finally {
+      gpStatusLockRef.current = false;
       setUpdatingGpStatusId(null);
     }
   };
@@ -262,18 +314,29 @@ export default function CommandeScreen() {
     title: string;
   } | null>(null);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
+  const cancelLockRef = useRef(false);
 
   const openCancelConfirm = (
     type: "traiteur" | "order" | "gp" | "traiteur_request",
     id: string,
     title: string,
   ) => {
+    setCancelError(null);
     setCancelConfirmTarget({ type, id, title });
   };
 
+  const closeCancelConfirm = () => {
+    if (cancelLockRef.current) return;
+    setCancelConfirmTarget(null);
+    setCancelError(null);
+  };
+
   const executeCancelOrder = async () => {
-    if (!cancelConfirmTarget) return;
+    if (!cancelConfirmTarget || cancelLockRef.current) return;
+    cancelLockRef.current = true;
     setIsCancelling(true);
+    setCancelError(null);
     const { type, id } = cancelConfirmTarget;
     try {
       if (type === "traiteur_request") {
@@ -281,23 +344,32 @@ export default function CommandeScreen() {
         const res = await apiFetch(`/traiteur/requests/${id}`, {
           method: "DELETE",
         });
-        if (!res.ok) {
+        // 404 : l'annonce n'existe plus (suppression déjà aboutie lors d'une tentative
+        // précédente dont la réponse s'est perdue) ; le résultat attendu est donc atteint.
+        if (!res.ok && res.status !== 404) {
           const data = await res.json().catch(() => ({}));
-          throw new Error(data.message || data.error || "Erreur lors de la suppression de l'annonce");
+          // Erreur affichée dans la modale, qui reste ouverte pour pouvoir réessayer
+          setCancelError(
+            getApiErrorMessage(data, "Erreur lors de la suppression de l'annonce."),
+          );
+          return;
         }
 
-        // Suppression immédiate de la liste locale
+        // Retrait de la liste locale une fois la suppression confirmée
         setMyTraiteurRequests((prev) => prev.filter((r) => r.id !== id));
       } else {
         const res = await apiFetch(`/commande/cancel/${type}/${id}`, {
           method: "POST",
         });
         if (!res.ok) {
-          const data = await res.json();
-          throw new Error(data.error || "Erreur lors de l'annulation");
+          const data = await res.json().catch(() => ({}));
+          setCancelError(getApiErrorMessage(data, "Erreur lors de l'annulation."));
+          // Le statut a pu changer entre-temps : la liste est resynchronisée en arrière-plan
+          loadAll();
+          return;
         }
 
-        // Mise à jour locale optimiste
+        // Mise à jour locale une fois l'annulation confirmée par le serveur
         if (type === "traiteur") {
           setCommandesEnvoyees((prev) =>
             prev.map((c) => (c.id === id ? { ...c, statut: "annulee" } : c)),
@@ -314,10 +386,12 @@ export default function CommandeScreen() {
       }
 
       setCancelConfirmTarget(null);
-      await loadAll();
-    } catch (e: any) {
-      Alert.alert("Erreur", e.message || "Erreur lors de l'opération");
+      // Synchronisation en arrière-plan : les listes restent affichées
+      loadAll();
+    } catch (e) {
+      setCancelError(getErrorMessage(e, "Erreur lors de l'opération. Réessayez."));
     } finally {
+      cancelLockRef.current = false;
       setIsCancelling(false);
     }
   };
@@ -350,31 +424,54 @@ export default function CommandeScreen() {
     });
   };
 
-  async function loadAll() {
-    setLoading(true);
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.push("/login");
-      return;
+  /**
+   * Charge toutes les commandes. Au premier chargement, écran d'attente plein écran ; ensuite
+   * (retour sur l'écran, synchronisation après une action) les listes restent affichées pendant la
+   * mise à jour et sont conservées si elle échoue. `pullToRefresh` : indicateur « tirer pour
+   * rafraîchir » (et bouton Réessayer).
+   */
+  async function loadAll(options: { pullToRefresh?: boolean } = {}) {
+    const seq = ++loadSeqRef.current;
+    let redirecting = false;
+    if (options.pullToRefresh) {
+      setRefreshing(true);
+    } else if (!hasLoadedRef.current) {
+      setLoading(true);
     }
     try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        redirecting = true;
+        router.push("/login");
+        return;
+      }
+
+      // Marquage des notifications comme lues : sans incidence sur l'affichage, un échec est
+      // ignoré (hors ligne, il sera refait au prochain chargement)
       apiFetch("/notifications/read-all", {
         method: "PATCH",
       })
         .then(() => {
           DeviceEventEmitter.emit("dabari_notifications_updated");
         })
-        .catch((err) => console.error("Erreur mark-all-as-read:", err));
+        .catch(() => {});
 
       const response = await apiFetch("/commande");
       const res = await response.json();
-      if (!response.ok) {
-        console.error(res.message || "Erreur de chargement des commandes");
-        setLoading(false);
+      // Un chargement plus récent a été lancé entre-temps : c'est lui qui fait foi
+      if (seq !== loadSeqRef.current) return;
+      const profile = res?.data?.orders;
+      if (!response.ok || !profile) {
+        // Les données déjà affichées sont conservées ; un message invite à réessayer
+        setLoadError({
+          message: getApiErrorMessage(
+            res,
+            "Impossible de charger vos commandes. Réessayez dans un instant.",
+          ),
+          offline: false,
+        });
         return;
       }
-      const profile = res.data.orders;
-      if (!profile) return;
       if (profile.id) setCurrentUserId(profile.id);
       // ── 1. Commandes envoyées (Client) ──
       setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
@@ -403,9 +500,13 @@ export default function CommandeScreen() {
         );
         setGpRecues(sortOrdersByPendingFirst(allGpRequestsReceived));
       }
+      hasLoadedRef.current = true;
+      setHasLoaded(true);
+      setLoadError(null);
 
-      // ── 5. Auto-ouverture de commande/devis ciblé par une notification ──
-      if (params.commande_id) {
+      // ── 5. Auto-ouverture de commande/devis ciblé par une notification (une seule fois,
+      // pas à chaque rafraîchissement) ──
+      if (params.commande_id && autoOpenedCommandeRef.current !== params.commande_id) {
         const targetCmdEnvoyee = (profile.commandes || []).find(
           (c: any) => c.id === params.commande_id,
         );
@@ -415,65 +516,84 @@ export default function CommandeScreen() {
         );
 
         if (targetCmdEnvoyee) {
+          autoOpenedCommandeRef.current = params.commande_id;
           setTab("envoyees");
           setSelectedDevisCommande(targetCmdEnvoyee);
           setIsTraiteurViewForDevis(false);
         } else if (targetCmdRecue) {
+          autoOpenedCommandeRef.current = params.commande_id;
           setTab("recues");
           setSelectedDevisCommande(targetCmdRecue);
           setIsTraiteurViewForDevis(true);
         }
       }
     } catch (error) {
-      console.error("Erreur lors de la récupération des commandes:", error);
+      if (seq !== loadSeqRef.current) return;
+      if (!isNetworkError(error)) {
+        console.warn("Erreur lors de la récupération des commandes:", error);
+      }
+      setLoadError({
+        message: getErrorMessage(
+          error,
+          "Impossible de charger vos commandes. Réessayez dans un instant.",
+        ),
+        offline: isNetworkError(error),
+      });
     } finally {
-      setLoading(false);
+      if (seq === loadSeqRef.current) {
+        if (!redirecting) setLoading(false);
+        setRefreshing(false);
+      }
     }
   }
 
-  const handleAcceptProposal = async (prop: TraiteurProposal) => {
+  // Acceptation / refus d'une proposition de traiteur (un seul envoi à la fois). Les messages de
+  // l'écran passent par utils/alerts : Alert.alert de React Native n'affiche rien sur le web.
+  const updateProposalStatus = async (
+    prop: TraiteurProposal,
+    status: "acceptee" | "refusee",
+  ) => {
+    if (proposalLockRef.current) return;
+    proposalLockRef.current = true;
     setProposalLoading(prop.id);
+    const fallback =
+      status === "acceptee"
+        ? "Impossible d'accepter cette proposition. Réessayez."
+        : "Impossible de décliner cette proposition. Réessayez.";
     try {
       const res = await apiFetch(`/traiteur/proposals/${prop.id}/status`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "acceptee" }),
+        body: JSON.stringify({ status }),
       });
       if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Erreur acceptation proposition");
+        const data = await res.json().catch(() => ({}));
+        showErrorAlert("Erreur", getApiErrorMessage(data, fallback));
+        // La proposition a pu changer d'état entre-temps : resynchronisation en arrière-plan
+        loadAll();
+        return;
       }
-      Alert.alert(
-        "Offre acceptée !",
-        "Vous avez retenu cette offre. Vous pouvez contacter le traiteur par WhatsApp pour organiser votre événement.",
-      );
+      if (status === "acceptee") {
+        showSuccessAlert(
+          "Offre acceptée !",
+          "Vous avez retenu cette offre. Vous pouvez contacter le traiteur par WhatsApp pour organiser votre événement.",
+        );
+      }
+      // Boutons désactivés jusqu'à la mise à jour de la liste
       await loadAll();
-    } catch (e: any) {
-      Alert.alert("Erreur", e.message || "Erreur");
+    } catch (e) {
+      showErrorAlert("Erreur", getErrorMessage(e, fallback));
     } finally {
+      proposalLockRef.current = false;
       setProposalLoading(null);
     }
   };
 
-  const handleRejectProposal = async (prop: TraiteurProposal) => {
-    setProposalLoading(prop.id);
-    try {
-      const res = await apiFetch(`/traiteur/proposals/${prop.id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status: "refusee" }),
-      });
-      if (!res.ok) {
-        const err = await res.json();
-        throw new Error(err.message || "Erreur refus proposition");
-      }
-      await loadAll();
-    } catch (e: any) {
-      Alert.alert("Erreur", e.message || "Erreur");
-    } finally {
-      setProposalLoading(null);
-    }
-  };
+  const handleAcceptProposal = (prop: TraiteurProposal) =>
+    updateProposalStatus(prop, "acceptee");
+
+  const handleRejectProposal = (prop: TraiteurProposal) =>
+    updateProposalStatus(prop, "refusee");
 
   const handleCancelTraiteurRequest = (req: TraiteurRequest) => {
     openCancelConfirm(
@@ -535,6 +655,10 @@ export default function CommandeScreen() {
         })
       : "";
 
+  /**
+   * Accepte ou refuse une demande reçue. L'interface n'est mise à jour qu'une fois l'action
+   * confirmée par le serveur. Renvoie le message d'erreur à afficher, ou null en cas de succès.
+   */
   async function handleStatusUpdate(
     actionType:
       | "accepter_traiteur"
@@ -545,10 +669,7 @@ export default function CommandeScreen() {
       | "refuser_gp",
     item: any,
     note?: string,
-  ) {
-    const token = await getSecureToken("token");
-    if (!token) return;
-
+  ): Promise<string | null> {
     let url = "";
     let body: any = {};
     const trimmedNote = note?.trim() || undefined;
@@ -580,7 +701,29 @@ export default function CommandeScreen() {
         break;
     }
 
-    // Mise à jour optimiste immédiate de l'interface
+    const fallback = actionType.startsWith("accepter")
+      ? "Impossible d'accepter cette demande. Réessayez."
+      : "Impossible de refuser cette demande. Réessayez.";
+
+    let res: Response;
+    try {
+      // Même note → même corps : une relance après une coupure réutilise la clé d'idempotence
+      res = await apiFetch(url, {
+        method: "PATCH",
+        body: JSON.stringify(body),
+      });
+    } catch (err) {
+      return getErrorMessage(err, fallback);
+    }
+
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      // La demande a pu changer d'état entre-temps (annulation...) : resynchronisation
+      loadAll();
+      return getApiErrorMessage(data, fallback);
+    }
+
+    // Action confirmée par le serveur : mise à jour immédiate de l'interface
     if (actionType === "accepter_traiteur") {
       setCommandesRecues((prev) =>
         prev.map((c) =>
@@ -631,20 +774,11 @@ export default function CommandeScreen() {
       );
     }
 
-    try {
-      const res = await apiFetch(url, {
-        method: "PATCH",
-        body: JSON.stringify(body),
-      });
-
-      if (res.ok) {
-        await loadAll(); // Synchro finale backend
-        DeviceEventEmitter.emit("dabari_notifications_updated");
-        DeviceEventEmitter.emit("dabari_orders_updated");
-      }
-    } catch (err) {
-      console.error("Erreur lors de la mise à jour du statut :", err);
-    }
+    DeviceEventEmitter.emit("dabari_notifications_updated");
+    DeviceEventEmitter.emit("dabari_orders_updated");
+    // Synchro finale backend, en arrière-plan
+    loadAll();
+    return null;
   }
 
   function confirmAndExecuteAction(
@@ -658,7 +792,42 @@ export default function CommandeScreen() {
     item: any,
   ) {
     setStatusActionNote("");
+    setStatusActionError(null);
     setConfirmAction({ type: actionType, item });
+  }
+
+  // Validation de la modale Accepter / Refuser : un seul envoi à la fois ; la modale reste ouverte
+  // (note conservée, erreur affichée dedans) tant que le serveur n'a pas confirmé l'action.
+  async function submitStatusAction() {
+    if (!confirmAction || statusActionLockRef.current) return;
+    statusActionLockRef.current = true;
+    setStatusActionSubmitting(true);
+    setStatusActionError(null);
+    try {
+      const errorMessage = await handleStatusUpdate(
+        confirmAction.type,
+        confirmAction.item,
+        statusActionNote,
+      );
+      if (errorMessage) {
+        setStatusActionError(errorMessage);
+        return;
+      }
+      setConfirmAction(null);
+      setStatusActionNote("");
+    } catch (err) {
+      setStatusActionError(getErrorMessage(err, "Une erreur est survenue. Réessayez."));
+    } finally {
+      statusActionLockRef.current = false;
+      setStatusActionSubmitting(false);
+    }
+  }
+
+  function closeStatusActionModal() {
+    if (statusActionLockRef.current) return;
+    setConfirmAction(null);
+    setStatusActionNote("");
+    setStatusActionError(null);
   }
 
   const pendingRecues =
@@ -676,7 +845,11 @@ export default function CommandeScreen() {
     0,
   );
 
-  if (loading) {
+  // Les listes (et leurs états « aucune commande ») ne s'affichent qu'une fois les données reçues :
+  // un premier chargement en échec affiche l'erreur et le bouton Réessayer à la place.
+  const showLists = hasLoaded || !loadError;
+
+  if (loading && !hasLoaded) {
     return (
       <View style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#1D6B45" />
@@ -688,7 +861,7 @@ export default function CommandeScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* Header Vert avec Titre et Onglets */}
         <View style={styles.headerCard}>
@@ -906,9 +1079,56 @@ export default function CommandeScreen() {
           style={styles.mainScrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
           extraScrollHeight={140}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={() => loadAll({ pullToRefresh: true })}
+              tintColor="#1D6B45"
+              colors={["#1D6B45"]}
+            />
+          }
         >
+          {/* PREMIER CHARGEMENT EN ÉCHEC : erreur + Réessayer à la place des listes */}
+          {!hasLoaded && loadError && (
+            <LoadErrorState
+              title="Impossible de charger vos commandes"
+              message={loadError.message}
+              offline={loadError.offline}
+              retrying={refreshing}
+              onRetry={() => loadAll({ pullToRefresh: true })}
+              style={styles.loadErrorState}
+            />
+          )}
+
+          {/* ACTUALISATION EN ÉCHEC : les commandes déjà chargées restent affichées */}
+          {hasLoaded && loadError && (
+            <View style={styles.refreshErrorBox}>
+              <Ionicons
+                name={loadError.offline ? "cloud-offline-outline" : "alert-circle-outline"}
+                size={18}
+                color="#B45309"
+              />
+              <Text style={styles.refreshErrorText}>
+                <Text style={styles.refreshErrorTitle}>Liste non actualisée. </Text>
+                {loadError.message}
+              </Text>
+              <TouchableOpacity
+                style={styles.refreshErrorBtn}
+                onPress={() => loadAll({ pullToRefresh: true })}
+                disabled={refreshing}
+                activeOpacity={0.8}
+              >
+                {refreshing ? (
+                  <ActivityIndicator size="small" color="#B45309" />
+                ) : (
+                  <Text style={styles.refreshErrorBtnText}>Réessayer</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          )}
+
           {/* SECTION ENVOYÉES */}
-          {tab === "envoyees" && (
+          {showLists && tab === "envoyees" && (
             <>
               {(serviceFilter === "tout" &&
                 commandesEnvoyees.length === 0 &&
@@ -1073,22 +1293,25 @@ export default function CommandeScreen() {
                               {(cmd.statut === "en_attente" ||
                                 cmd.statut === "pending") && (
                                 <View style={styles.clientActionRow}>
-                                  <TouchableOpacity
-                                    style={styles.clientEditBtn}
-                                    onPress={() =>
-                                      openEditCommandeTraiteur(cmd)
-                                    }
-                                    activeOpacity={0.8}
-                                  >
-                                    <Ionicons
-                                      name="create-outline"
-                                      size={14}
-                                      color="#1D6B45"
-                                    />
-                                    <Text style={styles.clientEditBtnText}>
-                                      Modifier la demande
-                                    </Text>
-                                  </TouchableOpacity>
+                                  {/* Devis déjà émis (prix fixé) : la demande n'est plus modifiable */}
+                                  {!isDevisIssued(cmd) && (
+                                    <TouchableOpacity
+                                      style={styles.clientEditBtn}
+                                      onPress={() =>
+                                        openEditCommandeTraiteur(cmd)
+                                      }
+                                      activeOpacity={0.8}
+                                    >
+                                      <Ionicons
+                                        name="create-outline"
+                                        size={14}
+                                        color="#1D6B45"
+                                      />
+                                      <Text style={styles.clientEditBtnText}>
+                                        Modifier la demande
+                                      </Text>
+                                    </TouchableOpacity>
+                                  )}
 
                                   <TouchableOpacity
                                     style={styles.clientCancelBtn}
@@ -1128,7 +1351,7 @@ export default function CommandeScreen() {
                                     if (url) {
                                       Linking.openURL(url);
                                     } else {
-                                      Alert.alert("Contact WhatsApp", "Le numéro WhatsApp de ce traiteur n'est pas renseigné.");
+                                      showErrorAlert("Contact WhatsApp", "Le numéro WhatsApp de ce traiteur n'est pas renseigné.");
                                     }
                                   }}
                                 >
@@ -1311,7 +1534,7 @@ export default function CommandeScreen() {
                                     if (url) {
                                       Linking.openURL(url);
                                     } else {
-                                      Alert.alert(
+                                      showErrorAlert(
                                         "Contact WhatsApp",
                                         "Le numéro WhatsApp de ce traiteur n'est pas renseigné."
                                       );
@@ -1575,7 +1798,7 @@ export default function CommandeScreen() {
           )}
 
           {/* SECTION DEVIS & ANNONCES (RÉCEPTIONS) */}
-          {tab === "receptions" && (
+          {showLists && tab === "receptions" && (
             <View style={{ gap: 14 }}>
               {/* CTA Publier une recherche */}
               <TouchableOpacity
@@ -1952,7 +2175,7 @@ export default function CommandeScreen() {
           )}
 
           {/* SECTION REÇUES */}
-          {tab === "recues" && (
+          {showLists && tab === "recues" && (
             <>
               {commandesRecues.length === 0 &&
               ordersRecues.length === 0 &&
@@ -2332,7 +2555,7 @@ export default function CommandeScreen() {
                                     if (url) {
                                       Linking.openURL(url);
                                     } else {
-                                      Alert.alert(
+                                      showErrorAlert(
                                         "Contact WhatsApp",
                                         "Le numéro WhatsApp de ce client n'est pas renseigné."
                                       );
@@ -2586,6 +2809,7 @@ export default function CommandeScreen() {
                                         arrived: "Arrivé à destination",
                                         delivered: "Remis au destinataire",
                                       };
+                                      setGpStatusError(null);
                                       setGpStatusConfirm({
                                         id: gp.id,
                                         newStatus,
@@ -2618,7 +2842,7 @@ export default function CommandeScreen() {
                                       if (url) {
                                         Linking.openURL(url);
                                       } else {
-                                        Alert.alert(
+                                        showErrorAlert(
                                           "Contact WhatsApp",
                                           "Le numéro WhatsApp de cet expéditeur n'est pas renseigné."
                                         );
@@ -2653,7 +2877,7 @@ export default function CommandeScreen() {
             transparent
             animationType="fade"
             visible={!!confirmAction}
-            onRequestClose={() => setConfirmAction(null)}
+            onRequestClose={closeStatusActionModal}
           >
             <KeyboardAvoidingView
               behavior={Platform.OS === "ios" ? "padding" : undefined}
@@ -2712,18 +2936,28 @@ export default function CommandeScreen() {
                     placeholderTextColor="#94A3B8"
                     value={statusActionNote}
                     onChangeText={setStatusActionNote}
+                    editable={!statusActionSubmitting}
                     multiline
                     numberOfLines={3}
                   />
                 </View>
 
+                {/* Erreur affichée dans la modale : la note est conservée pour réessayer */}
+                {statusActionError && (
+                  <View style={styles.modalErrorBox}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#B91C1C" />
+                    <Text style={styles.modalErrorText}>{statusActionError}</Text>
+                  </View>
+                )}
+
                 <View style={styles.modalButtonsRow}>
                   <TouchableOpacity
-                    style={styles.modalCancelBtn}
-                    onPress={() => {
-                      setConfirmAction(null);
-                      setStatusActionNote("");
-                    }}
+                    style={[
+                      styles.modalCancelBtn,
+                      statusActionSubmitting && { opacity: 0.6 },
+                    ]}
+                    onPress={closeStatusActionModal}
+                    disabled={statusActionSubmitting}
                     activeOpacity={0.8}
                   >
                     <Text style={styles.modalCancelText}>Annuler</Text>
@@ -2735,17 +2969,19 @@ export default function CommandeScreen() {
                       confirmAction.type.startsWith("accepter")
                         ? styles.modalConfirmBtnAccept
                         : styles.modalConfirmBtnRefuse,
+                      statusActionSubmitting && { opacity: 0.7 },
                     ]}
                     activeOpacity={0.85}
-                    onPress={() => {
-                      const { type, item } = confirmAction;
-                      const noteToSend = statusActionNote;
-                      setConfirmAction(null);
-                      setStatusActionNote("");
-                      handleStatusUpdate(type, item, noteToSend);
-                    }}
+                    onPress={submitStatusAction}
+                    disabled={statusActionSubmitting}
                   >
-                    <Text style={styles.modalConfirmText}>Confirmer</Text>
+                    {statusActionSubmitting ? (
+                      <ActivityIndicator size="small" color="#FFFFFF" />
+                    ) : (
+                      <Text style={styles.modalConfirmText}>
+                        {statusActionError ? "Réessayer" : "Confirmer"}
+                      </Text>
+                    )}
                   </TouchableOpacity>
                 </View>
               </View>
@@ -2760,7 +2996,7 @@ export default function CommandeScreen() {
             visible={true}
             transparent
             animationType="fade"
-            onRequestClose={() => setCancelConfirmTarget(null)}
+            onRequestClose={closeCancelConfirm}
           >
             <View style={styles.modalOverlay}>
               <View style={styles.confirmModalCard}>
@@ -2788,10 +3024,17 @@ export default function CommandeScreen() {
                     : `Êtes-vous sûr(e) de vouloir annuler ${cancelConfirmTarget.title} ? Cette action est irréversible.`}
                 </Text>
 
+                {cancelError && (
+                  <View style={styles.modalErrorBox}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#B91C1C" />
+                    <Text style={styles.modalErrorText}>{cancelError}</Text>
+                  </View>
+                )}
+
                 <View style={styles.confirmModalButtonsRow}>
                   <TouchableOpacity
                     style={styles.confirmCancelBtn}
-                    onPress={() => setCancelConfirmTarget(null)}
+                    onPress={closeCancelConfirm}
                     disabled={isCancelling}
                     activeOpacity={0.8}
                   >
@@ -2846,7 +3089,7 @@ export default function CommandeScreen() {
             transparent
             animationType="fade"
             visible={!!gpStatusConfirm}
-            onRequestClose={() => setGpStatusConfirm(null)}
+            onRequestClose={closeGpStatusConfirm}
           >
             <View style={styles.modalOverlay}>
               <View style={styles.modalCard}>
@@ -2865,10 +3108,17 @@ export default function CommandeScreen() {
                   Voulez-vous passer le statut de ce colis à « {gpStatusConfirm.statusLabel} » ? L'expéditeur sera immédiatement averti.
                 </Text>
 
+                {gpStatusError && (
+                  <View style={styles.modalErrorBox}>
+                    <Ionicons name="alert-circle-outline" size={16} color="#B91C1C" />
+                    <Text style={styles.modalErrorText}>{gpStatusError}</Text>
+                  </View>
+                )}
+
                 <View style={styles.modalButtonsRow}>
                   <TouchableOpacity
                     style={styles.modalCancelBtn}
-                    onPress={() => setGpStatusConfirm(null)}
+                    onPress={closeGpStatusConfirm}
                     disabled={updatingGpStatusId === gpStatusConfirm.id}
                     activeOpacity={0.8}
                   >
@@ -3614,6 +3864,26 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "800",
   },
+  modalErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    width: "100%",
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+    borderWidth: 1,
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    marginBottom: 16,
+  },
+  modalErrorText: {
+    flex: 1,
+    color: "#B91C1C",
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
 
   /* Loading State */
   loadingContainer: {
@@ -3622,6 +3892,45 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     gap: 12,
+  },
+
+  /* Erreurs de chargement */
+  loadErrorState: {
+    paddingHorizontal: 0,
+    paddingTop: 8,
+  },
+  refreshErrorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    backgroundColor: "#FFFBEB",
+    borderColor: "#FCD34D",
+    borderWidth: 1,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  refreshErrorText: {
+    flex: 1,
+    color: "#92400E",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  refreshErrorTitle: {
+    fontWeight: "800",
+  },
+  refreshErrorBtn: {
+    paddingHorizontal: 12,
+    paddingVertical: 7,
+    borderRadius: 10,
+    backgroundColor: "#FEF3C7",
+    minWidth: 82,
+    alignItems: "center",
+  },
+  refreshErrorBtnText: {
+    color: "#B45309",
+    fontSize: 12,
+    fontWeight: "800",
   },
   loadingText: {
     color: "#1D6B45",

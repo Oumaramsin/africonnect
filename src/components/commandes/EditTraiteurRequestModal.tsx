@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import {
   Calendar,
   Users,
@@ -14,9 +14,9 @@ import {
   Loader2,
 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
-import { authFetch } from "@/lib/auth";
+import { apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
 import { TraiteurRequest, TRAITEUR_EVENT_TYPES } from "@/lib/types/traiteur";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
 
 type Props = {
   isOpen: boolean;
@@ -44,6 +44,12 @@ export default function EditTraiteurRequestModal({
   const [description, setDescription] = useState("");
   const [useManualLocation, setUseManualLocation] = useState(false);
   const [showConfirmSave, setShowConfirmSave] = useState(false);
+  // Erreur d'enregistrement, affichée dans la confirmation (qui reste ouverte pour réessayer)
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Adresse acceptée sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const savingRef = useRef(false);
 
   // Liste exhaustive des types d'événements (placé avant les retours conditionnels selon les règles React)
   const availableEventTypes = useMemo(() => {
@@ -78,6 +84,7 @@ export default function EditTraiteurRequestModal({
       );
       setDescription(request.description || "");
       setError(null);
+      setSaveError(null);
       setShowConfirmSave(false);
     }
   }, [request, isOpen]);
@@ -145,18 +152,25 @@ export default function EditTraiteurRequestModal({
       if (addressCheck.normalizedAddress && addressCheck.normalizedAddress !== location.trim()) {
         setLocation(addressCheck.normalizedAddress);
       }
+      setAddressUnverified(Boolean(addressCheck.unverified));
+      setSaveError(null);
       setShowConfirmSave(true);
     } catch (err: any) {
       console.warn("Erreur vérification adresse:", err);
+      setAddressUnverified(true);
+      setSaveError(null);
       setShowConfirmSave(true);
     } finally {
       setValidatingAddress(false);
     }
   };
 
+  // Même saisie = même corps : une relance après une coupure réutilise la clé d'idempotence
   const handleConfirmSave = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setLoading(true);
-    setError(null);
+    setSaveError(null);
 
     try {
       const parsedGuest = guestCount.trim() ? parseInt(guestCount.trim(), 10) : null;
@@ -187,15 +201,17 @@ export default function EditTraiteurRequestModal({
 
       const res = await response.json();
       if (!response.ok) {
-        throw new Error(res.error || "Erreur lors de la modification de l'annonce");
+        setSaveError(apiErrorMessage(res, "Erreur lors de la modification de l'annonce"));
+        return;
       }
 
       setShowConfirmSave(false);
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Erreur de connexion.");
+    } catch (err: unknown) {
+      setSaveError(sendErrorMessage(err, "Erreur de connexion."));
     } finally {
+      savingRef.current = false;
       setLoading(false);
     }
   };
@@ -206,6 +222,8 @@ export default function EditTraiteurRequestModal({
         <button
           type="button"
           onClick={onClose}
+          disabled={loading}
+          aria-label="Fermer"
           className="absolute top-5 right-5 text-gray-400 hover:text-gray-600 p-1.5 rounded-full hover:bg-gray-100 transition-colors"
         >
           <X size={20} />
@@ -481,6 +499,22 @@ export default function EditTraiteurRequestModal({
                 </div>
               </div>
 
+              {addressUnverified && (
+                <p className="-mt-3 mb-4 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2 text-left">
+                  {UNVERIFIED_ADDRESS_NOTICE}
+                </p>
+              )}
+
+              {saveError && (
+                <div
+                  role="alert"
+                  className="mb-4 p-3 bg-red-50 text-red-700 text-xs rounded-xl flex items-start gap-2 border border-red-200 font-medium text-left"
+                >
+                  <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                  <span>{saveError}</span>
+                </div>
+              )}
+
               <div className="flex gap-3">
                 <button
                   type="button"
@@ -494,9 +528,9 @@ export default function EditTraiteurRequestModal({
                   type="button"
                   onClick={handleConfirmSave}
                   disabled={loading}
-                  className="flex-1 py-3 text-xs font-bold text-white bg-[#1D6B45] hover:bg-[#165637] rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5"
+                  className="flex-1 py-3 text-xs font-bold text-white bg-[#1D6B45] hover:bg-[#165637] rounded-xl transition-all shadow-sm flex items-center justify-center gap-1.5 disabled:opacity-60"
                 >
-                  {loading ? "Enregistrement..." : "Oui, enregistrer"}
+                  {loading ? "Enregistrement..." : saveError ? "Réessayer" : "Oui, enregistrer"}
                 </button>
               </div>
             </div>

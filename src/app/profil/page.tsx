@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -30,7 +30,14 @@ import {
   ChevronUp,
 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
-import { getValidToken, decodeToken, removeToken, authFetch } from "@/lib/auth";
+import {
+  apiErrorMessage,
+  authFetch,
+  hasSession,
+  loadErrorMessage,
+  logoutAndReload,
+  sendErrorMessage,
+} from "@/lib/auth";
 
 const schema = z.object({
   full_name: z.string().min(2, "Nom requis"),
@@ -50,7 +57,17 @@ export default function ProfilPage() {
   const [userRole, setUserRole] = useState("client");
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isPersonalInfoOpen, setIsPersonalInfoOpen] = useState(false);
+  // Profil illisible (hors ligne, API en panne) : écran d'erreur avec « Réessayer »
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  // Identifiant lu avec le profil : les enregistrements n'en redemandent pas un (hors ligne, cela
+  // renvoyait à tort vers la page de connexion)
+  const [userId, setUserId] = useState<string | null>(null);
+  // Verrous contre la double soumission (posés avant le rendu suivant)
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
 
   const {
     register,
@@ -65,67 +82,65 @@ export default function ProfilPage() {
 
   useEffect(() => {
     async function loadProfile() {
-      const token = getValidToken();
-      if (!token) {
+      if (!hasSession()) {
         router.push("/login");
         return;
       }
-      const decodedPayload = decodeToken(token);
-      if (!decodedPayload || !decodedPayload.userId) {
-        removeToken();
-        router.push("/login");
-        return;
-      }
-      const response = await authFetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/auth/user/${decodedPayload.userId}`,
-        {
-          headers: {
-            "Content-Type": "application/json",
+      try {
+        const response = await authFetch(
+          `${process.env.NEXT_PUBLIC_API_URL}/auth/me`,
+          {
+            headers: {
+              "Content-Type": "application/json",
+            },
           },
-        },
-      );
-      if (response.status === 401) {
-        removeToken();
-        router.push("/login");
-        return;
+        );
+        if (response.status === 401) {
+          router.push("/login");
+          return;
+        }
+        const data = await response.json();
+        if (!response.ok || !data.user) {
+          setLoadError(
+            apiErrorMessage(data, "Erreur lors de la récupération du profil utilisateur"),
+          );
+          setLoading(false);
+          return;
+        }
+        setLoadError(null);
+        setUserId(data.user.id);
+        setUserEmail(data.user.email);
+        setUserRole(data.user.role || "client");
+        reset({
+          full_name: data.user.full_name || "",
+          phone: data.user.phone || "",
+          city: data.user.city || "",
+        });
+        setLoading(false);
+      } catch (err) {
+        setLoadError(loadErrorMessage(err, "Impossible de charger votre profil."));
+        setLoading(false);
       }
-      const data = await response.json();
-      if (!response.ok) {
-        setError(data.message || "Erreur lors de la récupération du profil utilisateur");
-        return;
-      }
-      setUserEmail(data.foundUser.email);
-      setUserRole(data.foundUser.role || "client");
-      reset({
-        full_name: data.foundUser.full_name || "",
-        phone: data.foundUser.phone || "",
-        city: data.foundUser.city || "",
-      });
-      setLoading(false);
     }
     loadProfile();
-  }, [router, reset]);
+  }, [router, reset, reloadKey]);
+
+  const retryLoadProfile = () => {
+    setLoading(true);
+    setLoadError(null);
+    setReloadKey((key) => key + 1);
+  };
 
   const onSubmit = async (formData: FormData) => {
+    if (!userId || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     setSuccess(false);
 
-    const token = getValidToken();
-    if (!token) {
-      router.push("/login");
-      return;
-    }
-
     try {
-      const decodedPayload = decodeToken(token);
-      if (!decodedPayload || !decodedPayload.userId) {
-        removeToken();
-        router.push("/login");
-        return;
-      }
       const res = await authFetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/auth/${decodedPayload.userId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/${userId}`,
         {
           method: "PATCH",
           headers: {
@@ -135,65 +150,64 @@ export default function ProfilPage() {
         },
       );
       if (res.status === 401) {
-        removeToken();
         router.push("/login");
         return;
       }
       const data = await res.json();
       if (!res.ok) {
-        setError(data.message || "Erreur lors de la mise à jour");
-        setSaving(false);
+        setError(apiErrorMessage(data, "Erreur lors de la mise à jour"));
         return;
       }
       setSuccess(true);
-      setSaving(false);
       setTimeout(() => setSuccess(false), 4000);
     } catch (err) {
-      setError("Impossible de mettre à jour le profil");
+      setError(sendErrorMessage(err, "Impossible de mettre à jour le profil"));
+    } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   };
 
-  const handleSignOut = () => {
-    removeToken();
-    router.push("/login");
+  const handleSignOut = async () => {
+    // Panier effacé et rechargement complet de la page de connexion
+    await logoutAndReload();
   };
 
+  const closeDeleteModal = () => {
+    setShowDeleteModal(false);
+    setDeleteError(null);
+  };
+
+  // En cas d'échec, la modale reste ouverte avec l'erreur et permet de réessayer
   const confirmDeleteAccount = async () => {
-    const token = getValidToken();
-    if (!token) return;
+    if (!userId || deletingRef.current) return;
+    deletingRef.current = true;
     setDeleting(true);
+    setDeleteError(null);
     try {
-      const decodedPayload = decodeToken(token);
-      if (!decodedPayload || !decodedPayload.userId) {
-        removeToken();
-        router.push("/login");
-        return;
-      }
       const res = await authFetch(
-        `${process.env.NEXT_PUBLIC_API_URL}/auth/${decodedPayload.userId}`,
+        `${process.env.NEXT_PUBLIC_API_URL}/auth/${userId}`,
         {
           method: "DELETE",
         },
       );
       if (res.status === 401) {
-        removeToken();
         router.push("/login");
         return;
       }
-      if (res.ok) {
-        removeToken();
-        router.push("/login");
-      } else {
+      // 404 : compte déjà supprimé (par exemple par une tentative précédente restée sans réponse)
+      if (!res.ok && res.status !== 404) {
         const data = await res.json();
-        setError(data.message || "Impossible de supprimer le compte.");
-        setDeleting(false);
-        setShowDeleteModal(false);
+        setDeleteError(apiErrorMessage(data, "Impossible de supprimer le compte."));
+        return;
       }
+      // Compte supprimé : le cookie de session, devenu invalide, est effacé par l'API
+      await logoutAndReload();
     } catch (err) {
-      setError("Erreur lors de la suppression du compte.");
+      setDeleteError(sendErrorMessage(err, "Erreur lors de la suppression du compte."));
+    } finally {
+      deletingRef.current = false;
       setDeleting(false);
-      setShowDeleteModal(false);
     }
   };
 
@@ -216,13 +230,33 @@ export default function ProfilPage() {
       </div>
     );
 
+  if (loadError)
+    return (
+      <div className="w-full max-w-md mx-auto px-4 py-20">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-sm p-8 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertTriangle size={28} />
+          </div>
+          <h1 className="text-lg font-black text-slate-900">Profil momentanément indisponible</h1>
+          <p className="text-sm text-slate-600 leading-relaxed">{loadError}</p>
+          <button
+            type="button"
+            onClick={retryLoadProfile}
+            className="inline-flex items-center justify-center px-6 py-3 rounded-2xl bg-[#1D6B45] hover:bg-[#155234] text-white text-sm font-bold transition-colors shadow-sm"
+          >
+            Réessayer
+          </button>
+        </div>
+      </div>
+    );
+
   const currentFullName = watch("full_name") || "Membre Dabari";
 
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 space-y-8">
       {/* ── 1. BREADCRUMB NAVIGATION ── */}
       <div className="flex items-center gap-2 text-xs text-slate-500 font-medium">
-        <Link href="/dashboard" className="hover:text-[#1D6B45] transition-colors">
+        <Link href="/" className="hover:text-[#1D6B45] transition-colors">
           Accueil
         </Link>
         <span>/</span>
@@ -658,7 +692,9 @@ export default function ProfilPage() {
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl p-6 sm:p-8 max-w-md w-full text-center shadow-2xl relative animate-in fade-in zoom-in-95 duration-200">
             <button
-              onClick={() => setShowDeleteModal(false)}
+              onClick={closeDeleteModal}
+              disabled={deleting}
+              aria-label="Fermer"
               className="absolute top-5 right-5 text-slate-400 hover:text-slate-600 p-1 rounded-full hover:bg-slate-100 transition-colors"
             >
               <X size={18} />
@@ -675,9 +711,18 @@ export default function ProfilPage() {
               Êtes-vous certain de vouloir supprimer votre compte Dabari ? Cette opération est irréversible et supprimera l&apos;ensemble de vos commandes, annonces et historique.
             </p>
 
+            {deleteError && (
+              <div
+                role="alert"
+                className="mb-4 bg-rose-50 border border-rose-200 text-rose-700 rounded-2xl p-3 text-xs font-semibold text-left"
+              >
+                {deleteError}
+              </div>
+            )}
+
             <div className="flex gap-3">
               <button
-                onClick={() => setShowDeleteModal(false)}
+                onClick={closeDeleteModal}
                 disabled={deleting}
                 className="flex-1 py-3 px-4 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs sm:text-sm hover:bg-slate-200 transition-colors"
               >
@@ -688,7 +733,7 @@ export default function ProfilPage() {
                 disabled={deleting}
                 className="flex-1 py-3 px-4 rounded-xl bg-rose-600 text-white font-bold text-xs sm:text-sm hover:bg-rose-700 transition-colors shadow-md flex items-center justify-center gap-1.5 disabled:opacity-60"
               >
-                {deleting ? "Suppression en cours..." : "Oui, supprimer"}
+                {deleting ? "Suppression en cours..." : deleteError ? "Réessayer" : "Oui, supprimer"}
               </button>
             </div>
           </div>

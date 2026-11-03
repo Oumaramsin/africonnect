@@ -214,7 +214,7 @@ button:focus-visible, a:focus-visible, input:focus-visible {
     display: block !important;
   }
 
-  body.modal-devis-open .print\\:hidden,
+  body.modal-devis-open .print\:hidden,
   body.modal-devis-open .print-hidden {
     display: none !important;
   }
@@ -222,5 +222,17 @@ button:focus-visible, a:focus-visible, input:focus-visible {
   .print-avoid-break {
     page-break-inside: avoid !important;
     break-inside: avoid !important;
+  }
+}
+
+/* Barres d'action fixes des pages mobiles : posées au-dessus de la navigation basse (BottomNav,
+ * visible sous 768 px, 66 px + marge de sécurité de l'écran) au lieu d'être recouvertes par elle */
+.bottom-above-nav {
+  bottom: calc(66px + max(env(safe-area-inset-bottom), 4px));
+}
+
+@media (min-width: 768px) {
+  .bottom-above-nav {
+    bottom: 0;
   }
 }

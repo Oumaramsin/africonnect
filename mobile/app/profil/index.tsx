@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -9,7 +9,6 @@ import {
   TextInput,
   Modal,
   ActivityIndicator,
-  Alert,
   DeviceEventEmitter,
   Platform,
   KeyboardAvoidingView,
@@ -17,10 +16,16 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { deleteSecureToken, getSecureToken } from "../../utils/storage";
-import { apiFetch } from "../../utils/api";
+import { clearUserSession, getSecureToken } from "../../utils/storage";
+import {
+  apiFetch,
+  getApiErrorMessage,
+  getErrorMessage,
+  isNetworkError,
+} from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
+import LoadErrorState from "../../components/LoadErrorState";
 
 export default function ProfilScreen() {
   const router = useRouter();
@@ -43,7 +48,18 @@ export default function ProfilScreen() {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
   const [isPersonalInfoOpen, setIsPersonalInfoOpen] = useState(false);
+
+  // Profil chargé au moins une fois : sans lui, les champs sont vides et « Sauvegarder »
+  // écraserait le téléphone et la ville enregistrés
+  const [profileLoaded, setProfileLoaded] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorOffline, setLoadErrorOffline] = useState(false);
+  const profileLoadedRef = useRef(false);
+  // Verrous anti double soumission (l'état React n'est pas encore à jour au second appui)
+  const savingRef = useRef(false);
+  const deletingRef = useRef(false);
 
   const getInitials = (name: string) => {
     if (!name.trim()) return "U";
@@ -57,13 +73,14 @@ export default function ProfilScreen() {
   };
 
   const loadProfile = async () => {
-    setLoading(true);
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.replace("/login");
-      return;
-    }
+    // Écran d'attente tant que le profil n'a jamais été chargé ; ensuite, rafraîchissement discret
+    if (!profileLoadedRef.current) setLoading(true);
     try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        router.replace("/login");
+        return;
+      }
       const base64Url = token.split(".")[1];
       const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
       const jsonPayload = decodeURIComponent(
@@ -83,6 +100,14 @@ export default function ProfilScreen() {
         setFullName(data.foundUser.full_name || "");
         setPhone(data.foundUser.phone || "");
         setCity(data.foundUser.city || "");
+        profileLoadedRef.current = true;
+        setProfileLoaded(true);
+        setLoadError(null);
+      } else {
+        setLoadErrorOffline(false);
+        setLoadError(
+          getApiErrorMessage(data, "Impossible de charger vos informations personnelles."),
+        );
       }
 
       // Détecte si l'utilisateur possède déjà une fiche traiteur
@@ -110,6 +135,10 @@ export default function ProfilScreen() {
       }
     } catch (err) {
       console.error("Erreur chargement profil:", err);
+      setLoadErrorOffline(isNetworkError(err));
+      setLoadError(
+        getErrorMessage(err, "Impossible de charger vos informations personnelles."),
+      );
     } finally {
       setLoading(false);
     }
@@ -136,37 +165,43 @@ export default function ProfilScreen() {
   );
 
   async function disconnect() {
-    await deleteSecureToken("token");
+    setShowLogoutModal(false);
+    // Jeton et panier en cours supprimés : le compte suivant ne retrouve pas ce panier
+    await clearUserSession();
     router.replace("/login");
   }
 
   async function confirmDeleteAccount() {
-    if (!userId) return;
+    if (!userId || deletingRef.current) return;
+    deletingRef.current = true;
     setDeleting(true);
+    setDeleteError(null);
     try {
       const response = await apiFetch(`/auth/${userId}`, {
         method: "DELETE",
       });
       if (response.ok) {
-        await deleteSecureToken("token");
+        await clearUserSession();
         setShowDeleteModal(false);
         router.replace("/login");
       } else {
         const data = await response.json();
-        Alert.alert(
-          "Erreur",
-          data.message || "Impossible de supprimer le compte.",
-        );
+        // Erreur affichée dans la fenêtre de confirmation (une alerte serait masquée par la
+        // modale, et Alert.alert n'affiche rien sur le web)
+        setDeleteError(getApiErrorMessage(data, "Impossible de supprimer le compte."));
       }
-    } catch (err: any) {
-      Alert.alert("Erreur", "Erreur lors de la suppression du compte.");
+    } catch (err) {
+      setDeleteError(getErrorMessage(err, "Erreur lors de la suppression du compte."));
     } finally {
+      deletingRef.current = false;
       setDeleting(false);
     }
   }
 
   async function updateProfil() {
-    if (!userId) return;
+    // Profil non chargé : des champs vides écraseraient le téléphone et la ville enregistrés
+    if (!userId || !profileLoaded || savingRef.current) return;
+    savingRef.current = true;
     setSaving(true);
     setError(null);
     setSuccess(false);
@@ -182,14 +217,15 @@ export default function ProfilScreen() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la sauvegarde");
+        setError(getApiErrorMessage(data, "Erreur lors de la sauvegarde"));
         return;
       }
       setSuccess(true);
       setTimeout(() => setSuccess(false), 3000);
     } catch (err) {
-      setError("Erreur de modification du profil");
+      setError(getErrorMessage(err, "Erreur de modification du profil"));
     } finally {
+      savingRef.current = false;
       setSaving(false);
     }
   }
@@ -206,7 +242,7 @@ export default function ProfilScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── 1. HEADER HERO BANNER (STYLE WEB DABARI) ── */}
         <View style={styles.headerCard}>
@@ -340,11 +376,15 @@ export default function ProfilScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
           extraScrollHeight={140}
         >
-          {Boolean(error) && (
-            <View style={styles.errorGlobalBox}>
-              <Ionicons name="alert-circle" size={18} color="#B91C1C" />
-              <Text style={styles.errorGlobalText}>{error}</Text>
-            </View>
+          {/* Profil non chargé : le reste de la page (déconnexion, espaces) reste utilisable */}
+          {Boolean(loadError) && !profileLoaded && (
+            <LoadErrorState
+              title="Profil non chargé"
+              message={loadError as string}
+              offline={loadErrorOffline}
+              onRetry={() => loadProfile()}
+              style={styles.loadErrorWrapper}
+            />
           )}
 
           {/* ── SECTION INFORMATIONS PERSONNELLES (MENU DÉROULANT / ACCORDÉON) ── */}
@@ -465,10 +505,27 @@ export default function ProfilScreen() {
                     />
                   </View>
 
+                  {/* Erreur d'enregistrement, juste au-dessus du bouton */}
+                  {Boolean(error) && (
+                    <View style={styles.errorGlobalBox}>
+                      <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                      <Text style={styles.errorGlobalText}>{error}</Text>
+                    </View>
+                  )}
+
+                  {!profileLoaded && (
+                    <Text style={styles.saveBlockedHint}>
+                      Enregistrement indisponible tant que vos informations n'ont pas été chargées.
+                    </Text>
+                  )}
+
                   {/* Bouton de Sauvegarde */}
                   <TouchableOpacity
-                    style={[styles.saveBtn, saving && styles.btnDisabled]}
-                    disabled={saving}
+                    style={[
+                      styles.saveBtn,
+                      (saving || !profileLoaded) && styles.btnDisabled,
+                    ]}
+                    disabled={saving || !profileLoaded}
                     activeOpacity={0.85}
                     onPress={updateProfil}
                   >
@@ -682,7 +739,10 @@ export default function ProfilScreen() {
             <TouchableOpacity
               style={[styles.accountActionRow, { backgroundColor: "#FEF2F2" }]}
               activeOpacity={0.7}
-              onPress={() => setShowDeleteModal(true)}
+              onPress={() => {
+                setDeleteError(null);
+                setShowDeleteModal(true);
+              }}
             >
               <View style={styles.accountActionLeft}>
                 <View style={[styles.actionIconCircle, { backgroundColor: "#FEE2E2" }]}>
@@ -757,6 +817,13 @@ export default function ProfilScreen() {
               <Text style={styles.dialogSubtext}>
                 Cette action est irréversible et supprimera l'ensemble de vos données, commandes et annonces Dabari.
               </Text>
+
+              {Boolean(deleteError) && (
+                <View style={[styles.errorGlobalBox, styles.dialogErrorBox]}>
+                  <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                  <Text style={styles.errorGlobalText}>{deleteError}</Text>
+                </View>
+              )}
 
               <View style={styles.dialogButtonsRow}>
                 <TouchableOpacity
@@ -1011,6 +1078,19 @@ const styles = StyleSheet.create({
     fontSize: 12.5,
     fontWeight: "600",
     color: "#B91C1C",
+  },
+  loadErrorWrapper: {
+    padding: 0,
+  },
+  saveBlockedHint: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#B45309",
+    textAlign: "center",
+  },
+  dialogErrorBox: {
+    width: "100%",
+    marginBottom: 16,
   },
 
   /* ── Section Cards ── */

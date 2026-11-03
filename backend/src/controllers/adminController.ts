@@ -1,4 +1,7 @@
 import { Request, Response } from "express";
+import { isOptionalTextWithin, isRequiredTextWithin, isStringArrayWithin, sendErrorResponse } from "../utils/validation";
+import { isValidUUID } from "../utils/types";
+import { isOwnStorageUrl } from "../services/storageService";
 import {
   deleteTraiteur,
   updateStateTraiteur,
@@ -21,7 +24,7 @@ export const getAdminOverviewController = async (
       data: overview,
     });
   } catch (error: any) {
-    res.status(500).json({ success: false, error: error.message });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -32,7 +35,7 @@ export const updateStateTraiteurController = async (
   try {
     const id = req.body.traiteur_id;
     const is_active: boolean = req.body.is_active;
-    if (!id || is_active === undefined) {
+    if (!isValidUUID(id) || typeof is_active !== "boolean") {
       return res.status(400).json({
         success: false,
         error:
@@ -54,7 +57,7 @@ export const updateStateTraiteurController = async (
 export const deleteTraiteurController = async (req: Request, res: Response) => {
   try {
     const id = req.body.traiteur_id;
-    if (!id) {
+    if (!isValidUUID(id)) {
       return res.status(400).json({
         success: false,
         error:
@@ -89,16 +92,27 @@ export const createTraiteurFromUserController = async (
     } = req.body;
 
     if (
-      !user_id ||
-      !name ||
-      !bio ||
-      !cuisine_type ||
+      !isValidUUID(user_id) ||
+      !isRequiredTextWithin(name, 100) ||
+      !isRequiredTextWithin(bio, 2000) ||
+      !isStringArrayWithin(cuisine_type, 20, 60) ||
       cuisine_type.length === 0
     ) {
       return res.status(400).json({
         success: false,
         error:
           "Veuillez renseigner tous les champs obligatoires (user_id, name, bio, cuisine_type).",
+      });
+    }
+
+    if (
+      (delivery_zones !== undefined && delivery_zones !== null && !isStringArrayWithin(delivery_zones, 50, 100)) ||
+      !isOptionalTextWithin(whatsapp, 30) ||
+      (image_url && !isOwnStorageUrl(image_url))
+    ) {
+      return res.status(400).json({
+        success: false,
+        error: "Zones de livraison, WhatsApp ou image invalides.",
       });
     }
 
@@ -117,7 +131,7 @@ export const createTraiteurFromUserController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createTraiteurFromUserController:", error);
-    res.status(500).json({ success: false, error: error.message });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -127,7 +141,7 @@ export const updateStateGpController = async (req: Request, res: Response) => {
     const id = req.body.gp_id;
     const is_active: boolean = req.body.is_active;
 
-    if (!id || is_active === undefined) {
+    if (!isValidUUID(id) || typeof is_active !== "boolean") {
       return res.status(400).json({
         success: false,
         error:
@@ -152,7 +166,7 @@ export const setAdminController = async (req: Request, res: Response) => {
     const { id, is_admin } = req.body;
     const currentAdmin = (req as any).user;
 
-    if (!id) {
+    if (!isValidUUID(id) || (is_admin !== undefined && typeof is_admin !== "boolean")) {
       return res.status(400).json({
         success: false,
         error: "Veuillez renseigner tous les champs obligatoires (id).",
@@ -178,7 +192,7 @@ export const setAdminController = async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error("Erreur dans setAdminController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur" });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -186,7 +200,7 @@ export const deleteGpController = async (req: Request, res: Response) => {
   try {
     const id = req.body.gp_id;
 
-    if (!id) {
+    if (!isValidUUID(id)) {
       return res.status(400).json({
         success: false,
         error: "Veuillez renseigner tous les champs obligatoires (gp_id).",
@@ -222,12 +236,13 @@ export const createGpFromUserController = async (
     } = req.body;
 
     if (
-      !user_id ||
-      !departure_city ||
-      !departure_country ||
-      !arrival_city ||
-      !arrival_country ||
+      !isValidUUID(user_id) ||
+      !isRequiredTextWithin(departure_city, 100) ||
+      !isRequiredTextWithin(departure_country, 100) ||
+      !isRequiredTextWithin(arrival_city, 100) ||
+      !isRequiredTextWithin(arrival_country, 100) ||
       !departure_date ||
+      isNaN(new Date(departure_date).getTime()) ||
       !available_kg ||
       !price_per_kg
     ) {
@@ -268,7 +283,7 @@ export const createGpFromUserController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createGpFromUserController:", error);
-    res.status(500).json({ success: false, error: error.message });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 

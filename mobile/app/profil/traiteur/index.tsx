@@ -16,7 +16,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getErrorMessage } from "../../../utils/api";
 
 type Dish = {
   id: string;
@@ -63,12 +63,13 @@ export default function TraiteurEspaceScreen() {
   async function loadTraiteur() {
     setLoading(true);
     setError(null);
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
     try {
+      // Sans jeton : redirection vers la connexion (le `finally` arrête l'indicateur de chargement)
+      const token = await getSecureToken("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
       const response = await apiFetch("/traiteur/me");
       const data = await response.json();
       if (!response.ok) {
@@ -88,7 +89,9 @@ export default function TraiteurEspaceScreen() {
       }
     } catch (err: any) {
       console.error(err);
-      setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
+      setError(
+        getErrorMessage(err, "Impossible de charger votre atelier pour le moment. Réessayez."),
+      );
     } finally {
       setLoading(false);
     }
@@ -123,7 +126,7 @@ export default function TraiteurEspaceScreen() {
       setDishes((prev) =>
         prev.map((d) => (d.id === dishId ? { ...d, is_available: current } : d)),
       );
-      setError("Impossible de modifier la disponibilité du plat.");
+      setError(getErrorMessage(e, "Impossible de modifier la disponibilité du plat."));
     }
   }
 
@@ -152,7 +155,7 @@ export default function TraiteurEspaceScreen() {
       }
     } catch (e) {
       setTraiteur((prev) => (prev ? { ...prev, is_active: !newStatus } : null));
-      setError("Erreur de connexion au serveur.");
+      setError(getErrorMessage(e, "Impossible de modifier le statut de l'atelier."));
     } finally {
       setTogglingStatus(false);
     }
@@ -178,7 +181,7 @@ export default function TraiteurEspaceScreen() {
       setDishes((prev) => prev.filter((d) => d.id !== dishToDelete));
     } catch (err) {
       console.error("Erreur lors de la suppression:", err);
-      setError("Impossible de supprimer le plat. Vérifiez votre connexion.");
+      setError(getErrorMessage(err, "Impossible de supprimer le plat. Réessayez."));
     } finally {
       setIsDeleting(false);
       setDishToDelete(null);
@@ -199,7 +202,7 @@ export default function TraiteurEspaceScreen() {
   if (loading) {
     return (
       <View style={[styles.topGreenWrapper, styles.centerLoader]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
         <ActivityIndicator size="large" color="#FFFFFF" />
         <Text style={styles.initialLoadingText}>
           Chargement de votre atelier traiteur...
@@ -212,7 +215,7 @@ export default function TraiteurEspaceScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+          <StatusBar barStyle="light-content" />
           <View style={styles.headerTopBar}>
             <TouchableOpacity
               style={styles.backBtn}
@@ -255,7 +258,7 @@ export default function TraiteurEspaceScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── HEADER HERO VERT FORET (#0B3B24) ── */}
         <View style={styles.headerHero}>

@@ -1,9 +1,15 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { getValidToken, removeToken, authFetch } from "@/lib/auth";
+import {
+  hasSession,
+  authFetch,
+  apiErrorMessage,
+  loadErrorMessage,
+  sendErrorMessage,
+} from "@/lib/auth";
 import {
   TraiteurRequest,
   TraiteurProposal,
@@ -188,6 +194,33 @@ type GpRequest = {
 
 type Tab = "envoyees" | "receptions" | "recues";
 
+/** Commandes en attente d'abord, puis les plus récentes. */
+const sortOrdersByPendingFirst = <
+  T extends {
+    statut?: string | null;
+    status?: string | null;
+    created_at?: string | null;
+  },
+>(
+  items: T[],
+): T[] => {
+  return [...items].sort((a, b) => {
+    const statusA = a.statut || a.status || "";
+    const statusB = b.statut || b.status || "";
+
+    const isPendingA = statusA === "en_attente" || statusA === "pending";
+    const isPendingB = statusB === "en_attente" || statusB === "pending";
+
+    if (isPendingA && !isPendingB) return -1;
+    if (!isPendingA && isPendingB) return 1;
+
+    //tri ordre décroissant
+    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
+    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
+    return dateB - dateA;
+  });
+};
+
 export default function CommandesPage() {
   const [tab, setTab] = useState<Tab>("envoyees");
   const [serviceFilter, setServiceFilter] = useState<
@@ -261,51 +294,24 @@ export default function CommandesPage() {
   const [updatingGpStatusId, setUpdatingGpStatusId] = useState<string | null>(null);
   const [delayTargetGp, setDelayTargetGp] = useState<GpRequest | null>(null);
 
-  useEffect(() => {
-    const load = async () => {
-      const token = getValidToken();
-      if (!token) {
-        router.push("/login");
-        return;
-      }
-      await loadAll();
-    };
-    load();
-  }, []);
+  // Chargement : premier chargement (page d'attente), échec (message + Réessayer), actualisation
+  // (les listes restent affichées, les modales ouvertes ne sont pas démontées)
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
+  // Erreurs affichées dans les fenêtres de confirmation (qui restent ouvertes pour réessayer)
+  const [proposalError, setProposalError] = useState<string | null>(null);
+  const [gpStatusError, setGpStatusError] = useState<string | null>(null);
+  // Verrous contre la double soumission (posés avant le rendu suivant)
+  const proposalActionRef = useRef(false);
+  const gpStatusActionRef = useRef(false);
 
-  const sortOrdersByPendingFirst = <
-    T extends {
-      statut?: string | null;
-      status?: string | null;
-      created_at?: string | null;
-    },
-  >(
-    items: T[],
-  ): T[] => {
-    return [...items].sort((a, b) => {
-      const statusA = a.statut || a.status || "";
-      const statusB = b.statut || b.status || "";
-
-      const isPendingA = statusA === "en_attente" || statusA === "pending";
-      const isPendingB = statusB === "en_attente" || statusB === "pending";
-
-      if (isPendingA && !isPendingB) return -1;
-      if (!isPendingA && isPendingB) return 1;
-
-      //tri ordre décroissant
-      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return dateB - dateA;
-    });
-  };
-
-  async function loadAll() {
-    setLoading(true);
-    const token = getValidToken();
-    if (!token) {
+  const loadAll = useCallback(async () => {
+    if (!hasSession()) {
       router.push("/login");
       return;
     }
+    setRefreshing(true);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
       authFetch(`${apiUrl}/notifications/read-all`, {
@@ -327,18 +333,19 @@ export default function CommandesPage() {
         },
       );
       if (response.status === 401) {
-        removeToken();
         router.push("/login");
         return;
       }
       const res = await response.json();
       if (!response.ok) {
-        console.error(res.message || "Erreur de chargement des commandes");
-        setLoading(false);
+        setLoadError(apiErrorMessage(res, "Erreur de chargement des commandes."));
         return;
       }
-      const profile = res.data.orders;
-      if (!profile) return;
+      const profile = res.data?.orders;
+      if (!profile) {
+        setLoadError("Réponse inattendue du serveur. Réessayez dans un instant.");
+        return;
+      }
       setCurrentUserId(profile.id || null);
       // ── 1. Commandes envoyées (Client) ──
       setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
@@ -365,18 +372,33 @@ export default function CommandesPage() {
         );
         setGpRecues(sortOrdersByPendingFirst(allGpRequestsReceived));
       }
+      setLoadError(null);
+      setHasLoaded(true);
     } catch (error) {
       console.error("Erreur lors de la récupération des commandes:", error);
+      setLoadError(loadErrorMessage(error, "Impossible de charger vos commandes."));
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
-  }
+  }, [router]);
 
+  useEffect(() => {
+    const load = async () => {
+      await loadAll();
+    };
+    load();
+  }, [loadAll]);
+
+  // Renvoie true si l'action a abouti ; sinon l'erreur est affichée dans la fenêtre de confirmation
   async function handleProposalStatus(
     proposal: TraiteurProposal,
     status: "accepted" | "rejected",
-  ) {
+  ): Promise<boolean> {
+    if (proposalActionRef.current) return false;
+    proposalActionRef.current = true;
     setProposalActionLoading(proposal.id);
+    setProposalError(null);
     const actionLabel = status === "accepted" ? "l'acceptation" : "le refus";
     try {
       const res = await authFetch(
@@ -389,16 +411,21 @@ export default function CommandesPage() {
           body: JSON.stringify({ status }),
         },
       );
-      if (res.ok) {
-        await loadAll();
-      } else {
+      if (!res.ok) {
         const data = await res.json().catch(() => ({}));
-        alert(data.error || data.message || `Erreur lors de ${actionLabel} de la proposition.`);
+        setProposalError(
+          apiErrorMessage(data, `Erreur lors de ${actionLabel} de la proposition.`),
+        );
+        return false;
       }
-    } catch (e: any) {
+      await loadAll();
+      return true;
+    } catch (e: unknown) {
       console.error(`Erreur ${actionLabel} proposition:`, e);
-      alert(e.message || `Erreur réseau lors de ${actionLabel}.`);
+      setProposalError(sendErrorMessage(e, `Erreur réseau lors de ${actionLabel}.`));
+      return false;
     } finally {
+      proposalActionRef.current = false;
       setProposalActionLoading(null);
     }
   }
@@ -406,9 +433,17 @@ export default function CommandesPage() {
   async function confirmProposalAction() {
     if (!proposalConfirm) return;
     const { proposal, action } = proposalConfirm;
-    await handleProposalStatus(proposal, action === "accept" ? "accepted" : "rejected");
-    setProposalConfirm(null);
+    const done = await handleProposalStatus(
+      proposal,
+      action === "accept" ? "accepted" : "rejected",
+    );
+    if (done) setProposalConfirm(null);
   }
+
+  const closeProposalConfirm = () => {
+    setProposalConfirm(null);
+    setProposalError(null);
+  };
 
   async function handleAccepterTraiteur(commande: CommandeTraiteur) {
     try {
@@ -603,10 +638,14 @@ export default function CommandesPage() {
   }
 
 
+  // L'étape n'est affichée qu'après confirmation de l'API ; en cas d'échec, la fenêtre reste
+  // ouverte avec l'erreur et permet de réessayer (même corps : même clé d'idempotence)
   async function handleConfirmUpdateGpStatus() {
-    if (!gpStatusConfirm) return;
+    if (!gpStatusConfirm || gpStatusActionRef.current) return;
     const { request, newStatus } = gpStatusConfirm;
+    gpStatusActionRef.current = true;
     setUpdatingGpStatusId(request.id);
+    setGpStatusError(null);
     try {
       const res = await authFetch(
         `${process.env.NEXT_PUBLIC_API_URL}/commande/gp/${request.id}/status`,
@@ -618,32 +657,46 @@ export default function CommandesPage() {
           body: JSON.stringify({ status: newStatus }),
         },
       );
-      if (res.ok) {
-        setGpRecues((prev) =>
-          sortOrdersByPendingFirst(
-            prev.map((r) =>
-              r.id === request.id ? { ...r, status: newStatus } : r,
-            ),
-          ),
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setGpStatusError(
+          apiErrorMessage(data, "La mise à jour du suivi du colis a échoué."),
         );
-        setGpEnvoyees((prev) =>
-          sortOrdersByPendingFirst(
-            prev.map((r) =>
-              r.id === request.id ? { ...r, status: newStatus } : r,
-            ),
+        return;
+      }
+      setGpRecues((prev) =>
+        sortOrdersByPendingFirst(
+          prev.map((r) =>
+            r.id === request.id ? { ...r, status: newStatus } : r,
           ),
-        );
-        setGpStatusConfirm(null);
-        if (typeof window !== "undefined") {
-          window.dispatchEvent(new CustomEvent("notifications-updated"));
-        }
+        ),
+      );
+      setGpEnvoyees((prev) =>
+        sortOrdersByPendingFirst(
+          prev.map((r) =>
+            r.id === request.id ? { ...r, status: newStatus } : r,
+          ),
+        ),
+      );
+      setGpStatusConfirm(null);
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("notifications-updated"));
       }
     } catch (e) {
       console.error("Erreur mise à jour statut GP:", e);
+      setGpStatusError(
+        sendErrorMessage(e, "La mise à jour du suivi du colis a échoué."),
+      );
     } finally {
+      gpStatusActionRef.current = false;
       setUpdatingGpStatusId(null);
     }
   }
+
+  const closeGpStatusConfirm = () => {
+    setGpStatusConfirm(null);
+    setGpStatusError(null);
+  };
 
   const getStatutBadge = (statut?: string | null) => {
     switch (statut) {
@@ -853,6 +906,30 @@ export default function CommandesPage() {
       </div>
     );
 
+  // Premier chargement en échec (hors ligne, API en panne) : pas de liste vide trompeuse
+  if (loadError && !hasLoaded)
+    return (
+      <div className="w-full max-w-md mx-auto px-4 py-20">
+        <div className="bg-white rounded-3xl border border-gray-100 shadow-sm p-8 text-center space-y-4">
+          <div className="w-14 h-14 mx-auto rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center">
+            <AlertCircle size={28} />
+          </div>
+          <h1 className="text-lg font-bold text-gray-900">
+            Impossible d&apos;afficher vos commandes
+          </h1>
+          <p className="text-sm text-gray-500 leading-relaxed">{loadError}</p>
+          <button
+            type="button"
+            onClick={() => loadAll()}
+            disabled={refreshing}
+            className="inline-flex items-center justify-center gap-2 bg-[#1D6B45] text-white px-6 py-3 rounded-2xl text-sm font-bold hover:bg-[#165637] transition-all shadow-md disabled:opacity-60"
+          >
+            {refreshing ? "Chargement..." : "Réessayer"}
+          </button>
+        </div>
+      </div>
+    );
+
   return (
     <div className="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-10 space-y-8">
       {/* ── 1. HERO BANNER COMMANDES & RÉCEPTIONS ── */}
@@ -980,6 +1057,30 @@ export default function CommandesPage() {
 
       {/* ── 2. CONTENU DES COMMANDES RESPONSIVE ── */}
       <div className="space-y-6">
+        {/* Actualisation en échec : les dernières données chargées restent affichées */}
+        {loadError && hasLoaded && (
+          <div
+            role="alert"
+            className="bg-amber-50 border border-amber-200 text-amber-900 rounded-2xl px-4 py-3 text-xs sm:text-sm font-medium flex flex-col sm:flex-row sm:items-center gap-3"
+          >
+            <div className="flex items-start gap-2 flex-1">
+              <AlertCircle size={18} className="text-amber-600 shrink-0" />
+              <span>
+                Impossible d&apos;actualiser vos commandes : les informations affichées
+                peuvent être anciennes. {loadError}
+              </span>
+            </div>
+            <button
+              type="button"
+              onClick={() => loadAll()}
+              disabled={refreshing}
+              className="self-start sm:self-auto shrink-0 px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold transition-colors disabled:opacity-60"
+            >
+              {refreshing ? "Actualisation..." : "Réessayer"}
+            </button>
+          </div>
+        )}
+
         {/* ── ONGLET ENVOYÉES ── */}
         {tab === "envoyees" && (
           <>
@@ -1127,7 +1228,7 @@ export default function CommandesPage() {
                                     traiteurInfo.whatsapp,
                                     `Bonjour, je vous contacte suite à ma commande du ${commande.date_evenement} sur Dabari.`
                                   );
-                                  if (url) window.open(url, "_blank");
+                                  if (url) window.open(url, "_blank", "noopener,noreferrer");
                                 }}
                                 className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                               >
@@ -1141,13 +1242,16 @@ export default function CommandesPage() {
                           {(commande.statut === "en_attente" ||
                             commande.statut === "pending") && (
                             <div className="flex items-center gap-2 pt-3 border-t border-gray-100">
-                              <button
-                                type="button"
-                                onClick={() => setEditingDevis(commande)}
-                                className="flex-1 py-2.5 px-3 bg-[#1D6B45]/10 text-[#1D6B45] hover:bg-[#1D6B45]/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
-                              >
-                                <Edit3 size={14} /> Modifier la demande
-                              </button>
+                              {/* Devis chiffré par le traiteur : la demande n'est plus modifiable */}
+                              {!(Number(commande.prix_devis) > 0) && (
+                                <button
+                                  type="button"
+                                  onClick={() => setEditingDevis(commande)}
+                                  className="flex-1 py-2.5 px-3 bg-[#1D6B45]/10 text-[#1D6B45] hover:bg-[#1D6B45]/20 rounded-xl text-xs font-bold transition-colors flex items-center justify-center gap-1.5"
+                                >
+                                  <Edit3 size={14} /> Modifier la demande
+                                </button>
+                              )}
                               <button
                                 type="button"
                                 onClick={() =>
@@ -1260,7 +1364,7 @@ export default function CommandesPage() {
                                     traiteurInfo.whatsapp,
                                     `Bonjour, je vous contacte suite à ma commande de plats sur Dabari.`
                                   );
-                                  if (url) window.open(url, "_blank");
+                                  if (url) window.open(url, "_blank", "noopener,noreferrer");
                                 }}
                                 className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                               >
@@ -1553,7 +1657,7 @@ export default function CommandesPage() {
                       : "Vos demandes de devis traiteur, commandes de plats et envois de colis GP apparaîtront ici."}
                 </p>
                 <Link
-                  href="/dashboard"
+                  href="/"
                   className="inline-flex items-center justify-center gap-2 bg-[#1D6B45] text-white px-6 py-3 rounded-2xl text-xs font-bold hover:bg-[#165637] transition-all shadow-md active:scale-95"
                 >
                   Découvrir les services <ArrowRight size={15} />
@@ -2013,7 +2117,7 @@ export default function CommandesPage() {
                                     clientInfo.phone,
                                     `Bonjour, j'ai accepté votre commande du ${commande.date_evenement}. Parlons des détails !`
                                   );
-                                  if (url) window.open(url, "_blank");
+                                  if (url) window.open(url, "_blank", "noopener,noreferrer");
                                 }}
                                 className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                               >
@@ -2140,7 +2244,7 @@ export default function CommandesPage() {
                                   clientInfo.phone,
                                   `Bonjour, j'ai accepté votre commande de plats sur Dabari !`
                                 );
-                                if (url) window.open(url, "_blank");
+                                if (url) window.open(url, "_blank", "noopener,noreferrer");
                               }}
                               className="w-full bg-[#25D366] text-white py-2.5 rounded-xl text-sm font-semibold hover:bg-[#1da851] transition-colors flex items-center justify-center gap-2"
                             >
@@ -2510,6 +2614,7 @@ export default function CommandesPage() {
         isOpen={Boolean(editingDevis)}
         onClose={() => setEditingDevis(null)}
         onSuccess={() => loadAll()}
+        onDevisIssued={() => loadAll()}
         commande={editingDevis}
       />
 
@@ -2584,12 +2689,17 @@ export default function CommandesPage() {
           ) : null
         }
         confirmLabel={
-          proposalConfirm?.action === "reject" ? "Oui, décliner" : "Oui, accepter"
+          proposalError
+            ? "Réessayer"
+            : proposalConfirm?.action === "reject"
+              ? "Oui, décliner"
+              : "Oui, accepter"
         }
         loadingLabel="Validation..."
         loading={Boolean(proposalActionLoading)}
+        error={proposalError}
         onConfirm={confirmProposalAction}
-        onClose={() => setProposalConfirm(null)}
+        onClose={closeProposalConfirm}
       />
 
       {/* Modale de confirmation de mise à jour du statut GP */}
@@ -2605,13 +2715,14 @@ export default function CommandesPage() {
             </>
           ) : null
         }
-        confirmLabel="Confirmer l'étape"
+        confirmLabel={gpStatusError ? "Réessayer" : "Confirmer l'étape"}
         loadingLabel="Mise à jour..."
         loading={Boolean(updatingGpStatusId)}
+        error={gpStatusError}
         variant="primary"
         icon="send"
         onConfirm={handleConfirmUpdateGpStatus}
-        onClose={() => setGpStatusConfirm(null)}
+        onClose={closeGpStatusConfirm}
       />
 
       {/* Modale de signalement de retard GP */}

@@ -67,6 +67,18 @@ type GpListing = {
 type Tab = "traiteurs" | "gp" | "utilisateurs";
 import { CUISINES, ZONES } from "../../utils/constants";
 
+// Mot de passe temporaire aléatoire, toujours ≥ 8 caractères (générateur cryptographique si disponible)
+const generateTempPassword = () => {
+  const alphabet = "abcdefghijkmnpqrstuvwxyzABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const bytes = new Uint8Array(14);
+  if (globalThis.crypto?.getRandomValues) {
+    globalThis.crypto.getRandomValues(bytes);
+  } else {
+    for (let i = 0; i < bytes.length; i++) bytes[i] = Math.floor(Math.random() * 256);
+  }
+  return Array.from(bytes, (b) => alphabet[b % alphabet.length]).join("") + "A1!";
+};
+
 export default function AdminScreen() {
   const router = useRouter();
 
@@ -306,7 +318,7 @@ export default function AdminScreen() {
     const lastname = userForm.lastname.trim();
     const full_name = `${firstname} ${lastname}`;
 
-    const pwd = Math.random().toString(36).slice(-8) + "A1!";
+    const pwd = generateTempPassword();
     const authEmail =
       userForm.email ||
       (userForm.phone
@@ -597,7 +609,7 @@ export default function AdminScreen() {
   if (loading && !isAuthorized) {
     return (
       <View style={[styles.topGreenWrapper, styles.centerLoader]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
         <ActivityIndicator size="large" color="#FFFFFF" />
         <Text style={styles.initialLoadingText}>Vérification des accès administrateur...</Text>
       </View>
@@ -611,7 +623,7 @@ export default function AdminScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
         <View style={styles.headerCard}>
@@ -1800,10 +1812,11 @@ export default function AdminScreen() {
           transparent
           animationType="fade"
           visible={deleteModal.isOpen}
-          onRequestClose={() =>
-            !actionLoading &&
-            setDeleteModal({ isOpen: false, type: null, id: null, name: "" })
-          }
+          onRequestClose={() => {
+            if (!actionLoading) {
+              setDeleteModal({ isOpen: false, type: null, id: null, name: "" });
+            }
+          }}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>

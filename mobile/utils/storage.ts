@@ -33,6 +33,24 @@ export async function deleteSecureToken(key: string): Promise<void> {
       console.warn("localStorage remove error:", e);
     }
   } else {
-    await SecureStore.deleteItemAsync(key);
+    // Depuis le SDK 58, iOS rejette la promesse si le trousseau refuse la suppression : on garde
+    // l'ancien comportement (pas d'exception) pour que la déconnexion et la redirection aboutissent.
+    try {
+      await SecureStore.deleteItemAsync(key);
+    } catch (e) {
+      console.warn("SecureStore delete error:", e);
+    }
   }
+}
+
+/** Panier de plats en cours (fiche traiteur → écran de commande). */
+export const CART_STORAGE_KEY = "dabari_cart";
+
+/**
+ * Déconnexion : supprime le jeton et les données propres à l'utilisateur (panier), pour que le
+ * compte suivant sur cet appareil ne retrouve pas le panier du précédent.
+ */
+export async function clearUserSession(): Promise<void> {
+  await deleteSecureToken("token");
+  await deleteSecureToken(CART_STORAGE_KEY);
 }

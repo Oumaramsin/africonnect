@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { Calendar, Users, X, MapPin, StickyNote, AlertCircle, Loader2 } from "lucide-react";
 import AddressAutocomplete from "@/components/AddressAutocomplete";
-import { authFetch } from "@/lib/auth";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { apiErrorCode, apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 type Props = {
   isOpen: boolean;
   onClose: () => void;
   onSuccess: () => void;
+  /** Un devis a été émis entre-temps (modification refusée) : la liste doit être rechargée. */
+  onDevisIssued?: () => void;
   commande: any;
 };
 
@@ -27,12 +29,21 @@ export default function EditDevisModal({
   isOpen,
   onClose,
   onSuccess,
+  onDevisIssued,
   commande,
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [validatingAddress, setValidatingAddress] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  // Erreur d'enregistrement, affichée dans la confirmation (qui reste ouverte pour réessayer)
+  const [saveError, setSaveError] = useState<string | null>(null);
+  // Devis émis par le traiteur entre-temps : la demande n'est plus modifiable
+  const [devisIssued, setDevisIssued] = useState(false);
+  // Adresse acceptée sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const savingRef = useRef(false);
 
   // Valeurs initiales
   const [initialData, setInitialData] = useState<{
@@ -65,6 +76,8 @@ export default function EditDevisModal({
       setAdresse(initAdr);
       setNotes(initNotes);
       setError(null);
+      setSaveError(null);
+      setDevisIssued(false);
       setShowConfirmModal(false);
       setValidatingAddress(false);
 
@@ -84,7 +97,7 @@ export default function EditDevisModal({
     } else {
       onClose();
     }
-  }, isOpen);
+  }, isOpen && !loading);
 
   // Détection si l'utilisateur a modifié quelque chose
   const hasChanges = useMemo(() => {
@@ -137,18 +150,25 @@ export default function EditDevisModal({
       if (check.normalizedAddress && check.normalizedAddress !== adresse.trim()) {
         setAdresse(check.normalizedAddress);
       }
+      setAddressUnverified(Boolean(check.unverified));
+      setSaveError(null);
       setShowConfirmModal(true);
     } catch (err: any) {
       console.warn("Erreur validation adresse:", err);
+      setAddressUnverified(true);
+      setSaveError(null);
       setShowConfirmModal(true);
     } finally {
       setValidatingAddress(false);
     }
   };
 
+  // Même saisie = même corps : une relance après une coupure réutilise la clé d'idempotence
   const performSave = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
     setLoading(true);
-    setError(null);
+    setSaveError(null);
 
     try {
       const payload = {
@@ -172,16 +192,22 @@ export default function EditDevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de la modification");
+        if (res.status === 409 && apiErrorCode(data) === "DEVIS_ALREADY_ISSUED") {
+          // Le traiteur a chiffré la demande entre-temps : elle n'est plus modifiable
+          setDevisIssued(true);
+          onDevisIssued?.();
+        }
+        setSaveError(apiErrorMessage(data, "Erreur lors de la modification"));
+        return;
       }
 
       setShowConfirmModal(false);
       onSuccess();
       onClose();
-    } catch (err: any) {
-      setError(err.message || "Impossible d'enregistrer les modifications");
-      setShowConfirmModal(false);
+    } catch (err: unknown) {
+      setSaveError(sendErrorMessage(err, "Impossible d'enregistrer les modifications"));
     } finally {
+      savingRef.current = false;
       setLoading(false);
     }
   };
@@ -195,7 +221,9 @@ export default function EditDevisModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="edit-devis-title"
-        onClick={onClose}
+        onClick={() => {
+          if (!loading) onClose();
+        }}
         className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs overflow-y-auto"
       >
         <div
@@ -352,7 +380,9 @@ export default function EditDevisModal({
           role="dialog"
           aria-modal="true"
           aria-labelledby="confirm-devis-title"
-          onClick={() => setShowConfirmModal(false)}
+          onClick={() => {
+            if (!loading) setShowConfirmModal(false);
+          }}
           className="fixed inset-0 z-[1000] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in zoom-in duration-150"
         >
           <div
@@ -379,24 +409,50 @@ export default function EditDevisModal({
               ?
             </p>
 
-            <div className="flex gap-3">
+            {addressUnverified && !devisIssued && (
+              <p className="-mt-3 mb-4 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                {UNVERIFIED_ADDRESS_NOTICE}
+              </p>
+            )}
+
+            {saveError && (
+              <div
+                role="alert"
+                className="mb-4 p-3 text-xs font-semibold text-red-700 bg-red-50 border border-red-200 rounded-xl flex items-start gap-2 text-left"
+              >
+                <AlertCircle size={16} className="shrink-0 mt-0.5" />
+                <span>{saveError}</span>
+              </div>
+            )}
+
+            {devisIssued ? (
               <button
                 type="button"
-                onClick={() => setShowConfirmModal(false)}
-                disabled={loading}
-                className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-xs sm:text-sm hover:bg-gray-50 transition-colors"
+                onClick={onClose}
+                className="w-full py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#0F4A30] transition-colors shadow-md"
               >
-                Continuer d&apos;éditer
+                Fermer
               </button>
-              <button
-                type="button"
-                onClick={performSave}
-                disabled={loading}
-                className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#0F4A30] transition-colors shadow-md flex items-center justify-center"
-              >
-                {loading ? "Enregistrement..." : "Oui, confirmer"}
-              </button>
-            </div>
+            ) : (
+              <div className="flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowConfirmModal(false)}
+                  disabled={loading}
+                  className="flex-1 py-3 rounded-xl border border-gray-200 text-gray-700 font-semibold text-xs sm:text-sm hover:bg-gray-50 transition-colors"
+                >
+                  Continuer d&apos;éditer
+                </button>
+                <button
+                  type="button"
+                  onClick={performSave}
+                  disabled={loading}
+                  className="flex-1 py-3 rounded-xl bg-[#1D6B45] text-white font-bold text-xs sm:text-sm hover:bg-[#0F4A30] transition-colors shadow-md flex items-center justify-center disabled:opacity-60"
+                >
+                  {loading ? "Enregistrement..." : saveError ? "Réessayer" : "Oui, confirmer"}
+                </button>
+              </div>
+            )}
           </div>
         </div>
       )}

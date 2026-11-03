@@ -27,8 +27,28 @@ import {
   Info,
   ExternalLink,
 } from "lucide-react";
-import { authFetch } from "@/lib/auth";
+import { apiErrorCode, apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
+
+const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
+
+/** Actions du devis : leur erreur s'affiche à côté du bouton concerné. */
+type DevisAction = "chiffrage" | "signature" | "refus" | "acompte";
+type AcompteAction = "verser" | "refuser_acompte" | "annuler_reglement";
+type DevisActionError = {
+  action: DevisAction;
+  message: string;
+  /** Échec d'envoi (coupure, panne, action encore en cours) : le bouton propose de réessayer. */
+  retry: boolean;
+  acompteAction?: AcompteAction;
+};
+
+/** Réponse en erreur qui justifie une relance à l'identique (panne serveur, action encore en cours). */
+const isRetryableResponse = (status: number, data: unknown) =>
+  status >= 500 ||
+  status === 408 ||
+  status === 429 ||
+  apiErrorCode(data) === "IDEMPOTENCY_IN_PROGRESS";
 
 export type CommandeTraiteurDevis = {
   id: string;
@@ -155,8 +175,17 @@ export default function DevisModal({
 
   const [commande, setCommande] = useState<CommandeTraiteurDevis>(initialCommande);
   const [submitting, setSubmitting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<DevisActionError | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  // Verrous contre la double soumission (posés avant le rendu suivant)
+  const submittingRef = useRef(false);
+  const payingRef = useRef(false);
+  // Référence de l'acompte en cours : conservée si l'on relance la même action, pour renvoyer le
+  // même corps (clé d'idempotence) au lieu d'un nouveau versement
+  const pendingAcompteRef = useRef<{ key: string; ref: string } | null>(null);
+
+  const errorFor = (action: DevisAction) =>
+    actionError?.action === action ? actionError : null;
 
   // Parse existing conditions metadata
   const parsedMeta = useMemo(
@@ -306,12 +335,17 @@ export default function DevisModal({
   // Traiteur saves pricing and acompte policy
   const handleSavePrice = async (e: React.FormEvent) => {
     e.preventDefault();
-    setError(null);
+    if (submittingRef.current) return;
+    setActionError(null);
     setSuccessMessage(null);
 
     const parsed = parseFloat(prixInput.replace(",", "."));
     if (isNaN(parsed) || parsed <= 0) {
-      setError("Veuillez renseigner un montant de devis supérieur à 0 €.");
+      setActionError({
+        action: "chiffrage",
+        message: "Veuillez renseigner un montant de devis supérieur à 0 €.",
+        retry: false,
+      });
       return;
     }
 
@@ -331,10 +365,10 @@ export default function DevisModal({
       acompte_choix_jour_j: parsedMeta.acompte_choix_jour_j,
     };
 
+    submittingRef.current = true;
     setSubmitting(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
-      const res = await authFetch(`${apiUrl}/commande/traiteur/${commande.id}/devis/setup`, {
+      const res = await authFetch(`${API_URL}/commande/traiteur/${commande.id}/devis/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -348,43 +382,61 @@ export default function DevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors du chiffrage du devis.");
+        setActionError({
+          action: "chiffrage",
+          message: apiErrorMessage(data, "Erreur lors du chiffrage du devis."),
+          retry: isRetryableResponse(res.status, data),
+        });
+        return;
       }
 
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
       setIsEditingPrice(false);
       setSuccessMessage("Votre devis et politique d'acompte ont été transmis au client.");
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau");
+    } catch (err: unknown) {
+      setActionError({
+        action: "chiffrage",
+        message: sendErrorMessage(err, "Erreur lors du chiffrage du devis."),
+        retry: true,
+      });
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
 
   // Deposit escrow management (simulation / validation / réinitialisation)
-  const handleAcompteAction = async (
-    action: "verser" | "refuser_acompte" | "annuler_reglement"
-  ) => {
-    setError(null);
+  const handleAcompteAction = async (action: AcompteAction) => {
+    if (payingRef.current) return;
+    payingRef.current = true;
+    setActionError(null);
     setPayingAcompte(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
       const modeSuffix =
         acompteModeSimule === "cb"
           ? "CB"
           : acompteModeSimule === "virement"
           ? "VIR"
           : "ESP";
-      const transactionRef =
-        action === "verser"
-          ? `DAB-${modeSuffix}-${Date.now().toString(36).toUpperCase()}`
-          : undefined;
+      // Référence conservée tant que l'on relance le même versement (même mode) : même corps,
+      // donc même clé d'idempotence, et l'API renvoie le versement déjà enregistré
+      let transactionRef: string | undefined;
+      if (action === "verser") {
+        const pendingKey = `${commande.id}:${modeSuffix}`;
+        if (pendingAcompteRef.current?.key !== pendingKey) {
+          pendingAcompteRef.current = {
+            key: pendingKey,
+            ref: `DAB-${modeSuffix}-${Date.now().toString(36).toUpperCase()}`,
+          };
+        }
+        transactionRef = pendingAcompteRef.current.ref;
+      }
 
       // Compatibilité totale avec l'API déployée sur Railway (qui attend 'verser' ou 'refuser_acompte')
       const apiAction = action === "annuler_reglement" ? "refuser_acompte" : action;
 
-      const res = await authFetch(`${apiUrl}/commande/traiteur/${commande.id}/devis/acompte`, {
+      const res = await authFetch(`${API_URL}/commande/traiteur/${commande.id}/devis/acompte`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -395,9 +447,18 @@ export default function DevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors du traitement de l'acompte.");
+        // Ex. : refus de l'acompte impossible (400/409) avec un message de l'API
+        setActionError({
+          action: "acompte",
+          message: apiErrorMessage(data, "Erreur lors du traitement de l'acompte."),
+          retry: isRetryableResponse(res.status, data),
+          acompteAction: action,
+        });
+        return;
       }
 
+      // Versement déjà enregistré : l'API répond 200 avec la commande inchangée
+      pendingAcompteRef.current = null;
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
       setShowAcomptePayModal(false);
@@ -408,20 +469,32 @@ export default function DevisModal({
           ? "Choix de règlement complet le jour J enregistré."
           : "Le statut de l'acompte a été réinitialisé en attente."
       );
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau");
+    } catch (err: unknown) {
+      setActionError({
+        action: "acompte",
+        message: sendErrorMessage(err, "Erreur lors du traitement de l'acompte."),
+        retry: true,
+        acompteAction: action,
+      });
     } finally {
+      payingRef.current = false;
       setPayingAcompte(false);
     }
   };
 
+  const closeAcomptePayModal = () => {
+    setShowAcomptePayModal(false);
+    if (actionError?.action === "acompte") setActionError(null);
+  };
+
   // Client declines the quote
   const handleRefuseQuote = async () => {
-    setError(null);
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setActionError(null);
     setSubmitting(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
-      const res = await authFetch(`${apiUrl}/commande/traiteur/${commande.id}/devis/refuse`, {
+      const res = await authFetch(`${API_URL}/commande/traiteur/${commande.id}/devis/refuse`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -431,29 +504,72 @@ export default function DevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors du refus du devis.");
+        setActionError({
+          action: "refus",
+          message: apiErrorMessage(data, "Erreur lors du refus du devis."),
+          retry: isRetryableResponse(res.status, data),
+        });
+        return;
       }
 
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
       setShowRefusalForm(false);
       setSuccessMessage("La proposition a été déclinée. Le traiteur a été informé.");
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau");
+    } catch (err: unknown) {
+      setActionError({
+        action: "refus",
+        message: sendErrorMessage(err, "Erreur lors du refus du devis."),
+        retry: true,
+      });
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
+    }
+  };
+
+  // Relit le devis depuis l'API (montant ou conditions modifiés entre-temps par le traiteur)
+  const reloadCommande = async () => {
+    try {
+      const res = await authFetch(`${API_URL}/commande/traiteur/${commande.id}`, {
+        cache: "no-store",
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const fresh: CommandeTraiteurDevis | undefined = data?.data?.commande;
+      if (!fresh) return;
+      // Cette route ne renvoie pas le client : celui déjà affiché est conservé
+      const merged: CommandeTraiteurDevis = {
+        ...commande,
+        ...fresh,
+        traiteur: fresh.traiteur ? { ...commande.traiteur, ...fresh.traiteur } : commande.traiteur,
+        client: fresh.client ?? commande.client,
+      };
+      setCommande(merged);
+      onUpdate(merged);
+    } catch {
+      // Hors ligne : le message invite à rouvrir le devis
     }
   };
 
   // Sign quote electronically
   const handleSign = async () => {
-    setError(null);
+    if (submittingRef.current) return;
+    setActionError(null);
     if (!signerName.trim() && !hasDrawn) {
-      setError("Veuillez saisir votre nom ou apposer votre signature manuscrite.");
+      setActionError({
+        action: "signature",
+        message: "Veuillez saisir votre nom ou apposer votre signature manuscrite.",
+        retry: false,
+      });
       return;
     }
     if (!agreedTerms) {
-      setError("Veuillez cocher la case d'acceptation du devis et des conditions.");
+      setActionError({
+        action: "signature",
+        message: "Veuillez cocher la case d'acceptation du devis et des conditions.",
+        retry: false,
+      });
       return;
     }
 
@@ -467,20 +583,41 @@ export default function DevisModal({
       }
     }
 
+    submittingRef.current = true;
     setSubmitting(true);
     try {
-      const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
-      const res = await authFetch(`${apiUrl}/commande/traiteur/${commande.id}/devis/sign`, {
+      const res = await authFetch(`${API_URL}/commande/traiteur/${commande.id}/devis/sign`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           signature: signaturePayload,
+          // Montant lu par le signataire : l'API refuse la signature s'il a changé entre-temps
+          prix_devis_attendu: Number(commande.prix_devis),
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de la signature.");
+        if (res.status === 409 && apiErrorCode(data) === "DEVIS_CHANGED") {
+          // Devis modifié depuis son affichage : rechargement, puis nouvelle acceptation exigée
+          await reloadCommande();
+          setAgreedTerms(false);
+          setActionError({
+            action: "signature",
+            message: apiErrorMessage(
+              data,
+              "Le devis a été modifié par le traiteur. Vérifiez le nouveau montant avant de signer."
+            ),
+            retry: false,
+          });
+          return;
+        }
+        setActionError({
+          action: "signature",
+          message: apiErrorMessage(data, "Erreur lors de la signature."),
+          retry: isRetryableResponse(res.status, data),
+        });
+        return;
       }
 
       setCommande(data.data.commande);
@@ -489,11 +626,36 @@ export default function DevisModal({
       setSignerName("");
       setAgreedTerms(false);
       setSuccessMessage("Devis signé avec succès.");
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau");
+    } catch (err: unknown) {
+      setActionError({
+        action: "signature",
+        message: sendErrorMessage(err, "Erreur lors de la signature."),
+        retry: true,
+      });
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
+  };
+
+  const renderActionError = (action: DevisAction) => {
+    const current = errorFor(action);
+    if (!current) return null;
+    return (
+      <div
+        role="alert"
+        className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-start gap-2 text-left print:hidden"
+      >
+        <AlertCircle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+        <span>{current.message}</span>
+      </div>
+    );
+  };
+
+  /** Libellé « Réessayer » du bouton d'acompte dont l'envoi a échoué. */
+  const acompteRetry = (action: AcompteAction) => {
+    const current = errorFor("acompte");
+    return Boolean(current?.retry && current.acompteAction === action);
   };
 
   const handlePrint = () => {
@@ -568,13 +730,7 @@ export default function DevisModal({
             id="devis-printable-sheet"
             className="p-5 sm:p-8 overflow-y-auto space-y-5 print:p-0 print:space-y-3 print:overflow-visible text-slate-800"
           >
-            {error && (
-              <div className="p-3.5 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-semibold flex items-center gap-2.5 print:hidden">
-                <AlertCircle size={17} className="text-rose-600 shrink-0" />
-                <span>{error}</span>
-              </div>
-            )}
-
+            {/* Les erreurs s'affichent à côté du bouton de l'action concernée */}
             {successMessage && (
               <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-emerald-900 text-xs font-semibold flex items-center gap-2.5 print:hidden">
                 <CheckCircle2 size={17} className="text-emerald-600 shrink-0" />
@@ -965,6 +1121,8 @@ export default function DevisModal({
                     />
                   </div>
 
+                  {renderActionError("chiffrage")}
+
                   {/* Auto-signature traiteur */}
                   <div className="pt-2 border-t border-slate-100 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
                     <label className="flex items-center gap-2 text-xs text-slate-800 font-bold cursor-pointer select-none">
@@ -982,6 +1140,7 @@ export default function DevisModal({
                         <button
                           type="button"
                           onClick={() => setIsEditingPrice(false)}
+                          disabled={submitting}
                           className="px-4 py-2.5 rounded-xl border border-slate-300 text-xs font-bold text-slate-600 hover:bg-slate-100"
                         >
                           Annuler
@@ -990,14 +1149,18 @@ export default function DevisModal({
                       <button
                         type="submit"
                         disabled={submitting}
-                        className="px-5 py-2.5 rounded-xl bg-[#1D6B45] hover:bg-[#154d31] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5"
+                        className="px-5 py-2.5 rounded-xl bg-[#1D6B45] hover:bg-[#154d31] text-white font-black text-xs shadow-md transition-all flex items-center justify-center gap-1.5 disabled:opacity-60"
                       >
                         {submitting ? (
                           <Loader2 size={14} className="animate-spin" />
                         ) : (
                           <CheckCircle2 size={14} />
                         )}
-                        <span>Valider & Transmettre le chiffrage</span>
+                        <span>
+                          {errorFor("chiffrage")?.retry
+                            ? "Réessayer l'envoi du chiffrage"
+                            : "Valider & Transmettre le chiffrage"}
+                        </span>
                       </button>
                     </div>
                   </div>
@@ -1149,9 +1312,13 @@ export default function DevisModal({
                               type="button"
                               onClick={() => handleAcompteAction("refuser_acompte")}
                               disabled={payingAcompte}
-                              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60"
+                              className="px-3 py-2 rounded-xl text-xs font-bold text-slate-600 hover:bg-slate-200/60 disabled:opacity-60"
                             >
-                              Régler le jour J
+                              {payingAcompte
+                                ? "Enregistrement..."
+                                : acompteRetry("refuser_acompte")
+                                ? "Réessayer (régler le jour J)"
+                                : "Régler le jour J"}
                             </button>
                           )}
                         </>
@@ -1170,6 +1337,9 @@ export default function DevisModal({
                     </button>
                   )}
                 </div>
+
+                {/* Erreur d'acompte (la sous-fenêtre de règlement l'affiche aussi) */}
+                {!showAcomptePayModal && renderActionError("acompte")}
 
                 {parsedMeta.texte && (
                   <p className="text-[11px] text-slate-500 italic pt-1 print-text-compact">
@@ -1380,6 +1550,8 @@ export default function DevisModal({
                     </span>
                   </label>
 
+                  {renderActionError("signature")}
+
                   <div className="flex items-center justify-end gap-2.5 pt-1">
                     <button
                       type="button"
@@ -1395,7 +1567,11 @@ export default function DevisModal({
                       ) : (
                         <>
                           <ShieldCheck size={15} />
-                          <span>Signer électroniquement ce devis</span>
+                          <span>
+                            {errorFor("signature")?.retry
+                              ? "Réessayer la signature"
+                              : "Signer électroniquement ce devis"}
+                          </span>
                         </>
                       )}
                     </button>
@@ -1416,10 +1592,15 @@ export default function DevisModal({
                             placeholder="Ex : Budget trop élevé, date modifiée..."
                             className="w-full px-3 py-2 rounded-lg border border-red-200 bg-white text-xs text-slate-800 focus:outline-none"
                           />
+                          {renderActionError("refus")}
                           <div className="flex justify-end gap-2">
                             <button
                               type="button"
-                              onClick={() => setShowRefusalForm(false)}
+                              onClick={() => {
+                                setShowRefusalForm(false);
+                                if (actionError?.action === "refus") setActionError(null);
+                              }}
+                              disabled={submitting}
                               className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-slate-200/50"
                             >
                               Annuler
@@ -1428,9 +1609,13 @@ export default function DevisModal({
                               type="button"
                               disabled={submitting}
                               onClick={handleRefuseQuote}
-                              className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-black text-xs"
+                              className="px-4 py-1.5 rounded-lg bg-red-600 hover:bg-red-700 text-white font-black text-xs disabled:opacity-60"
                             >
-                              Confirmer le refus
+                              {submitting
+                                ? "Envoi..."
+                                : errorFor("refus")?.retry
+                                ? "Réessayer le refus"
+                                : "Confirmer le refus"}
                             </button>
                           </div>
                         </div>
@@ -1507,7 +1692,9 @@ export default function DevisModal({
               </div>
               <button
                 type="button"
-                onClick={() => setShowAcomptePayModal(false)}
+                onClick={closeAcomptePayModal}
+                disabled={payingAcompte}
+                aria-label="Fermer"
                 className="w-8 h-8 rounded-full hover:bg-slate-100 text-slate-400 flex items-center justify-center"
               >
                 <X size={16} />
@@ -1564,10 +1751,13 @@ export default function DevisModal({
                   Vos fonds sont protégés sur un compte de cantonnement Dabari SAS. Le traiteur a reçu la garantie et le solde restant ({displaySoldeRestant.toFixed(2)} €) sera libéré après l&apos;exécution de la prestation.
                 </p>
 
+                {renderActionError("acompte")}
+
                 <div className="flex flex-col gap-2 pt-2">
                   <button
                     type="button"
-                    onClick={() => setShowAcomptePayModal(false)}
+                    onClick={closeAcomptePayModal}
+                    disabled={payingAcompte}
                     className="w-full py-2.5 rounded-xl bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs transition-all shadow-sm"
                   >
                     Fermer
@@ -1578,7 +1768,11 @@ export default function DevisModal({
                     onClick={() => handleAcompteAction("annuler_reglement")}
                     className="text-[11px] text-slate-400 hover:text-slate-600 underline font-semibold py-1"
                   >
-                    {payingAcompte ? "Réinitialisation..." : "Remettre en attente (Test / Démo)"}
+                    {payingAcompte
+                      ? "Réinitialisation..."
+                      : acompteRetry("annuler_reglement")
+                      ? "Réessayer la remise en attente"
+                      : "Remettre en attente (Test / Démo)"}
                   </button>
                 </div>
               </div>
@@ -1641,6 +1835,8 @@ export default function DevisModal({
                   </p>
                 </div>
 
+                {renderActionError("acompte")}
+
                 <div className="flex flex-col gap-2 pt-2">
                   <button
                     type="button"
@@ -1656,7 +1852,9 @@ export default function DevisModal({
                     ) : (
                       <>
                         <ShieldCheck size={16} />
-                        <span>Valider l&apos;acompte ({displayAcompteMontant.toFixed(2)} €)</span>
+                        <span>
+                          {acompteRetry("verser") ? "Réessayer" : "Valider l'acompte"} ({displayAcompteMontant.toFixed(2)} €)
+                        </span>
                       </>
                     )}
                   </button>
@@ -1668,13 +1866,16 @@ export default function DevisModal({
                       onClick={() => handleAcompteAction("refuser_acompte")}
                       className="text-xs font-bold text-slate-600 hover:text-slate-900 py-1"
                     >
-                      Choisir de régler l&apos;intégralité le jour J (Sans acompte)
+                      {acompteRetry("refuser_acompte")
+                        ? "Réessayer : régler l'intégralité le jour J"
+                        : "Choisir de régler l'intégralité le jour J (Sans acompte)"}
                     </button>
                   )}
 
                   <button
                     type="button"
-                    onClick={() => setShowAcomptePayModal(false)}
+                    onClick={closeAcomptePayModal}
+                    disabled={payingAcompte}
                     className="text-xs text-slate-400 hover:text-slate-600 py-1"
                   >
                     Annuler

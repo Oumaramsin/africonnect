@@ -1,14 +1,89 @@
 import { Request, Response } from "express";
 import {
   getAuthUserId,
+  isUserAdmin,
   isValidUUID,
 } from "../utils/types";
+import {
+  isOptionalTextWithin,
+  isRequiredTextWithin,
+  isStringArrayWithin,
+  isValidPhone,
+  parseStrictBoolean,
+  sendErrorResponse,
+} from "../utils/validation";
+
+const MAX_GUEST_COUNT = 10000;
+const MAX_REQUEST_BUDGET = 10000000;
+
+/**
+ * Nombre d'invités : entier entre 1 et 10 000. Retourne null si la valeur est vide,
+ * undefined si elle est invalide.
+ */
+const parseGuestCount = (value: unknown): number | null | undefined => {
+  if (value === null || value === "") return null;
+  const parsed = typeof value === "number" ? value : typeof value === "string" ? Number(value.trim()) : NaN;
+  if (!Number.isInteger(parsed) || parsed < 1 || parsed > MAX_GUEST_COUNT) return undefined;
+  return parsed;
+};
+
+/** Budget : montant positif borné. Retourne null si la valeur est vide, undefined si elle est invalide. */
+const parseBudget = (value: unknown): number | null | undefined => {
+  if (value === null || value === "") return null;
+  const parsed = parseFloat(String(value).replace(",", "."));
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > MAX_REQUEST_BUDGET) return undefined;
+  return parsed;
+};
+
+/** Valide les champs communs à la création / mise à jour d'un profil traiteur. */
+const validateTraiteurProfilePayload = (body: any): string | null => {
+  const { name, bio, cuisine_type, delivery_zones, whatsapp, image_url } = body;
+  if (
+    !isRequiredTextWithin(name, 100) ||
+    !isRequiredTextWithin(bio, 2000) ||
+    !isStringArrayWithin(cuisine_type, 20, 60) ||
+    cuisine_type.length === 0
+  ) {
+    return "Veuillez renseigner le nom (100 caractères max), la biographie (2 000 caractères max) et au moins un type de cuisine.";
+  }
+  if (Array.isArray(delivery_zones) && !isStringArrayWithin(delivery_zones, 50, 100)) {
+    return "Zones de livraison invalides.";
+  }
+  if (whatsapp !== undefined && whatsapp !== null && whatsapp !== "" && !isValidPhone(whatsapp)) {
+    return "Numéro WhatsApp invalide.";
+  }
+  if (!isOptionalTextWithin(image_url, 2048)) {
+    return "Image de profil invalide.";
+  }
+  return null;
+};
+
+/** Valide les champs texte d'un plat (création complète ou mise à jour partielle). */
+const validateDishPayload = (body: any): string | null => {
+  const { name, description, cuisine_type, image_urls } = body;
+  if (name !== undefined && !isRequiredTextWithin(name, 120)) {
+    return "Le nom du plat est invalide (120 caractères max).";
+  }
+  if (!isOptionalTextWithin(description, 2000)) {
+    return "La description du plat est trop longue (2 000 caractères max).";
+  }
+  if (!isOptionalTextWithin(cuisine_type, 60)) {
+    return "Type de cuisine invalide.";
+  }
+  if (image_urls !== undefined && image_urls !== null && !isStringArrayWithin(image_urls, 10, 2048)) {
+    return "Images invalides (10 maximum).";
+  }
+  return null;
+};
+
+const MAX_DISH_PRICE = 100000;
 import {
   createOrderTraiteur,
   createDishesOrder,
   getActiveTraiteur,
   getTraiteurById,
   getTraiteurByUserId,
+  getTraiteurIdByUserId,
   createTraiteurProfile,
   updateTraiteurProfile,
   addTraiteurDish,
@@ -90,10 +165,17 @@ export const createCommandeTraiteurController = async (
       notes,
     } = req.body;
 
-    if (!traiteur_id || !date_evenement || !nb_personnes || !adresse?.trim()) {
+    if (!traiteur_id || !date_evenement || !nb_personnes || !isRequiredTextWithin(adresse, 300)) {
       return res.status(400).json({
         success: false,
         error: "Veuillez renseigner tous les champs obligatoires (traiteur, date, nombre de personnes, adresse).",
+      });
+    }
+
+    if (!isOptionalTextWithin(type_evenement, 100) || !isOptionalTextWithin(notes, 3000)) {
+      return res.status(400).json({
+        success: false,
+        error: "Le type d'événement (100 caractères max) ou les notes (3 000 caractères max) sont invalides.",
       });
     }
 
@@ -143,7 +225,7 @@ export const createCommandeTraiteurController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createCommandeTraiteurController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -167,11 +249,19 @@ export const createDishesOrderController = async (
       items,
     } = req.body;
 
-    if (!traiteur_id || !delivery_address?.trim() || !delivery_date) {
+    if (!traiteur_id || !isRequiredTextWithin(delivery_address, 300) || !delivery_date) {
       return res.status(400).json({
         success: false,
         error: "Veuillez renseigner tous les champs obligatoires (adresse, date).",
       });
+    }
+
+    if (delivery_type !== undefined && delivery_type !== "delivery" && delivery_type !== "pickup") {
+      return res.status(400).json({ success: false, error: "Mode de livraison invalide." });
+    }
+
+    if (!isOptionalTextWithin(notes, 2000)) {
+      return res.status(400).json({ success: false, error: "Les notes ne doivent pas dépasser 2 000 caractères." });
     }
 
     if (!isValidUUID(traiteur_id)) {
@@ -195,7 +285,7 @@ export const createDishesOrderController = async (
       });
     }
 
-    if (!items || !Array.isArray(items) || items.length === 0) {
+    if (!items || !Array.isArray(items) || items.length === 0 || items.length > 100) {
       return res.status(400).json({
         success: false,
         error: "Votre commande doit contenir au moins un plat.",
@@ -204,7 +294,7 @@ export const createDishesOrderController = async (
 
     // Validation stricte des éléments de commande
     for (const item of items) {
-      if (!item.dish_id || !isValidUUID(item.dish_id)) {
+      if (!item || typeof item !== "object" || !item.dish_id || !isValidUUID(item.dish_id)) {
         return res.status(400).json({ success: false, error: "Identifiant de plat invalide dans la commande." });
       }
       const qty = parseInt(String(item.quantity), 10);
@@ -230,7 +320,7 @@ export const createDishesOrderController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createDishesOrderController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -268,11 +358,9 @@ export const createTraiteurProfileController = async (
 
     const { name, bio, cuisine_type, delivery_zones, whatsapp, image_url } = req.body;
 
-    if (!name?.trim() || !bio?.trim() || !cuisine_type || !Array.isArray(cuisine_type) || cuisine_type.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Veuillez renseigner le nom, la biographie et au moins un type de cuisine.",
-      });
+    const validationError = validateTraiteurProfilePayload(req.body);
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
     }
 
     const traiteur = await createTraiteurProfile(userId, {
@@ -291,7 +379,7 @@ export const createTraiteurProfileController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createTraiteurProfileController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -307,11 +395,9 @@ export const updateTraiteurProfileController = async (
 
     const { name, bio, cuisine_type, delivery_zones, whatsapp, image_url } = req.body;
 
-    if (!name?.trim() || !bio?.trim() || !cuisine_type || !Array.isArray(cuisine_type) || cuisine_type.length === 0) {
-      return res.status(400).json({
-        success: false,
-        error: "Veuillez renseigner le nom, la biographie et au moins un type de cuisine.",
-      });
+    const validationError = validateTraiteurProfilePayload(req.body);
+    if (validationError) {
+      return res.status(400).json({ success: false, error: validationError });
     }
 
     const traiteur = await updateTraiteurProfile(userId, {
@@ -330,7 +416,7 @@ export const updateTraiteurProfileController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateTraiteurProfileController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -354,19 +440,35 @@ export const addTraiteurDishController = async (
 
     const { name, description, price, cuisine_type, image_urls, is_available } = req.body;
 
-    if (!name?.trim() || !description?.trim() || price === undefined || !cuisine_type?.trim()) {
+    if (
+      !isRequiredTextWithin(name, 120) ||
+      !isRequiredTextWithin(description, 2000) ||
+      price === undefined ||
+      !isRequiredTextWithin(cuisine_type, 60)
+    ) {
       return res.status(400).json({
         success: false,
         error: "Veuillez renseigner tous les champs obligatoires du plat.",
       });
     }
 
+    const dishValidationError = validateDishPayload(req.body);
+    if (dishValidationError) {
+      return res.status(400).json({ success: false, error: dishValidationError });
+    }
+
     const parsedPrice = parseFloat(String(price).replace(",", "."));
-    if (isNaN(parsedPrice) || parsedPrice < 0) {
+    if (isNaN(parsedPrice) || parsedPrice < 0 || parsedPrice > MAX_DISH_PRICE) {
       return res.status(400).json({
         success: false,
         error: "Le prix doit être un nombre valide supérieur ou égal à 0.",
       });
+    }
+
+    // Booléen strict : "false" ne doit pas rendre le plat disponible
+    const availability = parseStrictBoolean(is_available);
+    if (availability === null) {
+      return res.status(400).json({ success: false, error: "La disponibilité du plat doit valoir true ou false." });
     }
 
     const dish = await addTraiteurDish(traiteur.id, {
@@ -375,7 +477,7 @@ export const addTraiteurDishController = async (
       price: parsedPrice,
       cuisine_type: cuisine_type.trim(),
       image_urls: Array.isArray(image_urls) ? image_urls : [],
-      is_available: is_available !== undefined ? Boolean(is_available) : true,
+      is_available: availability ?? true,
     });
 
     res.status(201).json({
@@ -385,7 +487,7 @@ export const addTraiteurDishController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans addTraiteurDishController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -415,15 +517,26 @@ export const updateTraiteurDishController = async (
 
     const { name, description, price, cuisine_type, image_urls, is_available } = req.body;
 
+    const dishValidationError = validateDishPayload(req.body);
+    if (dishValidationError) {
+      return res.status(400).json({ success: false, error: dishValidationError });
+    }
+
     let parsedPrice: number | undefined = undefined;
     if (price !== undefined) {
       parsedPrice = parseFloat(String(price).replace(",", "."));
-      if (isNaN(parsedPrice) || parsedPrice < 0) {
+      if (isNaN(parsedPrice) || parsedPrice < 0 || parsedPrice > MAX_DISH_PRICE) {
         return res.status(400).json({
           success: false,
           error: "Le prix doit être un nombre valide supérieur ou égal à 0.",
         });
       }
+    }
+
+    // Booléen strict : "false" ne doit pas rendre le plat disponible
+    const availability = parseStrictBoolean(is_available);
+    if (availability === null) {
+      return res.status(400).json({ success: false, error: "La disponibilité du plat doit valoir true ou false." });
     }
 
     const dish = await updateTraiteurDish(dishId, traiteur.id, {
@@ -432,7 +545,7 @@ export const updateTraiteurDishController = async (
       price: parsedPrice,
       cuisine_type: cuisine_type?.trim(),
       image_urls: Array.isArray(image_urls) ? image_urls : undefined,
-      is_available: is_available !== undefined ? Boolean(is_available) : undefined,
+      is_available: availability,
     });
 
     res.json({
@@ -442,7 +555,7 @@ export const updateTraiteurDishController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateTraiteurDishController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -478,7 +591,7 @@ export const deleteTraiteurDishController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans deleteTraiteurDishController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -503,10 +616,22 @@ export const createTraiteurRequestController = async (
       title,
     } = req.body;
 
-    if (!event_type?.trim() || !event_date || !location?.trim() || !food_preferences?.trim()) {
+    if (
+      !isRequiredTextWithin(event_type, 100) ||
+      !event_date ||
+      !isRequiredTextWithin(location, 300) ||
+      !isRequiredTextWithin(food_preferences, 2000)
+    ) {
       return res.status(400).json({
         success: false,
         error: "Veuillez renseigner le type d'événement, la date, le lieu et ce que vous souhaitez en nourriture.",
+      });
+    }
+
+    if (!isOptionalTextWithin(description, 3000) || !isOptionalTextWithin(title, 150)) {
+      return res.status(400).json({
+        success: false,
+        error: "Le titre (150 caractères max) ou la description (3 000 caractères max) sont trop longs.",
       });
     }
 
@@ -524,22 +649,17 @@ export const createTraiteurRequestController = async (
       });
     }
 
-    let parsedGuestCount: number | null = null;
-    if (guest_count !== undefined && guest_count !== null && guest_count !== "") {
-      const g = parseInt(String(guest_count), 10);
-      if (isNaN(g) || g <= 0) {
-        return res.status(400).json({ success: false, error: "Nombre d'invités invalide." });
-      }
-      parsedGuestCount = g;
+    const parsedGuestCount = guest_count === undefined ? null : parseGuestCount(guest_count);
+    if (parsedGuestCount === undefined) {
+      return res.status(400).json({
+        success: false,
+        error: `Nombre d'invités invalide (nombre entier entre 1 et ${MAX_GUEST_COUNT.toLocaleString("fr-FR")}).`,
+      });
     }
 
-    let parsedBudget: number | null = null;
-    if (budget !== undefined && budget !== null && budget !== "") {
-      const b = parseFloat(String(budget).replace(",", "."));
-      if (isNaN(b) || b < 0) {
-        return res.status(400).json({ success: false, error: "Budget invalide." });
-      }
-      parsedBudget = b;
+    const parsedBudget = budget === undefined ? null : parseBudget(budget);
+    if (parsedBudget === undefined) {
+      return res.status(400).json({ success: false, error: "Budget invalide." });
     }
 
     const request = await createTraiteurRequest(userId, {
@@ -560,16 +680,30 @@ export const createTraiteurRequestController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createTraiteurRequestController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
 export const getAllTraiteurRequestsController = async (
-  _req: Request,
+  req: Request,
   res: Response,
 ) => {
   try {
-    const requests = await getAllTraiteurRequests();
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Connexion requise.", message: "Connexion requise." });
+    }
+
+    // Les demandes des clients ne sont consultables que par les traiteurs (et les administrateurs)
+    const ownTraiteurId = await getTraiteurIdByUserId(userId);
+    if (!ownTraiteurId && !isUserAdmin(req)) {
+      return res.status(403).json({
+        success: false,
+        error: "Les demandes des clients sont réservées aux traiteurs : créez votre espace traiteur pour y répondre.",
+      });
+    }
+
+    const requests = await getAllTraiteurRequests(ownTraiteurId);
     res.json({
       success: true,
       data: { requests },
@@ -611,7 +745,12 @@ export const getTraiteurRequestByIdController = async (
       return res.status(400).json({ success: false, error: "Identifiant de demande invalide." });
     }
 
-    const request = await getTraiteurRequestById(id);
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+
+    const request = await getTraiteurRequestById(id, userId, isUserAdmin(req));
     if (!request) {
       return res.status(404).json({ success: false, error: "Demande introuvable." });
     }
@@ -650,7 +789,7 @@ export const cancelTraiteurRequestController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans cancelTraiteurRequestController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -678,7 +817,7 @@ export const deleteTraiteurRequestController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans deleteTraiteurRequestController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -709,29 +848,47 @@ export const updateTraiteurRequestController = async (
       description,
     } = req.body;
 
+    if (
+      !isOptionalTextWithin(title, 150) ||
+      !isOptionalTextWithin(event_type, 100) ||
+      !isOptionalTextWithin(location, 300) ||
+      !isOptionalTextWithin(food_preferences, 2000) ||
+      !isOptionalTextWithin(description, 3000)
+    ) {
+      return res.status(400).json({ success: false, error: "Certains champs sont invalides ou trop longs." });
+    }
+
+    if (event_date !== undefined && event_date !== null && event_date !== "") {
+      const parsedDate = new Date(event_date);
+      if (isNaN(parsedDate.getTime())) {
+        return res.status(400).json({ success: false, error: "Date d'événement invalide." });
+      }
+      const startOfToday = new Date();
+      startOfToday.setHours(0, 0, 0, 0);
+      if (parsedDate.getTime() < startOfToday.getTime()) {
+        return res.status(400).json({
+          success: false,
+          error: "La date de l'événement ne peut pas être dans le passé.",
+        });
+      }
+    }
+
     let parsedGuestCount: number | null | undefined = undefined;
     if (guest_count !== undefined) {
-      if (guest_count === null || guest_count === "") {
-        parsedGuestCount = null;
-      } else {
-        const g = parseInt(String(guest_count), 10);
-        if (isNaN(g) || g <= 0) {
-          return res.status(400).json({ success: false, error: "Nombre d'invités invalide." });
-        }
-        parsedGuestCount = g;
+      parsedGuestCount = parseGuestCount(guest_count);
+      if (parsedGuestCount === undefined) {
+        return res.status(400).json({
+          success: false,
+          error: `Nombre d'invités invalide (nombre entier entre 1 et ${MAX_GUEST_COUNT.toLocaleString("fr-FR")}).`,
+        });
       }
     }
 
     let parsedBudget: number | null | undefined = undefined;
     if (budget !== undefined) {
-      if (budget === null || budget === "") {
-        parsedBudget = null;
-      } else {
-        const b = parseFloat(String(budget).replace(",", "."));
-        if (isNaN(b) || b < 0) {
-          return res.status(400).json({ success: false, error: "Budget invalide." });
-        }
-        parsedBudget = b;
+      parsedBudget = parseBudget(budget);
+      if (parsedBudget === undefined) {
+        return res.status(400).json({ success: false, error: "Budget invalide." });
       }
     }
 
@@ -753,7 +910,7 @@ export const updateTraiteurRequestController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateTraiteurRequestController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -774,15 +931,15 @@ export const createTraiteurProposalController = async (
       return res.status(400).json({ success: false, error: "Identifiant de demande invalide." });
     }
 
-    if (!proposed_price || !message?.trim()) {
+    if (!proposed_price || !isRequiredTextWithin(message, 3000)) {
       return res.status(400).json({
         success: false,
-        error: "Veuillez indiquer un prix proposé et une description détaillée de votre proposition.",
+        error: "Veuillez indiquer un prix proposé et une description détaillée de votre proposition (3 000 caractères max).",
       });
     }
 
     const parsedPrice = parseFloat(String(proposed_price).replace(",", "."));
-    if (isNaN(parsedPrice) || parsedPrice <= 0) {
+    if (isNaN(parsedPrice) || parsedPrice <= 0 || parsedPrice > 1000000) {
       return res.status(400).json({
         success: false,
         error: "Le prix proposé doit être un montant supérieur à 0.",
@@ -801,7 +958,7 @@ export const createTraiteurProposalController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans createTraiteurProposalController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };
 
@@ -860,6 +1017,6 @@ export const updateTraiteurProposalStatusController = async (
     });
   } catch (error: any) {
     console.error("Erreur dans updateTraiteurProposalStatusController:", error);
-    res.status(500).json({ success: false, error: error.message || "Erreur serveur." });
+    sendErrorResponse(res, error, "Erreur serveur.");
   }
 };

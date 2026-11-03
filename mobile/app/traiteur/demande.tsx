@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -18,8 +18,7 @@ import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import AddressAutocomplete, { AddressFeature } from "../../components/AddressAutocomplete";
 import OrderEditModal, { DetailRowItem } from "../../components/OrderEditModal";
-import { apiFetch } from "../../utils/api";
-import { showErrorAlert } from "../../utils/alerts";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../utils/api";
 import { verifyAddressExists } from "../../utils/addressValidation";
 import { DEMANDE_EVENT_TYPES as EVENT_TYPES, EventTypeOption, DISH_SUGGESTIONS } from "../../utils/constants";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
@@ -53,6 +52,13 @@ export default function DemandeTraiteurScreen() {
   const [submitting, setSubmitting] = useState(false);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [showSuccessModal, setShowSuccessModal] = useState(false);
+  // Erreur de publication, affichée sous le formulaire (la modale de confirmation est alors fermée)
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Verrou synchrone contre la double soumission (l'état `submitting` n'est pas encore à jour au 2e appui)
+  const submittingRef = useRef(false);
+  // Dernière annonce envoyée : la relancer sans rien modifier renvoie exactement le même corps
+  // (adresse normalisée comprise), donc la même clé d'idempotence, sans risque de doublon
+  const lastAttemptRef = useRef<{ inputsKey: string; payload: Record<string, unknown> } | null>(null);
 
   const handleDateChange = (event: any, date?: Date) => {
     if (Platform.OS === "android") setShowDatePicker(false);
@@ -146,33 +152,49 @@ export default function DemandeTraiteurScreen() {
   };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setShowConfirmModal(false);
     setSubmitting(true);
+    setSubmitError(null);
 
     try {
-      const addressCheck = await verifyAddressExists(location.trim());
-      if (!addressCheck.isValid) {
-        showErrorAlert(
-          "Lieu non reconnu",
-          addressCheck.error ||
-            "L'adresse ou ville indiquée n'a pas été trouvée. Veuillez sélectionner une adresse dans les suggestions."
-        );
-        setSubmitting(false);
-        return;
+      const inputsKey = JSON.stringify([
+        eventType,
+        guestCount,
+        eventDate,
+        location,
+        foodPreferences,
+        budget,
+        description,
+      ]);
+      let payload =
+        lastAttemptRef.current?.inputsKey === inputsKey ? lastAttemptRef.current.payload : null;
+
+      if (!payload) {
+        const addressCheck = await verifyAddressExists(location.trim());
+        if (!addressCheck.isValid) {
+          setSubmitError(
+            addressCheck.error ||
+              "L'adresse ou ville indiquée n'a pas été trouvée. Veuillez sélectionner une adresse dans les suggestions."
+          );
+          return;
+        }
+
+        const safeLocation = addressCheck.normalizedAddress || location.trim();
+
+        payload = {
+          title: `Recherche traiteur - ${eventType}`,
+          event_type: eventType,
+          guest_count: guestCount.trim() ? parseInt(guestCount.trim(), 10) : null,
+          event_date: eventDate.trim(),
+          location: safeLocation,
+          food_preferences: foodPreferences.trim(),
+          budget: budget.trim() ? parseFloat(budget.trim().replace(",", ".")) : null,
+          description: description.trim() || null,
+        };
+        lastAttemptRef.current = { inputsKey, payload };
       }
-
-      const safeLocation = addressCheck.normalizedAddress || location.trim();
-
-      const payload = {
-        title: `Recherche traiteur - ${eventType}`,
-        event_type: eventType,
-        guest_count: guestCount.trim() ? parseInt(guestCount.trim(), 10) : null,
-        event_date: eventDate.trim(),
-        location: safeLocation,
-        food_preferences: foodPreferences.trim(),
-        budget: budget.trim() ? parseFloat(budget.trim().replace(",", ".")) : null,
-        description: description.trim() || null,
-      };
 
       const res = await apiFetch("/traiteur/requests", {
         method: "POST",
@@ -182,20 +204,23 @@ export default function DemandeTraiteurScreen() {
         body: JSON.stringify(payload),
       });
 
-      const data = await res.json();
+      // Le statut fait foi : une réponse 2xx au corps illisible (coupure) reste une annonce publiée
+      const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        showErrorAlert(
-          "Erreur",
-          data.message || "Impossible de publier l'annonce pour le moment."
+        // Saisie conservée : l'utilisateur peut corriger ou relancer
+        setSubmitError(
+          getApiErrorMessage(data, "Impossible de publier l'annonce pour le moment.")
         );
         return;
       }
 
+      lastAttemptRef.current = null;
       setShowSuccessModal(true);
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error("Erreur publication demande traiteur:", err);
-      showErrorAlert("Erreur", "Une erreur inattendue est survenue.");
+      setSubmitError(getErrorMessage(err, "Une erreur inattendue est survenue."));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -203,7 +228,7 @@ export default function DemandeTraiteurScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#165034" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── 1. HEADER HERO DABARI ── */}
         <View style={styles.headerHero}>
@@ -458,6 +483,14 @@ export default function DemandeTraiteurScreen() {
                 />
               </View>
             </View>
+
+            {/* Erreur de publication (adresse non reconnue, refus du serveur, coupure réseau) */}
+            {submitError && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle-outline" size={18} color="#B91C1C" />
+                <Text style={styles.errorText}>{submitError}</Text>
+              </View>
+            )}
 
             {/* ── 7. BOUTON D'ACTION PRINCIPAL ── */}
             <TouchableOpacity
@@ -875,6 +908,23 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 16,
     paddingHorizontal: 12,
+  },
+  errorBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FEE2E2",
+    borderColor: "#FCA5A5",
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 8,
+  },
+  errorText: {
+    color: "#B91C1C",
+    fontSize: 13,
+    fontWeight: "600",
+    flex: 1,
   },
 
   /* ── Confirmation Modal ── */

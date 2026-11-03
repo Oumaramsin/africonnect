@@ -1,2 +1,6 @@
 .expo
 node_modules
+
+# Secrets (ne jamais versionner)
+.env
+.env.*

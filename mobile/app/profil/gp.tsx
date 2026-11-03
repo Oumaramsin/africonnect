@@ -586,7 +586,7 @@ export default function GpProfilScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
         <View style={styles.headerCard}>

@@ -18,91 +18,23 @@ import {
   PlusCircle,
   Sparkles,
 } from "lucide-react";
-import { getValidToken, decodeToken, removeToken } from "@/lib/auth";
+import { logoutAndReload } from "@/lib/auth";
+import { useNavSession } from "@/hooks/useNavSession";
 
 export default function Navbar() {
   const pathname = usePathname();
   const router = useRouter();
 
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [userEmail, setUserEmail] = useState<string | null>(null);
-  const [userRole, setUserRole] = useState<string | null>(null);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Session et notifications partagées avec la barre du bas (un seul appel réseau pour les deux).
+  // Hors ligne, l'utilisateur reste affiché connecté tant que sa session n'a pas expiré.
+  const { isLoggedIn, user, unreadCount } = useNavSession(pathname);
+  const isAdmin = user?.isAdmin ?? false;
+  const userEmail = user ? user.email || user.full_name : null;
+  const userRole = user?.role ?? null;
 
   const [isProfileOpen, setIsProfileOpen] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
   const profileRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const checkAuthAndNotifications = async () => {
-      const token = getValidToken();
-      if (!token) {
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-        setUserEmail(null);
-        setUserRole(null);
-        setUnreadCount(0);
-        return;
-      }
-
-      const decoded = decodeToken(token);
-      if (!decoded) {
-        removeToken();
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-        setUserEmail(null);
-        setUserRole(null);
-        setUnreadCount(0);
-        return;
-      }
-
-      setIsLoggedIn(true);
-      setIsAdmin(decoded.role === "admin");
-      setUserEmail(decoded.email || null);
-      setUserRole(decoded.role || "client");
-
-      try {
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/notifications`,
-          {
-            headers: { Authorization: `Bearer ${token}` },
-            cache: "no-store",
-          }
-        );
-        if (res.status === 401) {
-          removeToken();
-          setIsLoggedIn(false);
-          return;
-        }
-        if (res.ok) {
-          const data = await res.json();
-          if (pathname.startsWith("/commandes")) {
-            setUnreadCount(0);
-          } else {
-            setUnreadCount(data.unread_count || 0);
-          }
-        }
-      } catch (err) {
-        console.error("Erreur lors de la récupération des notifications:", err);
-      }
-    };
-
-    checkAuthAndNotifications();
-
-    const handleNotifUpdate = () => {
-      if (pathname.startsWith("/commandes")) {
-        setUnreadCount(0);
-      } else {
-        checkAuthAndNotifications();
-      }
-    };
-
-    window.addEventListener("notifications-updated", handleNotifUpdate);
-    return () => {
-      window.removeEventListener("notifications-updated", handleNotifUpdate);
-    };
-  }, [pathname]);
 
   // Fermeture du menu profil lors d'un clic en dehors
   useEffect(() => {
@@ -121,15 +53,14 @@ export default function Navbar() {
     setIsProfileOpen(false);
   }, [pathname]);
 
-  const handleLogout = () => {
-    removeToken();
-    setIsLoggedIn(false);
+  const handleLogout = async () => {
     setIsProfileOpen(false);
-    router.push("/login");
+    // Panier effacé et rechargement complet : aucune donnée du compte ne reste en mémoire
+    await logoutAndReload();
   };
 
   const navLinks = [
-    { href: "/dashboard", label: "Accueil", icon: Sparkles },
+    { href: "/", label: "Accueil", icon: Sparkles },
     { href: "/traiteur", label: "Traiteur", icon: UtensilsCrossed },
     { href: "/gp", label: "Transport GP", icon: Plane },
     { href: "/services", label: "Services", icon: Grid },
@@ -148,7 +79,7 @@ export default function Navbar() {
   const hideNavbarOn = ["/login", "/register", "/reset-password", "/forgot-password"];
   if (hideNavbarOn.includes(pathname)) return null;
 
-  const isHomeDashboard = pathname === "/dashboard" || pathname === "/";
+  const isHomeDashboard = pathname === "/";
 
   const getMobileTitle = () => {
     if (pathname.startsWith("/cgu")) return "Conditions d'Utilisation";
@@ -210,7 +141,7 @@ export default function Navbar() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 w-full">
         <div className="flex items-center justify-between h-16 md:h-20 gap-2 xl:gap-6 w-full">
           {/* ── 1. LOGO & BRAND (GAUCHE) ── */}
-          <Link href="/dashboard" className="flex items-center gap-2 sm:gap-2.5 group shrink-0">
+          <Link href="/" className="flex items-center gap-2 sm:gap-2.5 group shrink-0">
             <div className="w-9 h-9 md:w-10 md:h-10 rounded-2xl bg-gradient-to-br from-[#1D6B45] to-[#0F4A30] flex items-center justify-center text-white shadow-md shadow-[#1D6B45]/20 group-hover:scale-105 transition-transform duration-200">
               <span className="font-extrabold text-lg md:text-xl tracking-tight text-[#FAF7F2]">D</span>
             </div>
@@ -234,7 +165,7 @@ export default function Navbar() {
             {navLinks.map((link) => {
               const isActive =
                 pathname === link.href ||
-                (link.href !== "/dashboard" && pathname.startsWith(link.href));
+                (link.href !== "/" && pathname.startsWith(link.href));
               const Icon = link.icon;
 
               return (

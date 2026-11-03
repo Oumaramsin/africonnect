@@ -83,7 +83,7 @@ export default function EditPlatScreen() {
   const loadOrderDetails = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`/commande/order/${id}`);
+      const res = await apiFetch(`/commande/order/${encodeURIComponent(String(id))}`);
       if (!res.ok) {
         throw new Error("Impossible de charger la commande.");
       }
@@ -267,7 +267,7 @@ export default function EditPlatScreen() {
         })),
       };
 
-      const res = await apiFetch(`/commande/order/${id}`, {
+      const res = await apiFetch(`/commande/order/${encodeURIComponent(String(id))}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });

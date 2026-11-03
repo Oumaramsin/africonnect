@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useEffect, useState, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -12,8 +12,15 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
-import { apiFetch } from "../../utils/api";
+import {
+  apiFetch,
+  getApiErrorCode,
+  getApiErrorMessage,
+  getErrorMessage,
+  isNetworkError,
+} from "../../utils/api";
 import AddressAutocomplete from "../../components/AddressAutocomplete";
+import LoadErrorState from "../../components/LoadErrorState";
 import OrderEditModal, {
   DetailRowItem,
 } from "../../components/OrderEditModal";
@@ -38,6 +45,12 @@ export default function EditDevisScreen() {
   const [loading, setLoading] = useState(true);
   const [commande, setCommande] = useState<any>(null);
   const [isSaving, setIsSaving] = useState(false);
+  // Échec du chargement (hors 404) : message + bouton Réessayer au lieu d'une redirection
+  const [loadError, setLoadError] = useState<{ message: string; offline: boolean } | null>(null);
+  // Vérification de l'adresse en cours (peut prendre quelques secondes sur un réseau lent)
+  const [checkingAddress, setCheckingAddress] = useState(false);
+  // Verrou contre la double soumission (double appui avant la désactivation du bouton)
+  const saveLockRef = useRef(false);
 
   // DatePicker state
   const [selectedDate, setSelectedDate] = useState<Date>(() => {
@@ -73,21 +86,46 @@ export default function EditDevisScreen() {
 
   const loadCommandeDetails = async () => {
     setLoading(true);
+    setLoadError(null);
     try {
-      const res = await apiFetch(`/commande/traiteur/${id}`);
-      if (!res.ok) {
-        throw new Error("Impossible de charger la demande de devis.");
-      }
+      const res = await apiFetch(`/commande/traiteur/${encodeURIComponent(String(id))}`);
       const data = await res.json();
       const cmd = data.data?.commande;
-      if (!cmd) {
-        throw new Error("Demande de devis introuvable.");
+      // « Introuvable » seulement si l'API le dit (404) ; les autres échecs proposent de réessayer
+      if (res.status === 404 || (res.ok && !cmd)) {
+        showErrorAlert(
+          "Demande introuvable",
+          getApiErrorMessage(data, "Demande de devis introuvable."),
+          () => router.replace("/commandes"),
+        );
+        return;
+      }
+      if (!res.ok) {
+        setLoadError({
+          message: getApiErrorMessage(data, "Impossible de charger la demande de devis."),
+          offline: false,
+        });
+        return;
       }
 
       if (cmd.statut !== "en_attente") {
         showErrorAlert(
           "Action impossible",
           "Cette demande a déjà été traitée et ne peut plus être modifiée.",
+          () => router.replace("/commandes"),
+        );
+        return;
+      }
+
+      // Le traiteur a déjà émis son devis (prix fixé ou signature engagée) : la demande n'est plus
+      // modifiable, même règle que l'API (409 DEVIS_ALREADY_ISSUED)
+      const devisIssued =
+        (cmd.prix_devis !== null && cmd.prix_devis !== undefined && cmd.prix_devis !== "") ||
+        (Boolean(cmd.devis_status) && cmd.devis_status !== "draft");
+      if (devisIssued) {
+        showErrorAlert(
+          "Action impossible",
+          "Le traiteur a déjà émis un devis pour cette demande : elle ne peut plus être modifiée. Consultez le devis depuis vos commandes.",
           () => router.replace("/commandes"),
         );
         return;
@@ -128,12 +166,12 @@ export default function EditDevisScreen() {
         adresse: initAdr,
         notes: initNotes,
       });
-    } catch (e: any) {
-      showErrorAlert(
-        "Erreur",
-        e.message || "Erreur de chargement",
-        () => router.replace("/commandes"),
-      );
+    } catch (e) {
+      // Coupure ou délai dépassé : on reste sur l'écran avec un bouton Réessayer
+      setLoadError({
+        message: getErrorMessage(e, "Impossible de charger la demande de devis."),
+        offline: isNetworkError(e),
+      });
     } finally {
       setLoading(false);
     }
@@ -209,7 +247,14 @@ export default function EditDevisScreen() {
       return;
     }
 
-    const check = await verifyAddressExists(adresse.trim());
+    if (checkingAddress) return;
+    setCheckingAddress(true);
+    let check;
+    try {
+      check = await verifyAddressExists(adresse.trim());
+    } finally {
+      setCheckingAddress(false);
+    }
     if (!check.isValid) {
       showErrorAlert(
         "Adresse non reconnue",
@@ -226,6 +271,8 @@ export default function EditDevisScreen() {
   };
 
   const performSave = async () => {
+    if (saveLockRef.current) return;
+    saveLockRef.current = true;
     setIsSaving(true);
     try {
       const payload = {
@@ -236,24 +283,45 @@ export default function EditDevisScreen() {
         notes: notes,
       };
 
-      const res = await apiFetch(`/commande/traiteur/${id}`, {
+      const res = await apiFetch(`/commande/traiteur/${encodeURIComponent(String(id))}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });
 
       if (!res.ok) {
         const data = await res.json();
-        throw new Error(data.error || "Erreur lors de la modification");
+        const message = getApiErrorMessage(data, "Erreur lors de la modification.");
+        const code = getApiErrorCode(data);
+        if (res.status === 409 && code === "DEVIS_ALREADY_ISSUED") {
+          // Le traiteur a émis son devis entre-temps : la demande n'est plus modifiable
+          showErrorAlert("Modification impossible", message, () => {
+            setShowConfirmModal(false);
+            router.replace("/commandes");
+          });
+          return;
+        }
+        if (code === "IDEMPOTENCY_IN_PROGRESS") {
+          // Enregistrement encore en cours côté serveur : la confirmation reste ouverte pour relancer
+          showErrorAlert("Enregistrement en cours", message);
+          return;
+        }
+        // Message affiché par-dessus la fenêtre de confirmation, puis retour au formulaire
+        // (saisie conservée) pour corriger ou relancer
+        showErrorAlert("Erreur", message, () => setShowConfirmModal(false));
+        return;
       }
 
       setShowConfirmModal(false);
       setShowSuccessModal(true);
-    } catch (e: any) {
+    } catch (e) {
+      // Issue inconnue (coupure) : la confirmation reste ouverte pour relancer la même requête,
+      // que le serveur ne traitera pas deux fois
       showErrorAlert(
         "Erreur",
-        e.message || "Impossible de sauvegarder la demande.",
+        getErrorMessage(e, "Impossible de sauvegarder la demande."),
       );
     } finally {
+      saveLockRef.current = false;
       setIsSaving(false);
     }
   };
@@ -295,6 +363,22 @@ export default function EditDevisScreen() {
       <SafeAreaView style={styles.centerContainer}>
         <ActivityIndicator size="large" color="#1D6B45" />
         <Text style={styles.loadingText}>Chargement de la demande...</Text>
+      </SafeAreaView>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <SafeAreaView style={styles.centerContainer}>
+        <LoadErrorState
+          title="Impossible de charger la demande"
+          message={loadError.message}
+          offline={loadError.offline}
+          onRetry={loadCommandeDetails}
+          secondaryLabel="Retour à mes commandes"
+          onSecondary={() => router.replace("/commandes")}
+          style={{ alignSelf: "stretch" }}
+        />
       </SafeAreaView>
     );
   }
@@ -479,13 +563,13 @@ export default function EditDevisScreen() {
           <TouchableOpacity
             style={[
               styles.saveBtnCentered,
-              (!hasChanges || isSaving) && styles.saveBtnDisabled,
+              (!hasChanges || isSaving || checkingAddress) && styles.saveBtnDisabled,
             ]}
             onPress={handleSaveClick}
-            disabled={!hasChanges || isSaving}
+            disabled={!hasChanges || isSaving || checkingAddress}
             activeOpacity={0.85}
           >
-            {isSaving ? (
+            {isSaving || checkingAddress ? (
               <ActivityIndicator size="small" color="#FFFFFF" />
             ) : (
               <View style={styles.saveBtnContent}>

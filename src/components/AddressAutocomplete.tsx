@@ -71,6 +71,8 @@ export default function AddressAutocomplete({
   const [suggestions, setSuggestions] = useState<AddressFeature[]>([]);
   const [loading, setLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  // Suggestions indisponibles (hors ligne, service lent ou en panne) : la saisie libre reste possible
+  const [suggestionsUnavailable, setSuggestionsUnavailable] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const debounceTimer = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -99,6 +101,7 @@ export default function AddressAutocomplete({
       setSuggestions([]);
       setIsOpen(false);
       setLoading(false);
+      setSuggestionsUnavailable(false);
       return;
     }
 
@@ -107,6 +110,12 @@ export default function AddressAutocomplete({
     }
     const controller = new AbortController();
     abortControllerRef.current = controller;
+    // Délai maximal : sans réponse, l'indicateur de chargement ne doit pas tourner indéfiniment
+    let timedOut = false;
+    const timeoutId = setTimeout(() => {
+      timedOut = true;
+      controller.abort();
+    }, 5000);
 
     setLoading(true);
     try {
@@ -120,6 +129,7 @@ export default function AddressAutocomplete({
       const res = await fetch(url, { signal: controller.signal });
       if (!res.ok) throw new Error("Erreur API Adresse");
       const data = await res.json();
+      setSuggestionsUnavailable(false);
 
       const results: AddressFeature[] = (data.features || []).map(
         (f: any) => ({
@@ -139,13 +149,18 @@ export default function AddressAutocomplete({
       setSuggestions(results);
       setIsOpen(results.length > 0);
     } catch (err: any) {
-      if (err.name !== "AbortError") {
+      // Annulation par une frappe plus récente : la nouvelle recherche prend le relais
+      if (err.name !== "AbortError" || timedOut) {
         console.warn("[AddressAutocomplete] Erreur API adresse:", err.message);
         setSuggestions([]);
         setIsOpen(false);
+        setSuggestionsUnavailable(true);
       }
     } finally {
-      setLoading(false);
+      clearTimeout(timeoutId);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   };
 
@@ -178,6 +193,7 @@ export default function AddressAutocomplete({
     onChange("");
     setSuggestions([]);
     setIsOpen(false);
+    setSuggestionsUnavailable(false);
   };
 
   return (
@@ -216,6 +232,12 @@ export default function AddressAutocomplete({
           ) : null}
         </div>
       </div>
+
+      {suggestionsUnavailable && !isOpen && (
+        <p className="mt-1.5 text-[11px] text-amber-700">
+          Suggestions d&apos;adresses indisponibles : saisissez l&apos;adresse complète, elle sera vérifiée à l&apos;envoi.
+        </p>
+      )}
 
       {/* Floating Suggestions Dropdown */}
       {isOpen && suggestions.length > 0 && (

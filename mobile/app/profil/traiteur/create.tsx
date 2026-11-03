@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -18,7 +18,9 @@ import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../../utils/api";
+import { PickedImage, uploadImage, validateImage } from "../../../utils/imageValidation";
+import { showErrorAlert, showSuccessAlert } from "../../../utils/alerts";
 import { CUISINES as CUISINES_PROPOSITIONS, ZONES as ZONES_PROPOSITIONS } from "../../../utils/constants";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
@@ -38,6 +40,12 @@ export default function CreateTraiteurScreen() {
   ]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Verrou anti double soumission (l'état `loading` n'est pas encore à jour au second appui)
+  const submittingRef = useRef(false);
+  // Photo choisie (type, taille) et photo déjà envoyée : une relance ne la renvoie pas
+  const pickedImageRef = useRef<PickedImage | null>(null);
+  const uploadedImageRef = useRef<{ uri: string; url: string } | null>(null);
 
   useFocusEffect(
     useCallback(() => {
@@ -98,41 +106,26 @@ export default function CreateTraiteurScreen() {
         quality: 0.8,
       });
       if (!result.canceled && result.assets && result.assets[0]) {
-        setImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        // JPEG, PNG ou WebP de 5 Mo maximum
+        const check = validateImage(asset);
+        if (!check.valid) {
+          showErrorAlert(
+            "Photo non acceptée",
+            check.error || "Cette photo ne peut pas être utilisée.",
+          );
+          return;
+        }
+        pickedImageRef.current = asset;
+        setImageUri(asset.uri);
       }
     } catch (err) {
       console.warn("Erreur sélection photo:", err);
     }
   };
 
-  const uploadImage = async (): Promise<string | undefined> => {
-    if (!imageUri) return undefined;
-    try {
-      const filename = imageUri.split("/").pop() || "workshop_logo.jpg";
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : `image/jpeg`;
-
-      const formData = new FormData();
-      formData.append("file", {
-        uri: imageUri,
-        name: filename,
-        type: type,
-      } as any);
-
-      const response = await apiFetch("/upload/single", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-      return data.url || data.fileUrl;
-    } catch (err) {
-      console.error("Erreur upload image traiteur:", err);
-      return undefined;
-    }
-  };
-
   const handleCreate = async () => {
+    if (submittingRef.current) return;
     setError(null);
     if (!name.trim()) {
       setError("Veuillez indiquer le nom de votre atelier traiteur.");
@@ -147,17 +140,36 @@ export default function CreateTraiteurScreen() {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.push("/login");
-      return;
-    }
+    let succeeded = false;
 
     try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        router.push("/login");
+        return;
+      }
+
+      // Photo envoyée une seule fois, même si la création doit être relancée ; un échec d'envoi
+      // arrête la création (l'atelier n'est pas créé sans la photo choisie)
       let uploadedUrl: string | undefined = undefined;
       if (imageUri) {
-        uploadedUrl = await uploadImage();
+        if (uploadedImageRef.current?.uri === imageUri) {
+          uploadedUrl = uploadedImageRef.current.url;
+        } else {
+          const upload = await uploadImage(
+            pickedImageRef.current?.uri === imageUri
+              ? pickedImageRef.current
+              : { uri: imageUri },
+          );
+          if (!upload.ok) {
+            setError(upload.error);
+            return;
+          }
+          uploadedUrl = upload.urls[0];
+          uploadedImageRef.current = { uri: imageUri, url: uploadedUrl };
+        }
       }
 
       const response = await apiFetch("/traiteur/setup", {
@@ -175,33 +187,36 @@ export default function CreateTraiteurScreen() {
       const data = await response.json();
 
       if (!response.ok) {
-        setError(data.message || "Erreur lors de la création du profil traiteur.");
-        setLoading(false);
+        setError(
+          getApiErrorMessage(data, "Erreur lors de la création du profil traiteur."),
+        );
         return;
       }
 
-      Alert.alert(
+      // Le bouton reste désactivé jusqu'à la redirection ; l'alerte s'affiche aussi sur le web
+      succeeded = true;
+      showSuccessAlert(
         "Félicitations !",
         "Votre Atelier Traiteur Dabari a été créé avec succès !",
-        [
-          {
-            text: "Accéder à mon espace",
-            onPress: () => router.replace("/profil/traiteur"),
-          },
-        ],
+        () => router.replace("/profil/traiteur"),
       );
-    } catch (err: any) {
+    } catch (err) {
       console.error(err);
-      setError("Impossible de contacter le serveur. Vérifiez votre connexion.");
+      setError(
+        getErrorMessage(err, "Impossible de créer votre atelier pour le moment. Réessayez."),
+      );
     } finally {
-      setLoading(false);
+      if (!succeeded) {
+        submittingRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
   if (checking) {
     return (
       <View style={[styles.topGreenWrapper, styles.centerLoader]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
         <ActivityIndicator size="large" color="#FFFFFF" />
         <Text style={styles.checkingText}>Vérification de votre compte...</Text>
       </View>
@@ -211,7 +226,7 @@ export default function CreateTraiteurScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
         <View style={styles.headerHero}>
@@ -248,13 +263,6 @@ export default function CreateTraiteurScreen() {
             <Text style={styles.cardHeaderSub}>
               Renseignez les informations de base de votre activité gastronomique.
             </Text>
-
-            {error && (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle" size={18} color="#B91C1C" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
 
             {/* Photo / Logo */}
             <View style={styles.fieldGroup}>
@@ -434,6 +442,14 @@ export default function CreateTraiteurScreen() {
                 Utilisé pour échanger avec vos clients et valider les détails de devis.
               </Text>
             </View>
+
+            {/* Erreur juste au-dessus du bouton, là où l'utilisateur regarde après l'appui */}
+            {error && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
 
             {/* Bouton de validation */}
             <TouchableOpacity

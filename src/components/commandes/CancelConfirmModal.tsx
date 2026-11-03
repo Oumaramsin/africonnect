@@ -1,8 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
-import { authFetch } from "@/lib/auth";
+import { apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
 import { useEscapeKey } from "@/hooks/useEscapeKey";
 
 type Props = {
@@ -24,14 +24,24 @@ export default function CancelConfirmModal({
 }: Props) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
-  useEscapeKey(onClose, isOpen && !loading);
+  // L'erreur d'une précédente tentative ne doit pas réapparaître à la prochaine ouverture
+  const handleClose = () => {
+    setError(null);
+    onClose();
+  };
+
+  useEscapeKey(handleClose, isOpen && !loading);
 
   if (!isOpen || !target) return null;
 
   const isRequest = target.type === "traiteur_request";
 
   const handleConfirm = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
     try {
@@ -52,23 +62,27 @@ export default function CancelConfirmModal({
         );
       }
       const data = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        throw new Error(
-          data.error ||
-            data.message ||
-            (isRequest
-              ? "Erreur lors de la suppression"
-              : "Erreur lors de l'annulation")
+      // 404 sur une suppression : annonce déjà supprimée (tentative précédente restée sans réponse)
+      if (!res.ok && !(isRequest && res.status === 404)) {
+        setError(
+          apiErrorMessage(
+            data,
+            isRequest ? "Erreur lors de la suppression" : "Erreur lors de l'annulation"
+          )
         );
+        return;
       }
       onSuccess();
-      onClose();
-    } catch (err: any) {
+      handleClose();
+    } catch (err: unknown) {
       setError(
-        err.message ||
-          (isRequest ? "Impossible de supprimer l'annonce" : "Impossible d'annuler")
+        sendErrorMessage(
+          err,
+          isRequest ? "Impossible de supprimer l'annonce" : "Impossible d'annuler"
+        )
       );
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -78,13 +92,13 @@ export default function CancelConfirmModal({
       role="dialog"
       aria-modal="true"
       onClick={(e) => {
-        if (e.target === e.currentTarget && !loading) onClose();
+        if (e.target === e.currentTarget && !loading) handleClose();
       }}
       className="fixed inset-0 z-[999] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
     >
       <div className="relative w-full max-w-sm p-6 bg-white rounded-3xl shadow-2xl text-center">
         <button
-          onClick={onClose}
+          onClick={handleClose}
           disabled={loading}
           aria-label="Fermer"
           className="absolute top-4 right-4 p-1 text-gray-400 hover:text-gray-600 rounded-full hover:bg-gray-100 transition-colors"
@@ -118,7 +132,7 @@ export default function CancelConfirmModal({
         </p>
 
         {error && (
-          <div className="p-3 mb-4 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl">
+          <div role="alert" className="p-3 mb-4 text-xs text-red-700 bg-red-50 border border-red-200 rounded-xl">
             {error}
           </div>
         )}
@@ -126,7 +140,7 @@ export default function CancelConfirmModal({
         <div className="flex gap-3">
           <button
             type="button"
-            onClick={onClose}
+            onClick={handleClose}
             disabled={loading}
             className="flex-1 py-3 text-sm font-semibold text-gray-700 bg-gray-100 rounded-xl hover:bg-gray-200 transition-colors"
           >
@@ -142,9 +156,11 @@ export default function CancelConfirmModal({
               ? isRequest
                 ? "Suppression..."
                 : "Annulation..."
-              : isRequest
-                ? "Oui, supprimer"
-                : "Oui, annuler"}
+              : error
+                ? "Réessayer"
+                : isRequest
+                  ? "Oui, supprimer"
+                  : "Oui, annuler"}
           </button>
         </div>
       </div>

@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef } from "react";
 import {
   Modal,
   View,
@@ -13,14 +13,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   DeviceEventEmitter,
+  type ScrollViewInstance,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import * as Print from "expo-print";
 import * as Sharing from "expo-sharing";
 import * as FileSystem from "expo-file-system/legacy";
 import { useRouter } from "expo-router";
-import { CommandeTraiteur } from "../utils/types/traiteur";
-import { apiFetch } from "../utils/api";
+import { CommandeTraiteur, formatWhatsAppUrl } from "../utils/types/traiteur";
+import { apiFetch, getApiErrorCode, getApiErrorMessage, getErrorMessage } from "../utils/api";
+import { showErrorAlert, showSuccessAlert } from "../utils/alerts";
 
 interface DevisModalProps {
   visible: boolean;
@@ -29,6 +31,20 @@ interface DevisModalProps {
   isTraiteurView?: boolean;
   onClose: () => void;
   onUpdate: (updatedCommande: CommandeTraiteur) => void;
+}
+
+/**
+ * Échappe une valeur avant insertion dans le HTML du devis : noms, adresses, notes et signatures
+ * sont saisis par les utilisateurs et pourraient sinon injecter du HTML/JS dans le document imprimé.
+ */
+function escapeHtml(value: unknown): string {
+  if (value === undefined || value === null) return "";
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#039;");
 }
 
 /**
@@ -67,16 +83,30 @@ function generateDevisHtml(
       ? (totalPrix / commande.nb_personnes).toFixed(2)
       : "-";
 
-  const traiteurNom =
-    commande.traiteur?.name || commande.traiteurs?.name || "Traiteur Dabari";
-  const traiteurPhone =
-    commande.traiteur?.whatsapp || "Non renseigné";
-  const clientNom =
-    commande.client?.full_name || commande.profiles?.full_name || "Client Partenaire";
-  const clientPhone =
-    commande.client?.phone || commande.profiles?.phone || "Non renseigné";
-  const clientVille =
-    (commande.client as any)?.city || (commande.profiles as any)?.city || commande.adresse || "France";
+  const traiteurNom = escapeHtml(
+    commande.traiteur?.name || commande.traiteurs?.name || "Traiteur Dabari"
+  );
+  const traiteurPhone = escapeHtml(commande.traiteur?.whatsapp || "Non renseigné");
+  const clientNom = escapeHtml(
+    commande.client?.full_name || commande.profiles?.full_name || "Client Partenaire"
+  );
+  const clientPhone = escapeHtml(
+    commande.client?.phone || commande.profiles?.phone || "Non renseigné"
+  );
+  const clientVille = escapeHtml(
+    (commande.client as any)?.city || (commande.profiles as any)?.city || commande.adresse || "France"
+  );
+  const typeEvenement = escapeHtml(commande.type_evenement || "Restauration privée");
+  const adresse = escapeHtml(commande.adresse || "À convenir");
+  const notes = escapeHtml(commande.notes);
+  const nbPersonnes = escapeHtml(commande.nb_personnes);
+  const traiteurSignataire = escapeHtml(
+    commande.traiteur_signature?.split(" | ")[0] || "Signature Traiteur"
+  );
+  const clientSignataire = escapeHtml(
+    commande.client_signature?.split(" | ")[0] || "Signature Client"
+  );
+  const acompteRef = escapeHtml((meta as any).acompte_transaction_ref || "DAB-SEC");
 
   const isFullySigned = Boolean(commande.client_signed_at && commande.traiteur_signed_at);
   const isRefused = commande.devis_status === "refuse";
@@ -397,7 +427,7 @@ function generateDevisHtml(
     <div class="event-grid">
       <div>
         <div class="event-field-label">Type d'Événement</div>
-        <div class="event-field-val">${commande.type_evenement || "Restauration privée"}</div>
+        <div class="event-field-val">${typeEvenement}</div>
       </div>
       <div>
         <div class="event-field-label">Date Prévue</div>
@@ -405,12 +435,12 @@ function generateDevisHtml(
       </div>
       <div>
         <div class="event-field-label">Nombre de Convives</div>
-        <div class="event-field-val">${commande.nb_personnes} personnes</div>
+        <div class="event-field-val">${nbPersonnes} personnes</div>
       </div>
     </div>
     <div class="event-desc">
-      <strong>Lieu d'intervention :</strong> ${commande.adresse || "À convenir"}<br>
-      ${commande.notes ? `<strong>Menu & Choix convenus :</strong> ${commande.notes}` : ""}
+      <strong>Lieu d'intervention :</strong> ${adresse}<br>
+      ${notes ? `<strong>Menu & Choix convenus :</strong> ${notes}` : ""}
     </div>
   </div>
 
@@ -427,9 +457,9 @@ function generateDevisHtml(
       <tr>
         <td>
           <strong>Restauration traiteur & Événementiel</strong><br>
-          <span style="color: #64748b; font-size: 9px;">Élaboration culinaire, service et livraison pour ${commande.nb_personnes} convives.</span>
+          <span style="color: #64748b; font-size: 9px;">Élaboration culinaire, service et livraison pour ${nbPersonnes} convives.</span>
         </td>
-        <td style="text-align: center; font-weight: 700;">${commande.nb_personnes} pers.</td>
+        <td style="text-align: center; font-weight: 700;">${nbPersonnes} pers.</td>
         <td style="text-align: right; font-weight: 600;">${prixParPersonne !== "-" ? prixParPersonne + " €" : "À chiffrer"}</td>
         <td style="text-align: right; font-weight: 800;">${totalPrix > 0 ? totalPrix.toFixed(2) + " €" : "En attente"}</td>
       </tr>
@@ -454,10 +484,10 @@ function generateDevisHtml(
       <div class="fin-sub">
         ${
           (meta as any).acompte_paye
-            ? `<strong style="color: #166534;">✓ Réglé sous séquestre Dabari (${(meta as any).acompte_transaction_ref || "DAB-SEC"})</strong>`
+            ? `<strong style="color: #166534;">✓ Réglé sous séquestre Dabari (${acompteRef})</strong>`
             : meta.acompte_type === "aucun"
             ? "Aucun acompte demandé (Règlement jour J)"
-            : `Acompte (${meta.acompte_pourcentage || 30}%) sous séquestre`
+            : `Acompte (${escapeHtml(meta.acompte_pourcentage || 30)}%) sous séquestre`
         }
       </div>
     </div>
@@ -479,7 +509,7 @@ function generateDevisHtml(
       <div><strong>${traiteurNom}</strong></div>
       ${
         commande.traiteur_signed_at
-          ? `<div class="sig-signataire">${commande.traiteur_signature?.split(" | ")[0] || "Signature Traiteur"}</div>
+          ? `<div class="sig-signataire">${traiteurSignataire}</div>
              <div class="sig-date">Signé le ${new Date(commande.traiteur_signed_at).toLocaleDateString("fr-FR")} à ${new Date(commande.traiteur_signed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
              <div style="font-size: 8px; color: #64748b; font-family: monospace; margin-top: 2px;">Réf. sécurité : TRT-${commande.id.slice(0, 8).toUpperCase()}</div>`
           : `<div class="sig-empty">En attente de signature traiteur</div>`
@@ -496,7 +526,7 @@ function generateDevisHtml(
       <div><strong>${clientNom}</strong></div>
       ${
         commande.client_signed_at
-          ? `<div class="sig-signataire">${commande.client_signature?.split(" | ")[0] || "Signature Client"}</div>
+          ? `<div class="sig-signataire">${clientSignataire}</div>
              <div class="sig-date">Signé le ${new Date(commande.client_signed_at).toLocaleDateString("fr-FR")} à ${new Date(commande.client_signed_at).toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" })}</div>
              <div style="font-size: 8px; color: #64748b; font-family: monospace; margin-top: 2px;">Réf. sécurité : CLT-${commande.id.slice(0, 8).toUpperCase()}</div>`
           : `<div class="sig-empty">En attente de signature client</div>`
@@ -608,6 +638,64 @@ export default function DevisModal({
   const [showAcompteModal, setShowAcompteModal] = useState(false);
   const [acompteModeSimule, setAcompteModeSimule] = useState<"cb" | "virement" | "especes">("cb");
   const [payingAcompte, setPayingAcompte] = useState(false);
+
+  // Verrous contre la double soumission : un double appui part avant que le bouton soit désactivé
+  const submitLockRef = useRef(false);
+  const acompteLockRef = useRef(false);
+  // Référence de versement conservée tant que le versement n'a pas abouti : une relance après une
+  // coupure renvoie exactement la même requête (même clé d'idempotence, pas de second versement)
+  const pendingAcompteRef = useRef<{ mode: string; ref: string } | null>(null);
+  const scrollRef = useRef<ScrollViewInstance>(null);
+
+  // Les messages s'affichent en haut du devis alors que les boutons d'action sont en bas : on y
+  // ramène l'utilisateur (dans les fenêtres de refus et d'acompte, l'erreur s'affiche sur place)
+  const showError = (message: string) => {
+    setError(message);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+  const showSuccess = (message: string) => {
+    setSuccessMessage(message);
+    scrollRef.current?.scrollTo({ y: 0, animated: true });
+  };
+
+  // Applique la version du devis renvoyée par l'API, ici et dans la liste des commandes. Certaines
+  // réponses n'incluent pas toutes les relations (client) : on complète avec la version affichée.
+  const applyUpdatedCommande = (updated: CommandeTraiteur) => {
+    const merged = { ...commande, ...updated };
+    setCommande(merged);
+    onUpdate(merged);
+  };
+
+  // Recharge la dernière version du devis (ex. le traiteur l'a modifié pendant la lecture du client)
+  const reloadCommande = async (): Promise<boolean> => {
+    try {
+      const res = await apiFetch(`commande/traiteur/${commande.id}`);
+      const data = await res.json();
+      const fresh = data?.data?.commande;
+      if (!res.ok || !fresh) return false;
+      applyUpdatedCommande(fresh);
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  const openAcompteModal = () => {
+    setError(null);
+    setShowAcompteModal(true);
+  };
+  const closeAcompteModal = () => {
+    setError(null);
+    setShowAcompteModal(false);
+  };
+  const openRefusalModal = () => {
+    setError(null);
+    setShowRefusalModal(true);
+  };
+  const closeRefusalModal = () => {
+    setError(null);
+    setShowRefusalModal(false);
+  };
 
   const isClient = Boolean(currentUserId && commande.client_id === currentUserId);
   const isTraiteur = Boolean(
@@ -739,16 +827,18 @@ export default function DevisModal({
 
   // Submit quote pricing (Traiteur) avec validation stricte 0% à 80%
   const handleSubmitPricing = async () => {
+    if (submitLockRef.current) return;
     setError(null);
+    setSuccessMessage(null);
     const numPrix = parseFloat(prixInput.replace(",", "."));
     if (isNaN(numPrix) || numPrix <= 0) {
-      setError("Veuillez saisir un tarif global valide (en euros).");
+      showError("Veuillez saisir un tarif global valide (en euros).");
       return;
     }
 
     if (acompteType !== "aucun") {
       if (isNaN(parsedPourcent) || parsedPourcent < 0 || parsedPourcent > 80) {
-        setError("L'acompte doit obligatoirement être compris entre 0% et 80%.");
+        showError("L'acompte doit obligatoirement être compris entre 0% et 80%.");
         return;
       }
     }
@@ -766,6 +856,7 @@ export default function DevisModal({
       texte: conditionsTextInput.trim(),
     };
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const res = await apiFetch(`commande/traiteur/${commande.id}/devis/setup`, {
@@ -783,70 +874,97 @@ export default function DevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de l'enregistrement du devis.");
+        // Saisie conservée : le traiteur peut corriger ou relancer tel quel
+        showError(getApiErrorMessage(data, "Erreur lors de l'enregistrement du devis."));
+        return;
       }
 
-      setCommande(data.data.commande);
-      onUpdate(data.data.commande);
+      if (data?.data?.commande) applyUpdatedCommande(data.data.commande);
+      else await reloadCommande();
       DeviceEventEmitter.emit("dabari_notifications_updated");
       DeviceEventEmitter.emit("dabari_orders_updated");
       setIsEditingPrice(false);
-      setSuccessMessage("Devis chiffré et transmis avec succès au client.");
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau.");
+      showSuccess("Devis chiffré et transmis avec succès au client.");
+    } catch (err) {
+      showError(getErrorMessage(err, "Erreur lors de l'enregistrement du devis."));
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
 
   // Sign quote electronically
   const handleSign = async () => {
+    if (submitLockRef.current) return;
     setError(null);
+    setSuccessMessage(null);
     if (!signerName.trim()) {
-      setError("Veuillez saisir votre prénom et nom pour apposer votre signature.");
+      showError("Veuillez saisir votre prénom et nom pour apposer votre signature.");
       return;
     }
     if (!agreedTerms) {
-      setError("Veuillez cocher la case d'acceptation du devis et des conditions.");
+      showError("Veuillez cocher la case d'acceptation du devis et des conditions.");
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const res = await apiFetch(`commande/traiteur/${commande.id}/devis/sign`, {
         method: "POST",
         body: JSON.stringify({
           signature: signerName.trim(),
+          // Prix affiché au signataire : l'API refuse la signature si le devis a changé entre-temps
+          prix_devis_attendu: totalPrix,
         }),
       });
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors de la signature.");
+        const message = getApiErrorMessage(data, "Erreur lors de la signature.");
+        if (res.status === 409 && getApiErrorCode(data) === "DEVIS_CHANGED") {
+          // Le devis a été modifié : on affiche la nouvelle version ; le nom saisi est conservé mais
+          // le nouveau montant doit être relu et accepté à nouveau avant de signer
+          setAgreedTerms(false);
+          const reloaded = await reloadCommande();
+          showError(
+            reloaded
+              ? message
+              : `${message} Fermez puis rouvrez le devis pour afficher la nouvelle version.`
+          );
+          return;
+        }
+        showError(message);
+        return;
       }
 
-      setCommande(data.data.commande);
-      onUpdate(data.data.commande);
+      if (data?.data?.commande) applyUpdatedCommande(data.data.commande);
+      else await reloadCommande();
       DeviceEventEmitter.emit("dabari_notifications_updated");
       DeviceEventEmitter.emit("dabari_orders_updated");
       setSignerName("");
       setAgreedTerms(false);
-      setSuccessMessage("Devis signé avec succès !");
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau.");
+      showSuccess("Devis signé avec succès !");
+    } catch (err) {
+      // Issue inconnue (coupure) : nom et case conservés, une relance renvoie la même requête
+      showError(getErrorMessage(err, "Erreur lors de la signature."));
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
 
   // Refuse quote
   const handleRefuse = async () => {
+    if (submitLockRef.current) return;
     setError(null);
+    setSuccessMessage(null);
     if (!refusalMotif.trim()) {
-      setError("Veuillez préciser le motif de refus.");
+      showError("Veuillez préciser le motif de refus.");
       return;
     }
 
+    submitLockRef.current = true;
     setSubmitting(true);
     try {
       const res = await apiFetch(`commande/traiteur/${commande.id}/devis/refuse`, {
@@ -858,18 +976,21 @@ export default function DevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors du refus du devis.");
+        // Affiché dans la fenêtre de refus, motif conservé
+        showError(getApiErrorMessage(data, "Erreur lors du refus du devis."));
+        return;
       }
 
-      setCommande(data.data.commande);
-      onUpdate(data.data.commande);
+      if (data?.data?.commande) applyUpdatedCommande(data.data.commande);
+      else await reloadCommande();
       DeviceEventEmitter.emit("dabari_notifications_updated");
       DeviceEventEmitter.emit("dabari_orders_updated");
       setShowRefusalModal(false);
-      setSuccessMessage("Le devis a été décliné.");
-    } catch (err: any) {
-      setError(err.message || "Erreur réseau.");
+      showSuccess("Le devis a été décliné.");
+    } catch (err) {
+      showError(getErrorMessage(err, "Erreur lors du refus du devis."));
     } finally {
+      submitLockRef.current = false;
       setSubmitting(false);
     }
   };
@@ -878,6 +999,8 @@ export default function DevisModal({
   const handleAcompteAction = async (
     action: "verser" | "refuser_acompte" | "annuler_reglement"
   ) => {
+    if (acompteLockRef.current) return;
+    acompteLockRef.current = true;
     setError(null);
     setPayingAcompte(true);
     try {
@@ -887,10 +1010,17 @@ export default function DevisModal({
           : acompteModeSimule === "virement"
           ? "VIR"
           : "ESP";
-      const fakeRef =
-        action === "verser"
-          ? `DAB-${modeSuffix}-${Date.now().toString(36).toUpperCase()}`
-          : undefined;
+      // Même référence pour une relance du même versement (corps identique → pas de doublon)
+      let fakeRef: string | undefined;
+      if (action === "verser") {
+        if (pendingAcompteRef.current?.mode !== modeSuffix) {
+          pendingAcompteRef.current = {
+            mode: modeSuffix,
+            ref: `DAB-${modeSuffix}-${Date.now().toString(36).toUpperCase()}`,
+          };
+        }
+        fakeRef = pendingAcompteRef.current.ref;
+      }
 
       // Compatibilité totale avec l'API déployée sur Railway (qui attend 'verser' ou 'refuser_acompte')
       const apiAction = action === "annuler_reglement" ? "refuser_acompte" : action;
@@ -905,34 +1035,38 @@ export default function DevisModal({
 
       const data = await res.json();
       if (!res.ok) {
-        throw new Error(data.error || data.message || "Erreur lors du traitement de l'acompte.");
+        // Affiché dans la fenêtre d'acompte (qui reste ouverte) : l'utilisateur peut relancer
+        showError(getApiErrorMessage(data, "Erreur lors du traitement de l'acompte."));
+        return;
       }
 
-      setCommande(data.data.commande);
-      onUpdate(data.data.commande);
+      if (action === "verser") pendingAcompteRef.current = null;
+      if (data?.data?.commande) applyUpdatedCommande(data.data.commande);
+      else await reloadCommande();
       DeviceEventEmitter.emit("dabari_notifications_updated");
       DeviceEventEmitter.emit("dabari_orders_updated");
       setShowAcompteModal(false);
 
       if (action === "verser") {
-        Alert.alert(
+        showSuccessAlert(
           "Acompte Séquestré",
           `Acompte de ${displayAcompteMontant.toFixed(2)} € consigné sous séquestre sécurisé Dabari SAS. La date de votre événement est confirmée avec le traiteur !`
         );
       } else if (action === "refuser_acompte") {
-        Alert.alert(
+        showSuccessAlert(
           "Règlement jour J",
           "Choix de règlement intégral le jour de la prestation enregistré."
         );
       } else {
-        Alert.alert(
+        showSuccessAlert(
           "Statut réinitialisé",
           "Le statut de l'acompte a été réinitialisé en attente."
         );
       }
-    } catch (err: any) {
-      setError(err.message || "Erreur lors du versement.");
+    } catch (err) {
+      showError(getErrorMessage(err, "Erreur lors du traitement de l'acompte."));
     } finally {
+      acompteLockRef.current = false;
       setPayingAcompte(false);
     }
   };
@@ -1000,6 +1134,7 @@ export default function DevisModal({
             style={{ flex: 1 }}
           >
             <ScrollView
+              ref={scrollRef}
               style={styles.content}
               contentContainerStyle={styles.contentContainer}
               keyboardShouldPersistTaps="handled"
@@ -1126,7 +1261,7 @@ export default function DevisModal({
                           styles.acompteColInteractive,
                           isDepositPaid && styles.acompteColPaid,
                         ]}
-                        onPress={() => setShowAcompteModal(true)}
+                        onPress={openAcompteModal}
                         activeOpacity={0.8}
                       >
                         <View style={styles.acompteHeaderRow}>
@@ -1583,7 +1718,7 @@ export default function DevisModal({
                       styles.depositBtn,
                       isDepositPaid && styles.depositBtnPaid,
                     ]}
-                    onPress={() => setShowAcompteModal(true)}
+                    onPress={openAcompteModal}
                     activeOpacity={0.85}
                   >
                     <View style={styles.btnRow}>
@@ -1604,7 +1739,7 @@ export default function DevisModal({
                 {!isFullySigned && (
                   <TouchableOpacity
                     style={styles.refuseQuoteBtn}
-                    onPress={() => setShowRefusalModal(true)}
+                    onPress={openRefusalModal}
                   >
                     <Ionicons name="close-circle-outline" size={15} color="#DC2626" />
                     <Text style={styles.refuseQuoteBtnText}>Décliner cette proposition</Text>
@@ -1636,14 +1771,18 @@ export default function DevisModal({
                 const phone = isClient
                   ? commande.traiteur?.whatsapp
                   : commande.client?.phone;
-                if (!phone) {
-                  Alert.alert("WhatsApp", "Numéro de téléphone non renseigné.");
+                // Numéro normalisé et message encodé (espaces, accents) par l'utilitaire commun
+                const url = formatWhatsAppUrl(
+                  phone,
+                  `Bonjour, je fais suite au devis ${devisRef} sur Dabari.`
+                );
+                if (!url) {
+                  showErrorAlert("WhatsApp", "Numéro de téléphone non renseigné.");
                   return;
                 }
-                const cleanPhone = phone.replace(/\D/g, "");
-                Linking.openURL(
-                  `https://wa.me/${cleanPhone}?text=Bonjour, je fais suite au devis ${devisRef} sur Dabari.`
-                );
+                Linking.openURL(url).catch(() => {
+                  showErrorAlert("WhatsApp", "Impossible d'ouvrir WhatsApp.");
+                });
               }}
             >
               <Ionicons name="logo-whatsapp" size={16} color="#FFFFFF" />
@@ -1668,10 +1807,17 @@ export default function DevisModal({
                   value={refusalMotif}
                   onChangeText={setRefusalMotif}
                 />
+                {/* Erreur affichée ici : cette fenêtre recouvre l'encart d'erreur du devis */}
+                {Boolean(error) && (
+                  <View style={styles.errorBox}>
+                    <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
                 <View style={styles.refusalActionRow}>
                   <TouchableOpacity
                     style={styles.cancelFormBtn}
-                    onPress={() => setShowRefusalModal(false)}
+                    onPress={closeRefusalModal}
                   >
                     <Text style={styles.cancelFormBtnText}>Retour</Text>
                   </TouchableOpacity>
@@ -1717,7 +1863,7 @@ export default function DevisModal({
                     </Text>
                   </View>
                   <TouchableOpacity
-                    onPress={() => setShowAcompteModal(false)}
+                    onPress={closeAcompteModal}
                     hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                   >
                     <Ionicons name="close" size={20} color="#64748B" />
@@ -1733,6 +1879,14 @@ export default function DevisModal({
                     Total TTC : {totalPrix.toFixed(2)} € • Solde le jour J : {displaySoldeRestant.toFixed(2)} €
                   </Text>
                 </View>
+
+                {/* Erreur affichée ici : cette fenêtre recouvre l'encart d'erreur du devis */}
+                {Boolean(error) && (
+                  <View style={styles.errorBox}>
+                    <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
 
                 {isDepositPaid ? (
                   <View style={styles.acompteDetailsBox}>
@@ -1770,13 +1924,13 @@ export default function DevisModal({
                     <View style={styles.acompteModalActionsRow}>
                       <TouchableOpacity
                         style={styles.closeAcompteBtn}
-                        onPress={() => setShowAcompteModal(false)}
+                        onPress={closeAcompteModal}
                       >
                         <Text style={styles.closeAcompteBtnText}>Fermer</Text>
                       </TouchableOpacity>
 
                       <TouchableOpacity
-                        style={styles.resetBtnDiscreet}
+                        style={[styles.resetBtnDiscreet, payingAcompte && { opacity: 0.5 }]}
                         onPress={() => handleAcompteAction("annuler_reglement")}
                         disabled={payingAcompte}
                       >
@@ -1883,7 +2037,7 @@ export default function DevisModal({
 
                     {parsedMeta.acompte_type === "optionnel" && (
                       <TouchableOpacity
-                        style={styles.payDayOfEventBtn}
+                        style={[styles.payDayOfEventBtn, payingAcompte && { opacity: 0.5 }]}
                         onPress={() => handleAcompteAction("refuser_acompte")}
                         disabled={payingAcompte}
                       >

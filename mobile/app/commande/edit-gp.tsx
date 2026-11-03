@@ -66,7 +66,7 @@ export default function EditGpScreen() {
   const loadGpRequest = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch(`/commande/gp/${id}`);
+      const res = await apiFetch(`/commande/gp/${encodeURIComponent(String(id))}`);
       if (!res.ok) {
         throw new Error("Impossible de charger la demande GP.");
       }
@@ -250,7 +250,7 @@ export default function EditGpScreen() {
         recipient_phone: `${recipientPhoneCode} ${recipientPhoneNumber.trim()}`,
       };
 
-      const res = await apiFetch(`/commande/gp/${id}`, {
+      const res = await apiFetch(`/commande/gp/${encodeURIComponent(String(id))}`, {
         method: "PUT",
         body: JSON.stringify(payload),
       });

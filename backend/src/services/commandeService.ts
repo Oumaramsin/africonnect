@@ -1,3 +1,5 @@
+import crypto from "crypto";
+import { Prisma } from "@prisma/client";
 import { db } from "../db";
 import {
   COMMANDE_TRAITEUR_STATUS,
@@ -6,10 +8,15 @@ import {
   GP_REQUEST_STATUS,
   GpDelayInput,
   UpdateClientGpRequestInput,
+  DevisConditionsInput,
   DevisConditionsMetadata,
+  ACOMPTE_MAX_POURCENTAGE,
+  isValidUUID,
   parseDevisConditionsMeta,
   serializeDevisConditionsMeta,
 } from "../utils/types";
+import { HttpError } from "../utils/validation";
+import { hideClientDetailsUntilAccepted } from "../utils/privacy";
 import {
   sendOrderNotificationToClientMail,
   sendGpRequestStatusToSenderMail,
@@ -20,6 +27,145 @@ import {
   sendAcompteNotificationMail,
   sendGpDelayNotificationMail,
 } from "./emailService";
+
+// Coordonnées d'un client transmises au traiteur ou au GP qu'il a lui-même choisi (commande
+// directe, colis). Sélection explicite : un nouveau champ du profil n'est jamais exposé par défaut.
+const CLIENT_CONTACT_SELECT = {
+  id: true,
+  full_name: true,
+  avatar_url: true,
+  phone: true,
+  whatsapp: true,
+  email: true,
+  city: true,
+} as const;
+
+// Profil d'un traiteur affiché au client sur les propositions qu'il a reçues
+const TRAITEUR_PROFILE_SELECT = {
+  id: true,
+  full_name: true,
+  avatar_url: true,
+  phone: true,
+} as const;
+
+const CONCURRENT_UPDATE_MESSAGE =
+  "Cette commande a été modifiée entre-temps : actualisez la page puis réessayez.";
+
+const DEVIS_CHANGED_ERROR = () =>
+  new HttpError(
+    409,
+    "Le montant du devis a changé depuis votre lecture : vérifiez le nouveau montant avant de signer.",
+    "DEVIS_CHANGED",
+  );
+
+const DEVIS_ALREADY_ISSUED_ERROR = () =>
+  new HttpError(
+    409,
+    "Un devis a déjà été émis pour cette demande : refusez-le ou contactez le traiteur pour en obtenir un nouveau.",
+    "DEVIS_ALREADY_ISSUED",
+  );
+
+// Libellés français des statuts, pour des messages d'erreur lisibles
+const STATUS_LABELS: Record<string, string> = {
+  en_attente: "en attente",
+  acceptee: "acceptée",
+  refusee: "refusée",
+  annulee: "annulée",
+  pending: "en attente",
+  accepted: "acceptée",
+  rejected: "refusée",
+  refused: "refusée",
+  cancelled: "annulée",
+  colis_recu: "colis reçu",
+  en_acheminement: "en acheminement",
+  arrive: "arrivé",
+  livre: "livré",
+};
+const statusLabel = (status: string | null) => STATUS_LABELS[status || ""] || status || "inconnu";
+
+const transitionError = (from: string | null, to: string) =>
+  new HttpError(409, `Changement de statut impossible : « ${statusLabel(from)} » → « ${statusLabel(to)} ».`);
+
+/*
+ * Transitions de statut autorisées, par rôle. Les statuts finaux (refusé, annulé, livré) n'ont
+ * aucune transition sortante. Le propriétaire est le traiteur de la commande ou le GP de l'annonce ;
+ * l'administrateur dispose en plus de l'annulation.
+ */
+const allowedCommandeTraiteurTargets = (
+  current: string | null,
+  devisStatus: string | null,
+  isAdmin: boolean,
+): string[] => {
+  const from = current || COMMANDE_TRAITEUR_STATUS.EN_ATTENTE;
+  const targets: string[] = [];
+  if (from === COMMANDE_TRAITEUR_STATUS.EN_ATTENTE) {
+    targets.push(COMMANDE_TRAITEUR_STATUS.ACCEPTEE, COMMANDE_TRAITEUR_STATUS.REFUSEE);
+  }
+  // Une commande acceptée ne repasse jamais en attente ; elle ne peut plus être refusée une fois le
+  // devis signé par les deux parties (engagement mutuel).
+  if (from === COMMANDE_TRAITEUR_STATUS.ACCEPTEE && devisStatus !== DEVIS_STATUS.SIGNE_PAR_LES_DEUX) {
+    targets.push(COMMANDE_TRAITEUR_STATUS.REFUSEE);
+  }
+  if (
+    isAdmin &&
+    (from === COMMANDE_TRAITEUR_STATUS.EN_ATTENTE || from === COMMANDE_TRAITEUR_STATUS.ACCEPTEE)
+  ) {
+    targets.push(COMMANDE_TRAITEUR_STATUS.ANNULEE);
+  }
+  return targets;
+};
+
+const allowedOrderPlatTargets = (current: string | null, isAdmin: boolean): string[] => {
+  const from = current || ORDER_PLAT_STATUS.PENDING;
+  const targets: string[] = [];
+  if (from === ORDER_PLAT_STATUS.PENDING) {
+    targets.push(ORDER_PLAT_STATUS.ACCEPTED, ORDER_PLAT_STATUS.REJECTED);
+  }
+  // Le traiteur peut se désister d'une commande acceptée (le client est prévenu), jamais la remettre en attente
+  if (from === ORDER_PLAT_STATUS.ACCEPTED) {
+    targets.push(ORDER_PLAT_STATUS.REJECTED);
+  }
+  if (isAdmin && (from === ORDER_PLAT_STATUS.PENDING || from === ORDER_PLAT_STATUS.ACCEPTED)) {
+    targets.push(ORDER_PLAT_STATUS.CANCELLED);
+  }
+  return targets;
+};
+
+const GP_CLOSED_STATUSES: (string | null)[] = [
+  GP_REQUEST_STATUS.CANCELLED,
+  GP_REQUEST_STATUS.REFUSED,
+  GP_REQUEST_STATUS.REJECTED,
+  GP_REQUEST_STATUS.LIVRE,
+];
+
+const allowedGpRequestTargets = (current: string | null, isAdmin: boolean): string[] => {
+  const from = current || GP_REQUEST_STATUS.PENDING;
+  const targets: string[] = [];
+  if (from === GP_REQUEST_STATUS.PENDING) {
+    targets.push(GP_REQUEST_STATUS.ACCEPTED, GP_REQUEST_STATUS.REFUSED, GP_REQUEST_STATUS.REJECTED);
+  } else if (from === GP_REQUEST_STATUS.ACCEPTED) {
+    // Désistement possible tant que le colis n'a pas été remis au GP
+    targets.push(GP_REQUEST_STATUS.COLIS_RECU, GP_REQUEST_STATUS.REFUSED, GP_REQUEST_STATUS.REJECTED);
+  } else if (from === GP_REQUEST_STATUS.COLIS_RECU) {
+    targets.push(GP_REQUEST_STATUS.EN_ACHEMINEMENT);
+  } else if (from === GP_REQUEST_STATUS.EN_ACHEMINEMENT) {
+    targets.push(GP_REQUEST_STATUS.ARRIVE);
+  } else if (from === GP_REQUEST_STATUS.ARRIVE) {
+    targets.push(GP_REQUEST_STATUS.LIVRE);
+  }
+  if (isAdmin && !GP_CLOSED_STATUSES.includes(from)) {
+    targets.push(GP_REQUEST_STATUS.CANCELLED);
+  }
+  return targets;
+};
+
+const samePrice = (stored: Prisma.Decimal | null, expected: number): boolean =>
+  stored !== null && Math.round(Number(stored) * 100) === Math.round(expected * 100);
+
+/** Un devis est « émis » dès qu'un prix a été fixé ou que le circuit de signature a démarré. */
+const isDevisIssued = (commande: { prix_devis: Prisma.Decimal | null; devis_status: string | null }) =>
+  commande.prix_devis !== null ||
+  (commande.devis_status !== null && commande.devis_status !== DEVIS_STATUS.DRAFT);
 
 export const getRecentOrderByClientId = async (client_id: string) => {
   return await db.order.findMany({
@@ -37,7 +183,7 @@ export const getRecentOrderByClientId = async (client_id: string) => {
 };
 
 export const getAllOrderById = async (id: string) => {
-  return await db.profile.findUnique({
+  const profile = await db.profile.findUnique({
     where: {
       id: id,
     },
@@ -56,7 +202,7 @@ export const getAllOrderById = async (id: string) => {
         },
         include: {
           traiteur: true,
-          client: true,
+          client: { select: CLIENT_CONTACT_SELECT },
         },
       },
       orders: {
@@ -80,7 +226,7 @@ export const getAllOrderById = async (id: string) => {
               created_at: "desc",
             },
             include: {
-              client: true,
+              client: { select: CLIENT_CONTACT_SELECT },
               order_items: {
                 include: {
                   dish: true,
@@ -93,7 +239,7 @@ export const getAllOrderById = async (id: string) => {
               created_at: "desc",
             },
             include: {
-              client: true,
+              client: { select: CLIENT_CONTACT_SELECT },
               traiteur: true,
             },
           },
@@ -104,7 +250,7 @@ export const getAllOrderById = async (id: string) => {
             include: {
               request: {
                 include: {
-                  client: true,
+                  client: { select: CLIENT_CONTACT_SELECT },
                 },
               },
             },
@@ -119,7 +265,7 @@ export const getAllOrderById = async (id: string) => {
               created_at: "desc",
             },
             include: {
-              sender: true,
+              sender: { select: CLIENT_CONTACT_SELECT },
               listing: true,
             },
           },
@@ -138,7 +284,7 @@ export const getAllOrderById = async (id: string) => {
             include: {
               traiteur: {
                 include: {
-                  profile: true,
+                  profile: { select: TRAITEUR_PROFILE_SELECT },
                 },
               },
             },
@@ -147,6 +293,18 @@ export const getAllOrderById = async (id: string) => {
       },
     },
   });
+
+  if (!profile) return profile;
+
+  // Propositions envoyées en tant que traiteur : coordonnées et adresse du client uniquement
+  // pour les propositions acceptées (prénom + initiale et ville sinon).
+  return {
+    ...profile,
+    traiteurs: profile.traiteurs.map((traiteur) => ({
+      ...traiteur,
+      proposals: traiteur.proposals.map(hideClientDetailsUntilAccepted),
+    })),
+  };
 };
 
 export const updateCommandeTraiteurStatus = async (
@@ -169,24 +327,53 @@ export const updateCommandeTraiteurStatus = async (
     }
 
     // Sécurité Authorization : seul le traiteur concerné ou l'admin peut accepter/refuser
-    if (!isAdmin && currentUserId && existing.traiteur?.user_id !== currentUserId) {
+    if (!isAdmin && existing.traiteur?.user_id !== currentUserId) {
       throw new Error("Accès refusé. Vous n'êtes pas le traiteur assigné à cette commande.");
     }
 
-    const commande = await tx.commandeTraiteur.update({
-      where: { id },
+    // Une commande annulée par le client ou refusée (devis décliné) est clôturée définitivement
+    if (
+      existing.statut === COMMANDE_TRAITEUR_STATUS.ANNULEE ||
+      existing.statut === COMMANDE_TRAITEUR_STATUS.REFUSEE
+    ) {
+      throw new Error("Cette commande est clôturée et ne peut plus changer de statut.");
+    }
+
+    // Statut déjà en place (double clic, relance) : réponse identique, sans nouvelle notification
+    if (existing.statut === statut) {
+      return await tx.commandeTraiteur.findUniqueOrThrow({
+        where: { id },
+        include: { client: { select: CLIENT_CONTACT_SELECT }, traiteur: true },
+      });
+    }
+
+    if (!allowedCommandeTraiteurTargets(existing.statut, existing.devis_status, Boolean(isAdmin)).includes(statut)) {
+      throw transitionError(existing.statut, statut);
+    }
+
+    // Mise à jour conditionnelle : échoue si le client a annulé ou si le devis a changé entre-temps
+    const changed = await tx.commandeTraiteur.updateMany({
+      where: { id, statut: existing.statut, devis_status: existing.devis_status },
       data: {
         statut,
         message_traiteur: message_traiteur || null,
       },
+    });
+    if (changed.count !== 1) {
+      throw new HttpError(409, CONCURRENT_UPDATE_MESSAGE);
+    }
+
+    const commande = await tx.commandeTraiteur.findUniqueOrThrow({
+      where: { id },
       include: {
-        client: true,
+        client: { select: CLIENT_CONTACT_SELECT },
         traiteur: true,
       },
     });
 
     if (commande.client_id) {
       const isAccepted = statut === COMMANDE_TRAITEUR_STATUS.ACCEPTEE;
+      const isCancelled = statut === COMMANDE_TRAITEUR_STATUS.ANNULEE;
       const dateStr = commande.date_evenement
         ? new Date(commande.date_evenement).toLocaleDateString("fr-FR", {
             day: "numeric",
@@ -195,17 +382,22 @@ export const updateCommandeTraiteurStatus = async (
           })
         : "";
 
+      // Notification conforme au statut réellement appliqué (acceptée, refusée ou annulée)
       try {
         await tx.notification.create({
           data: {
             user_id: commande.client_id,
-            type: isAccepted ? "commande_acceptee" : "commande_refusee",
-            titre: isAccepted ? "Commande acceptée !" : "Commande refusée",
+            type: isAccepted ? "commande_acceptee" : isCancelled ? "commande_annulee" : "commande_refusee",
+            titre: isAccepted ? "Commande acceptée !" : isCancelled ? "Commande annulée" : "Commande refusée",
             message: isAccepted
               ? `Votre commande du ${dateStr} a été acceptée.`
-              : message_traiteur
-                ? `Votre commande du ${dateStr} a été refusée. Motif : ${message_traiteur}`
-                : `Votre commande du ${dateStr} a été refusée.`,
+              : isCancelled
+                ? message_traiteur
+                  ? `Votre commande du ${dateStr} a été annulée par l'équipe Dabari. Motif : ${message_traiteur}`
+                  : `Votre commande du ${dateStr} a été annulée par l'équipe Dabari.`
+                : message_traiteur
+                  ? `Votre commande du ${dateStr} a été refusée. Motif : ${message_traiteur}`
+                  : `Votre commande du ${dateStr} a été refusée.`,
             data: { commande_id: id },
           },
         });
@@ -213,7 +405,8 @@ export const updateCommandeTraiteurStatus = async (
         console.error("Erreur notification client:", notifErr);
       }
 
-      if (commande.client?.email) {
+      // E-mail uniquement pour l'acceptation et le refus (pas de modèle pour l'annulation)
+      if (commande.client?.email && !isCancelled) {
         sendOrderNotificationToClientMail({
           clientEmail: commande.client.email,
           clientName: commande.client.full_name || "Client",
@@ -277,42 +470,70 @@ export const updateOrderPlatStatus = async (
     }
 
     // Sécurité Authorization : seul le traiteur concerné ou l'admin peut modifier le statut
-    if (!isAdmin && currentUserId && existing.traiteur?.user_id !== currentUserId) {
+    if (!isAdmin && existing.traiteur?.user_id !== currentUserId) {
       throw new Error("Accès refusé. Vous n'êtes pas le traiteur assigné à cette commande.");
     }
 
-    const order = await tx.order.update({
-      where: { id },
+    if (
+      existing.status === ORDER_PLAT_STATUS.CANCELLED ||
+      existing.status === ORDER_PLAT_STATUS.REJECTED
+    ) {
+      throw new Error("Cette commande est clôturée et ne peut plus changer de statut.");
+    }
+
+    const orderInclude = {
+      client: { select: CLIENT_CONTACT_SELECT },
+      traiteur: true,
+      order_items: {
+        include: {
+          dish: true,
+        },
+      },
+    } as const;
+
+    // Statut déjà en place (double clic, relance) : réponse identique, sans nouvelle notification
+    if (existing.status === status) {
+      return await tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
+    }
+
+    if (!allowedOrderPlatTargets(existing.status, Boolean(isAdmin)).includes(status)) {
+      throw transitionError(existing.status, status);
+    }
+
+    // Mise à jour conditionnelle : échoue si le client a annulé ou modifié la commande entre-temps
+    const changed = await tx.order.updateMany({
+      where: { id, status: existing.status },
       data: {
         status,
         notes: message?.trim() ? message.trim() : undefined,
       },
-      include: {
-        client: true,
-        traiteur: true,
-        order_items: {
-          include: {
-            dish: true,
-          },
-        },
-      },
     });
+    if (changed.count !== 1) {
+      throw new HttpError(409, CONCURRENT_UPDATE_MESSAGE);
+    }
+
+    const order = await tx.order.findUniqueOrThrow({ where: { id }, include: orderInclude });
 
     if (order.client_id) {
       const isAccepted = status === ORDER_PLAT_STATUS.ACCEPTED;
+      const isCancelled = status === ORDER_PLAT_STATUS.CANCELLED;
       try {
         await tx.notification.create({
           data: {
             user_id: order.client_id,
-            type: isAccepted ? "order_acceptee" : "order_refusee",
-            titre: isAccepted ? "Commande acceptée !" : "Commande refusée",
+            type: isAccepted ? "order_acceptee" : isCancelled ? "order_annulee" : "order_refusee",
+            titre: isAccepted ? "Commande acceptée !" : isCancelled ? "Commande annulée" : "Commande refusée",
             message: isAccepted
               ? message?.trim()
                 ? `Le traiteur a accepté votre commande de plats ! Note : ${message.trim()}`
                 : "Le traiteur a accepté votre commande de plats !"
-              : message?.trim()
-                ? `Le traiteur ne peut malheureusement pas honorer votre commande. Motif : ${message.trim()}`
-                : "Le traiteur ne peut malheureusement pas honorer votre commande.",
+              : isCancelled
+                ? message?.trim()
+                  ? `Votre commande de plats a été annulée par l'équipe Dabari. Motif : ${message.trim()}`
+                  : "Votre commande de plats a été annulée par l'équipe Dabari."
+                : message?.trim()
+                  ? `Le traiteur ne peut malheureusement pas honorer votre commande. Motif : ${message.trim()}`
+                  : "Le traiteur ne peut malheureusement pas honorer votre commande.",
             data: { order_id: id },
           },
         });
@@ -320,7 +541,7 @@ export const updateOrderPlatStatus = async (
         console.error("Erreur notification commande plat:", notifErr);
       }
 
-      if (order.client?.email) {
+      if (order.client?.email && !isCancelled) {
         const dishSummary = order.order_items
           .map(
             (item) =>
@@ -395,47 +616,58 @@ export const updateGpRequestStatus = async (
     }
 
     // Sécurité Authorization : seul le GP propriétaire de l'annonce ou l'admin peut modifier le statut
-    if (
-      !isAdmin &&
-      currentUserId &&
-      oldRequest.listing?.gp_id !== currentUserId
-    ) {
+    if (!isAdmin && oldRequest.listing?.gp_id !== currentUserId) {
       throw new Error("Accès refusé. Vous n'êtes pas le transporteur de cette annonce.");
     }
 
-    const request = await tx.gpRequest.update({
-      where: { id },
+    // Statuts finaux : une demande annulée, refusée ou livrée ne peut plus être relancée
+    // (sinon les kilos recrédités lors de l'annulation seraient comptés deux fois).
+    if (GP_CLOSED_STATUSES.includes(oldRequest.status)) {
+      throw new Error("Cette demande est clôturée et ne peut plus changer de statut.");
+    }
+
+    const requestInclude = {
+      sender: { select: CLIENT_CONTACT_SELECT },
+      listing: {
+        include: {
+          gp: { select: CLIENT_CONTACT_SELECT },
+        },
+      },
+    } as const;
+
+    // Statut déjà en place (double clic, relance) : réponse identique, sans nouvelle notification
+    if (oldRequest.status === status) {
+      return await tx.gpRequest.findUniqueOrThrow({ where: { id }, include: requestInclude });
+    }
+
+    // Progression étape par étape (pas de saut de « en attente » à « livré »)
+    if (!allowedGpRequestTargets(oldRequest.status, Boolean(isAdmin)).includes(status)) {
+      throw transitionError(oldRequest.status, status);
+    }
+
+    // Mise à jour conditionnelle AVANT de recréditer les kilos : de deux changements concurrents
+    // (annulation du client, refus du GP...), un seul passe et les kilos ne sont rendus qu'une fois.
+    const changed = await tx.gpRequest.updateMany({
+      where: { id, status: oldRequest.status },
       data: {
         status,
         notes: message?.trim() ? message.trim() : undefined,
       },
-      include: {
-        sender: true,
-        listing: {
-          include: {
-            gp: true,
-          },
-        },
-      },
     });
+    if (changed.count !== 1) {
+      throw new HttpError(409, "Cette demande a été modifiée entre-temps : actualisez la page puis réessayez.");
+    }
+
+    const request = await tx.gpRequest.findUniqueOrThrow({ where: { id }, include: requestInclude });
 
     // Si la demande est rejetée/annulée, réincrémenter les kilos disponibles
+    // (l'ancien statut n'était pas final : garanti par la table des transitions)
     const isCancelledOrRefused =
       status === GP_REQUEST_STATUS.REJECTED ||
       status === GP_REQUEST_STATUS.REFUSED ||
       status === GP_REQUEST_STATUS.CANCELLED;
 
-    const wasNotCancelledOrRefused =
-      oldRequest.status !== GP_REQUEST_STATUS.REJECTED &&
-      oldRequest.status !== GP_REQUEST_STATUS.REFUSED &&
-      oldRequest.status !== GP_REQUEST_STATUS.CANCELLED;
-
-    if (
-      isCancelledOrRefused &&
-      wasNotCancelledOrRefused &&
-      request.listing_id &&
-      request.weight_kg
-    ) {
+    if (isCancelledOrRefused && request.listing_id && request.weight_kg) {
       await tx.gpListing.update({
         where: { id: request.listing_id },
         data: {
@@ -486,6 +718,12 @@ export const updateGpRequestStatus = async (
         notifMsg = message
           ? `Le GP a refusé la demande. Motif : ${message}`
           : "Le GP a refusé votre demande de transport.";
+      } else if (status === GP_REQUEST_STATUS.CANCELLED) {
+        notifType = "gp_annulee";
+        notifTitre = "Demande GP annulée";
+        notifMsg = message?.trim()
+          ? `Votre demande de transport a été annulée par l'équipe Dabari. Motif : ${message.trim()}`
+          : "Votre demande de transport a été annulée par l'équipe Dabari.";
       }
 
       try {
@@ -502,12 +740,15 @@ export const updateGpRequestStatus = async (
         console.error("Erreur notification GP statut:", notifErr);
       }
 
-      if (request.sender?.email) {
-        const emailStatus: "ACCEPTÉE" | "REFUSÉE" =
-          status === GP_REQUEST_STATUS.REJECTED ||
-          status === GP_REQUEST_STATUS.REFUSED
+      // E-mail seulement pour l'acceptation et le refus : les étapes de suivi (colis reçu,
+      // acheminement...) et l'annulation ne sont plus annoncées comme une « demande acceptée ».
+      const emailStatus: "ACCEPTÉE" | "REFUSÉE" | null =
+        status === GP_REQUEST_STATUS.ACCEPTED
+          ? "ACCEPTÉE"
+          : status === GP_REQUEST_STATUS.REJECTED || status === GP_REQUEST_STATUS.REFUSED
             ? "REFUSÉE"
-            : "ACCEPTÉE";
+            : null;
+      if (request.sender?.email && emailStatus) {
         sendGpRequestStatusToSenderMail({
           senderEmail: request.sender.email,
           senderName: request.sender.full_name || "Expéditeur",
@@ -589,6 +830,29 @@ export const updateClientCommandeTraiteur = async (
     );
   }
 
+  // Le devis émis porte sur la demande telle qu'elle a été lue par le traiteur : la modifier
+  // rendrait le montant (et une éventuelle signature) incohérents.
+  if (isDevisIssued(existing)) {
+    throw DEVIS_ALREADY_ISSUED_ERROR();
+  }
+
+  const isTooLong = (value: unknown, max: number) =>
+    value !== undefined && value !== null && (typeof value !== "string" || value.length > max);
+  if (
+    isTooLong(data.adresse, 300) ||
+    isTooLong(data.type_evenement, 100) ||
+    isTooLong(data.notes, 3000)
+  ) {
+    throw new Error("Certains champs sont invalides ou trop longs.");
+  }
+
+  if (data.nb_personnes !== undefined) {
+    const nb = Number(data.nb_personnes);
+    if (!Number.isInteger(nb) || nb <= 0 || nb > 10000) {
+      throw new Error("Le nombre de personnes doit être un nombre valide entre 1 et 10 000.");
+    }
+  }
+
   if (data.date_evenement) {
     const eventDate = new Date(data.date_evenement);
     if (isNaN(eventDate.getTime())) {
@@ -604,8 +868,16 @@ export const updateClientCommandeTraiteur = async (
     }
   }
 
-  return await db.commandeTraiteur.update({
-    where: { id },
+  // Mise à jour conditionnelle : échoue si le traiteur a accepté, refusé ou chiffré un devis
+  // entre la lecture et l'écriture (la modification ne doit jamais écraser un devis émis).
+  const changed = await db.commandeTraiteur.updateMany({
+    where: {
+      id,
+      client_id,
+      statut: COMMANDE_TRAITEUR_STATUS.EN_ATTENTE,
+      prix_devis: null,
+      OR: [{ devis_status: null }, { devis_status: DEVIS_STATUS.DRAFT }],
+    },
     data: {
       date_evenement: data.date_evenement
         ? new Date(data.date_evenement)
@@ -619,9 +891,27 @@ export const updateClientCommandeTraiteur = async (
           : undefined,
       notes: data.notes !== undefined ? data.notes?.trim() : undefined,
     },
+  });
+
+  if (changed.count !== 1) {
+    const current = await db.commandeTraiteur.findUnique({
+      where: { id },
+      select: { prix_devis: true, devis_status: true },
+    });
+    if (current && isDevisIssued(current)) {
+      throw DEVIS_ALREADY_ISSUED_ERROR();
+    }
+    throw new HttpError(
+      409,
+      "Cette commande ne peut plus être modifiée car elle a déjà été confirmée ou traitée.",
+    );
+  }
+
+  return await db.commandeTraiteur.findUniqueOrThrow({
+    where: { id },
     include: {
       traiteur: true,
-      client: true,
+      client: { select: CLIENT_CONTACT_SELECT },
     },
   });
 };
@@ -658,7 +948,41 @@ export const updateClientOrderPlat = async (
       );
     }
 
+    // Mise à jour conditionnelle sans effet : verrouille la commande tant qu'elle est en attente.
+    // Une acceptation ou un refus concurrent du traiteur attend la fin de cette modification, ou
+    // l'a déjà emporté (aucune ligne mise à jour) : la commande n'est alors plus modifiable.
+    const claimed = await tx.order.updateMany({
+      where: { id, client_id, status: ORDER_PLAT_STATUS.PENDING },
+      data: { status: ORDER_PLAT_STATUS.PENDING },
+    });
+    if (claimed.count !== 1) {
+      throw new HttpError(
+        409,
+        "Cette commande ne peut plus être modifiée car elle a déjà été confirmée ou traitée.",
+      );
+    }
+
+    if (
+      data.delivery_type !== undefined &&
+      data.delivery_type !== "delivery" &&
+      data.delivery_type !== "pickup"
+    ) {
+      throw new Error("Mode de livraison invalide.");
+    }
+
+    if (
+      (data.delivery_address !== undefined &&
+        (typeof data.delivery_address !== "string" || data.delivery_address.length > 300)) ||
+      (data.notes !== undefined && (typeof data.notes !== "string" || data.notes.length > 2000))
+    ) {
+      throw new Error("L'adresse (300 caractères max) ou les notes (2 000 caractères max) sont invalides.");
+    }
+
     let newTotalAmount = existing.total_amount;
+
+    if (data.items !== undefined && (!Array.isArray(data.items) || data.items.length > 100)) {
+      throw new Error("Liste de plats invalide.");
+    }
 
     if (data.items && data.items.length > 0) {
       let sum = 0;
@@ -667,20 +991,31 @@ export const updateClientOrderPlat = async (
         quantity: number;
         unit_price: number;
       }[] = [];
+      const seenDishIds = new Set<string>();
 
       for (const item of data.items) {
-        if (item.quantity > 0) {
+        const quantity = Number(item?.quantity);
+        if (!item || !isValidUUID(item.dish_id) || !Number.isInteger(quantity) || quantity < 0 || quantity > 1000) {
+          throw new Error("Plat ou quantité invalide dans la commande.");
+        }
+        if (seenDishIds.has(item.dish_id)) {
+          throw new Error("Un même plat ne peut apparaître qu'une fois dans la commande.");
+        }
+        seenDishIds.add(item.dish_id);
+
+        if (quantity > 0) {
           const dish = await tx.dish.findUnique({
             where: { id: item.dish_id },
           });
-          if (!dish || dish.is_archived || !dish.is_available) {
+          // Le plat doit appartenir au traiteur de la commande (pas de mélange entre traiteurs)
+          if (!dish || dish.is_archived || !dish.is_available || dish.traiteur_id !== existing.traiteur_id) {
             throw new Error(`Plat indisponible ou introuvable (ID: ${item.dish_id})`);
           }
           const unitPrice = Number(dish.price);
-          sum += unitPrice * item.quantity;
+          sum += unitPrice * quantity;
           validItems.push({
             dish_id: dish.id,
-            quantity: item.quantity,
+            quantity,
             unit_price: unitPrice,
           });
         }
@@ -759,34 +1094,64 @@ export const updateClientGpRequest = async (
       );
     }
 
+    // Verrou sur la demande tant qu'elle est en attente (même principe que les commandes de plats) :
+    // un changement de statut concurrent du GP ne peut pas s'intercaler dans l'ajustement des kilos.
+    const claimed = await tx.gpRequest.updateMany({
+      where: { id, sender_id, status: GP_REQUEST_STATUS.PENDING },
+      data: { status: GP_REQUEST_STATUS.PENDING },
+    });
+    if (claimed.count !== 1) {
+      throw new HttpError(
+        409,
+        "Cette demande ne peut plus être modifiée car elle a déjà été confirmée ou traitée.",
+      );
+    }
+
+    const isInvalidText = (value: unknown, max: number) =>
+      value !== undefined && value !== null && (typeof value !== "string" || value.length > max);
+    if (
+      isInvalidText(data.content_desc, 1000) ||
+      isInvalidText(data.notes, 2000) ||
+      isInvalidText(data.recipient_name, 120) ||
+      isInvalidText(data.recipient_phone, 30)
+    ) {
+      throw new Error("Certains champs sont invalides ou trop longs.");
+    }
+
     let newWeight = existing.weight_kg;
     let newTotalAmount = existing.total_amount;
 
     if (data.weight_kg !== undefined) {
       const updatedWeight = Number(data.weight_kg);
-      if (isNaN(updatedWeight) || updatedWeight <= 0) {
-        throw new Error("Le poids du colis doit être supérieur à 0 kg.");
+      if (isNaN(updatedWeight) || updatedWeight < 0.5 || updatedWeight > 500) {
+        throw new Error("Le poids du colis doit être compris entre 0,5 kg et 500 kg.");
       }
       const oldWeight = Number(existing.weight_kg || 0);
       const diff = updatedWeight - oldWeight;
 
       if (existing.listing_id && existing.listing) {
         const available = Number(existing.listing.available_kg || 0);
+        const maxAllowed = Number((oldWeight + available).toFixed(1));
+        const capacityError = `Le transporteur n'a que ${available} kg restants de disponible. Le poids maximum autorisé pour votre colis est de ${maxAllowed} kg.`;
         if (diff > 0 && diff > available) {
-          const maxAllowed = Number((oldWeight + available).toFixed(1));
-          throw new Error(
-            `Le transporteur n'a que ${available} kg restants de disponible. Le poids maximum autorisé pour votre colis est de ${maxAllowed} kg.`,
-          );
+          throw new Error(capacityError);
         }
 
-        await tx.gpListing.update({
-          where: { id: existing.listing_id },
-          data: {
-            available_kg: {
-              decrement: diff,
-            },
-          },
-        });
+        if (diff > 0) {
+          // Décrémentation conditionnelle atomique : pas de survente en cas de requêtes concurrentes
+          const reserved = await tx.gpListing.updateMany({
+            where: { id: existing.listing_id, available_kg: { gte: diff } },
+            data: { available_kg: { decrement: diff } },
+          });
+          if (reserved.count === 0) {
+            throw new Error(capacityError);
+          }
+        } else if (diff < 0) {
+          await tx.gpListing.update({
+            where: { id: existing.listing_id },
+            data: { available_kg: { increment: -diff } },
+          });
+        }
 
         const pricePerKg = Number(existing.listing.price_per_kg || 0);
         newTotalAmount = (updatedWeight * pricePerKg) as any;
@@ -847,10 +1212,15 @@ export const cancelClientOrder = async (
       if (commande.statut !== COMMANDE_TRAITEUR_STATUS.EN_ATTENTE)
         throw new Error("Impossible d'annuler une commande déjà traitée");
 
-      const updated = await tx.commandeTraiteur.update({
-        where: { id },
+      // Conditionnelle : si le traiteur vient d'accepter ou de refuser, l'annulation échoue
+      const cancelled = await tx.commandeTraiteur.updateMany({
+        where: { id, client_id: user_id, statut: COMMANDE_TRAITEUR_STATUS.EN_ATTENTE },
         data: { statut: COMMANDE_TRAITEUR_STATUS.ANNULEE },
       });
+      if (cancelled.count !== 1) {
+        throw new HttpError(409, "Impossible d'annuler : le traiteur vient de traiter cette commande. Actualisez la page.");
+      }
+      const updated = await tx.commandeTraiteur.findUniqueOrThrow({ where: { id } });
 
       if (commande.traiteur?.user_id) {
         try {
@@ -894,10 +1264,15 @@ export const cancelClientOrder = async (
       if (order.status !== ORDER_PLAT_STATUS.PENDING)
         throw new Error("Impossible d'annuler une commande déjà traitée");
 
-      const updated = await tx.order.update({
-        where: { id },
+      // Conditionnelle : si le traiteur vient d'accepter ou de refuser, l'annulation échoue
+      const cancelled = await tx.order.updateMany({
+        where: { id, client_id: user_id, status: ORDER_PLAT_STATUS.PENDING },
         data: { status: ORDER_PLAT_STATUS.CANCELLED },
       });
+      if (cancelled.count !== 1) {
+        throw new HttpError(409, "Impossible d'annuler : le traiteur vient de traiter cette commande. Actualisez la page.");
+      }
+      const updated = await tx.order.findUniqueOrThrow({ where: { id } });
 
       if (order.traiteur?.user_id) {
         try {
@@ -941,6 +1316,16 @@ export const cancelClientOrder = async (
       if (request.status !== GP_REQUEST_STATUS.PENDING)
         throw new Error("Impossible d'annuler une demande déjà traitée");
 
+      // Statut d'abord, de façon conditionnelle : un double clic ou un refus simultané du GP ne
+      // peut pas recréditer deux fois les kilos ; l'incrément n'a lieu que si l'annulation passe.
+      const cancelled = await tx.gpRequest.updateMany({
+        where: { id, sender_id: user_id, status: GP_REQUEST_STATUS.PENDING },
+        data: { status: GP_REQUEST_STATUS.CANCELLED },
+      });
+      if (cancelled.count !== 1) {
+        throw new HttpError(409, "Impossible d'annuler : cette demande vient d'être traitée. Actualisez la page.");
+      }
+
       if (request.listing_id && request.weight_kg) {
         await tx.gpListing.update({
           where: { id: request.listing_id },
@@ -952,10 +1337,7 @@ export const cancelClientOrder = async (
         });
       }
 
-      const updated = await tx.gpRequest.update({
-        where: { id },
-        data: { status: GP_REQUEST_STATUS.CANCELLED },
-      });
+      const updated = await tx.gpRequest.findUniqueOrThrow({ where: { id } });
 
       if (request.listing?.gp_id) {
         try {
@@ -1063,12 +1445,8 @@ export const updateGpRequestDelay = async (
       throw new Error("Demande GP introuvable");
     }
 
-    if (
-      !isAdmin &&
-      userId &&
-      existing.listing?.gp_id &&
-      existing.listing.gp_id !== userId
-    ) {
+    // Sécurité : une demande dont l'annonce ou le transporteur a disparu n'est modifiable que par un admin
+    if (!isAdmin && (!existing.listing?.gp_id || existing.listing.gp_id !== userId)) {
       throw new Error("Vous n'êtes pas autorisé à modifier cette demande");
     }
 
@@ -1086,10 +1464,10 @@ export const updateGpRequestDelay = async (
           data.delay_reason || "Retard d'acheminement signalé par le transporteur",
       },
       include: {
-        sender: true,
+        sender: { select: CLIENT_CONTACT_SELECT },
         listing: {
           include: {
-            gp: true,
+            gp: { select: CLIENT_CONTACT_SELECT },
           },
         },
       },
@@ -1172,7 +1550,8 @@ export const updateGpListingDelay = async (
       throw new Error("Annonce GP introuvable");
     }
 
-    if (!isAdmin && gpId && listing.gp_id && listing.gp_id !== gpId) {
+    // Sécurité : une annonce orpheline (transporteur supprimé) n'est modifiable que par un admin
+    if (!isAdmin && (!listing.gp_id || listing.gp_id !== gpId)) {
       throw new Error("Vous n'êtes pas autorisé à modifier cette annonce");
     }
 
@@ -1254,7 +1633,7 @@ export const setupCommandeTraiteurDevis = async (
   isAdmin: boolean,
   data: {
     prix_devis: number;
-    conditions_devis?: string;
+    conditions?: DevisConditionsInput;
     auto_sign?: boolean;
     traiteur_signature?: string;
   }
@@ -1264,7 +1643,7 @@ export const setupCommandeTraiteurDevis = async (
       where: { id: commandeId },
       include: {
         traiteur: true,
-        client: true,
+        client: { select: CLIENT_CONTACT_SELECT },
       },
     });
 
@@ -1280,14 +1659,60 @@ export const setupCommandeTraiteurDevis = async (
       throw new Error("Le montant du devis doit être supérieur à 0 €.");
     }
 
+    // Un devis signé par les deux parties, refusé ou une commande close ne peut plus être re-chiffré
+    if (
+      commande.devis_status === DEVIS_STATUS.SIGNE_PAR_LES_DEUX ||
+      commande.devis_status === DEVIS_STATUS.REFUSE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.ANNULEE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.REFUSEE
+    ) {
+      throw new Error("Ce devis est clôturé (signé, refusé ou annulé) et ne peut plus être modifié.");
+    }
+
+    const currentMeta = parseDevisConditionsMeta(commande.conditions_devis);
+    // Un acompte déclaré réglé a été calculé sur le montant en vigueur : le devis est figé
+    if (currentMeta.acompte_paye) {
+      throw new HttpError(
+        409,
+        "Un acompte a déjà été déclaré réglé pour ce devis : il ne peut plus être re-chiffré.",
+      );
+    }
+
+    // Conditions reconstruites côté serveur : du traiteur, seuls le texte, le type d'acompte et le
+    // pourcentage sont repris ; le montant est recalculé et l'état du règlement vient de la base.
+    const acompteType = data.conditions?.acompte_type ?? currentMeta.acompte_type ?? "optionnel";
+    const pourcentage =
+      acompteType === "aucun"
+        ? 0
+        : data.conditions?.acompte_pourcentage ??
+          Math.min(currentMeta.acompte_pourcentage ?? 30, ACOMPTE_MAX_POURCENTAGE);
+    const conditionsMeta: DevisConditionsMetadata = {
+      texte: data.conditions?.texte ?? currentMeta.texte,
+      acompte_type: acompteType,
+      acompte_pourcentage: pourcentage,
+      acompte_montant: acompteType === "aucun" ? 0 : Math.round(data.prix_devis * pourcentage) / 100,
+      acompte_paye: currentMeta.acompte_paye,
+      acompte_paye_at: currentMeta.acompte_paye_at,
+      acompte_transaction_ref: currentMeta.acompte_transaction_ref,
+      acompte_choix_jour_j: currentMeta.acompte_choix_jour_j,
+    };
+
     const now = new Date();
     const shouldAutoSign = Boolean(data.auto_sign && data.traiteur_signature?.trim());
 
-    const updated = await tx.commandeTraiteur.update({
-      where: { id: commandeId },
+    // Mise à jour conditionnelle : échoue si le client a signé, refusé, annulé ou réglé l'acompte
+    // entre la lecture et l'écriture (le nouveau chiffrage ne doit rien écraser silencieusement).
+    const changed = await tx.commandeTraiteur.updateMany({
+      where: {
+        id: commandeId,
+        statut: commande.statut,
+        devis_status: commande.devis_status,
+        prix_devis: commande.prix_devis,
+        conditions_devis: commande.conditions_devis,
+      },
       data: {
         prix_devis: data.prix_devis,
-        conditions_devis: data.conditions_devis || commande.conditions_devis,
+        conditions_devis: serializeDevisConditionsMeta(conditionsMeta),
         devis_status: shouldAutoSign
           ? DEVIS_STATUS.SIGNE_TRAITEUR
           : DEVIS_STATUS.EN_ATTENTE_SIGNATURES,
@@ -1296,9 +1721,16 @@ export const setupCommandeTraiteurDevis = async (
         traiteur_signed_at: shouldAutoSign ? now : null,
         traiteur_signature: shouldAutoSign ? data.traiteur_signature?.trim() : null,
       },
+    });
+    if (changed.count !== 1) {
+      throw new HttpError(409, "Le devis a été modifié entre-temps : actualisez la page puis réessayez.");
+    }
+
+    const updated = await tx.commandeTraiteur.findUniqueOrThrow({
+      where: { id: commandeId },
       include: {
         traiteur: true,
-        client: true,
+        client: { select: CLIENT_CONTACT_SELECT },
       },
     });
 
@@ -1349,7 +1781,7 @@ export const refuseCommandeTraiteurDevis = async (
       where: { id: commandeId },
       include: {
         traiteur: true,
-        client: true,
+        client: { select: CLIENT_CONTACT_SELECT },
       },
     });
 
@@ -1362,18 +1794,51 @@ export const refuseCommandeTraiteurDevis = async (
       throw new Error("Seul le client peut décliner cette proposition de devis.");
     }
 
-    const updated = await tx.commandeTraiteur.update({
-      where: { id: commandeId },
+    // Un devis signé par les deux parties engage le client (pas de droit de rétractation)
+    if (commande.devis_status === DEVIS_STATUS.SIGNE_PAR_LES_DEUX) {
+      throw new Error("Ce devis a été signé par les deux parties et ne peut plus être décliné.");
+    }
+    if (
+      commande.devis_status === DEVIS_STATUS.REFUSE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.ANNULEE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.REFUSEE
+    ) {
+      throw new Error("Ce devis est déjà clôturé.");
+    }
+    // Refuser le devis passerait la commande à « refusée » : ce n'est pas un moyen d'annuler une
+    // commande déjà acceptée par le traiteur.
+    if (commande.statut === COMMANDE_TRAITEUR_STATUS.ACCEPTEE) {
+      throw new HttpError(
+        409,
+        "Cette commande a déjà été acceptée par le traiteur : contactez-le pour l'annuler.",
+      );
+    }
+
+    // Mise à jour conditionnelle : échoue si le traiteur a accepté, re-chiffré ou signé entre-temps
+    const changed = await tx.commandeTraiteur.updateMany({
+      where: {
+        id: commandeId,
+        statut: commande.statut,
+        devis_status: commande.devis_status,
+        prix_devis: commande.prix_devis,
+      },
       data: {
-        statut: "refusee",
+        statut: COMMANDE_TRAITEUR_STATUS.REFUSEE,
         devis_status: DEVIS_STATUS.REFUSE,
         message_traiteur: motif
           ? `Devis décliné par le client : ${motif.trim()}`
           : "Devis décliné par le client.",
       },
+    });
+    if (changed.count !== 1) {
+      throw new HttpError(409, "Le devis a été modifié entre-temps : actualisez la page puis réessayez.");
+    }
+
+    const updated = await tx.commandeTraiteur.findUniqueOrThrow({
+      where: { id: commandeId },
       include: {
         traiteur: true,
-        client: true,
+        client: { select: CLIENT_CONTACT_SELECT },
       },
     });
 
@@ -1404,14 +1869,15 @@ export const signCommandeTraiteurDevis = async (
   commandeId: string,
   userId: string,
   isAdmin: boolean,
-  signature: string
+  signature: string,
+  expectedPrice?: number,
 ) => {
   return await db.$transaction(async (tx) => {
     const commande = await tx.commandeTraiteur.findUnique({
       where: { id: commandeId },
       include: {
-        traiteur: { include: { profile: true } },
-        client: true,
+        traiteur: { include: { profile: { select: { email: true } } } },
+        client: { select: CLIENT_CONTACT_SELECT },
       },
     });
 
@@ -1430,8 +1896,23 @@ export const signCommandeTraiteurDevis = async (
       throw new Error("Ce devis n'a pas encore été chiffré par le traiteur.");
     }
 
+    // Impossible de signer (et donc de réactiver) un devis refusé ou une commande close
+    if (
+      commande.devis_status === DEVIS_STATUS.REFUSE ||
+      commande.devis_status === DEVIS_STATUS.SIGNE_PAR_LES_DEUX ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.ANNULEE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.REFUSEE
+    ) {
+      throw new Error("Ce devis est clôturé (déjà signé, refusé ou annulé) et ne peut plus être signé.");
+    }
+
     if (!signature || signature.trim().length === 0) {
       throw new Error("Une signature valide est requise.");
+    }
+
+    // Le signataire s'engage sur le montant qu'il a lu : s'il a changé depuis, la signature est refusée
+    if (expectedPrice !== undefined && !samePrice(commande.prix_devis, expectedPrice)) {
+      throw DEVIS_CHANGED_ERROR();
     }
 
     const now = new Date();
@@ -1472,12 +1953,27 @@ export const signCommandeTraiteurDevis = async (
     updateData.devis_status = newDevisStatus;
     updateData.statut = newStatut;
 
-    const updated = await tx.commandeTraiteur.update({
-      where: { id: commandeId },
+    // Mise à jour conditionnelle sur l'état lu (statut, étape de signature, montant) : un nouveau
+    // chiffrage, un refus, une annulation ou la signature simultanée de l'autre partie font échouer
+    // l'écriture au lieu d'être écrasés.
+    const changed = await tx.commandeTraiteur.updateMany({
+      where: {
+        id: commandeId,
+        statut: commande.statut,
+        devis_status: commande.devis_status,
+        prix_devis: commande.prix_devis,
+      },
       data: updateData,
+    });
+    if (changed.count !== 1) {
+      throw DEVIS_CHANGED_ERROR();
+    }
+
+    const updated = await tx.commandeTraiteur.findUniqueOrThrow({
+      where: { id: commandeId },
       include: {
         traiteur: true,
-        client: true,
+        client: { select: CLIENT_CONTACT_SELECT },
       },
     });
 
@@ -1548,84 +2044,147 @@ export const signCommandeTraiteurDevis = async (
   });
 };
 
+/** Effet d'une action d'acompte : `inchange` quand l'état demandé était déjà en place. */
+export type AcompteOutcome = "verse" | "jour_j" | "annule" | "inchange";
+
+/**
+ * Gestion déclarative de l'acompte par le client (ou un administrateur) : aucun paiement réel
+ * n'est encaissé par l'API. La référence de transaction est toujours générée par le serveur et
+ * une action sans effet (déjà réglé, choix déjà enregistré) ne notifie personne.
+ */
 export const payerAcompteCommandeTraiteurDevis = async (
   commandeId: string,
   userId: string,
   isAdmin: boolean,
   action: "verser" | "refuser_acompte" | "annuler_reglement",
-  transactionRef?: string,
 ) => {
   return await db.$transaction(async (tx) => {
+    const responseInclude = {
+      traiteur: true,
+      client: { select: CLIENT_CONTACT_SELECT },
+    } as const;
     const commande = await tx.commandeTraiteur.findUnique({
       where: { id: commandeId },
-      include: {
-        traiteur: { include: { profile: true } },
-        client: true,
-      },
+      include: responseInclude,
     });
 
     if (!commande) {
       throw new Error("Commande de devis introuvable.");
     }
 
+    // Seul le client (qui règle l'acompte) ou un administrateur peut changer le statut de l'acompte :
+    // le traiteur ne doit pas pouvoir déclarer payé ou réinitialiser un acompte à la place du client.
     const isClient = commande.client_id === userId;
-    const isTraiteur = commande.traiteur?.user_id === userId;
-    if (!isClient && !isTraiteur && !isAdmin) {
-      throw new Error("Vous n'êtes pas partie prenante à ce devis.");
+    if (!isClient && !isAdmin) {
+      throw new Error("Seul le client peut gérer le règlement de l'acompte.");
+    }
+
+    if (!commande.prix_devis || Number(commande.prix_devis) <= 0) {
+      throw new Error("Ce devis n'a pas encore été chiffré par le traiteur.");
+    }
+
+    if (
+      commande.devis_status === DEVIS_STATUS.REFUSE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.ANNULEE ||
+      commande.statut === COMMANDE_TRAITEUR_STATUS.REFUSEE
+    ) {
+      throw new Error("Ce devis est clôturé : l'acompte ne peut plus être modifié.");
     }
 
     const meta = parseDevisConditionsMeta(commande.conditions_devis);
+    const next: DevisConditionsMetadata = { ...meta };
+    let outcome: AcompteOutcome = "inchange";
 
     if (action === "verser") {
-      meta.acompte_paye = true;
-      meta.acompte_paye_at = new Date().toISOString();
-      meta.acompte_transaction_ref =
-        transactionRef || `DAB-SEC-${Date.now().toString(36).toUpperCase()}`;
-      meta.acompte_choix_jour_j = false;
+      // Déjà réglé (double clic, relance) : commande renvoyée telle quelle, sans notification ni e-mail
+      if (meta.acompte_paye) {
+        return { commande, outcome };
+      }
+      if (meta.acompte_type === "aucun" || !((meta.acompte_montant ?? 0) > 0)) {
+        throw new Error("Aucun acompte n'est prévu pour ce devis.");
+      }
+      next.acompte_paye = true;
+      next.acompte_paye_at = new Date().toISOString();
+      // Référence générée par le serveur : celle éventuellement envoyée par le client est ignorée
+      next.acompte_transaction_ref = `DAB-SEC-${Date.now().toString(36).toUpperCase()}-${crypto
+        .randomBytes(3)
+        .toString("hex")
+        .toUpperCase()}`;
+      next.acompte_choix_jour_j = false;
+      outcome = "verse";
+    } else if (meta.acompte_paye) {
+      // « refuser_acompte » est aussi envoyé par les applications pour annuler le règlement déclaré
+      if (commande.devis_status === DEVIS_STATUS.SIGNE_PAR_LES_DEUX) {
+        throw new HttpError(409, "Le devis est signé : contactez le support pour annuler l'acompte.");
+      }
+      next.acompte_paye = false;
+      next.acompte_paye_at = null;
+      next.acompte_transaction_ref = null;
+      next.acompte_choix_jour_j = false;
+      outcome = "annule";
     } else if (action === "refuser_acompte") {
-      meta.acompte_paye = false;
-      meta.acompte_choix_jour_j = true;
-    } else if (action === "annuler_reglement") {
-      meta.acompte_paye = false;
-      meta.acompte_paye_at = null;
-      meta.acompte_transaction_ref = null;
-      meta.acompte_choix_jour_j = false;
+      if (meta.acompte_type === "obligatoire") {
+        throw new Error("L'acompte est obligatoire pour ce devis.");
+      }
+      if (!meta.acompte_choix_jour_j) {
+        next.acompte_choix_jour_j = true;
+        outcome = "jour_j";
+      }
+    } else if (meta.acompte_choix_jour_j) {
+      // « annuler_reglement » d'un choix de règlement le jour J
+      next.acompte_choix_jour_j = false;
+      outcome = "annule";
     }
 
-    const updated = await tx.commandeTraiteur.update({
-      where: { id: commandeId },
+    if (outcome === "inchange") {
+      return { commande, outcome };
+    }
+
+    // Mise à jour conditionnelle sur les conditions lues : un nouveau chiffrage ou une autre action
+    // concurrente ne sont jamais écrasés par une version périmée des conditions.
+    const changed = await tx.commandeTraiteur.updateMany({
+      where: {
+        id: commandeId,
+        statut: commande.statut,
+        devis_status: commande.devis_status,
+        conditions_devis: commande.conditions_devis,
+      },
       data: {
-        conditions_devis: serializeDevisConditionsMeta(meta),
+        conditions_devis: serializeDevisConditionsMeta(next),
       },
-      include: {
-        traiteur: true,
-        client: true,
-      },
+    });
+    if (changed.count !== 1) {
+      throw new HttpError(409, "Le devis a été modifié entre-temps : actualisez la page puis réessayez.");
+    }
+
+    const updated = await tx.commandeTraiteur.findUniqueOrThrow({
+      where: { id: commandeId },
+      include: responseInclude,
     });
 
     const recipientUserId = isClient ? commande.traiteur?.user_id : commande.client_id;
     if (recipientUserId) {
       try {
-        const montant = meta.acompte_montant || 0;
+        const montant = next.acompte_montant || 0;
         await tx.notification.create({
           data: {
             user_id: recipientUserId,
             type:
-              action === "verser"
+              outcome === "verse"
                 ? "devis_acompte_verse"
-                : action === "refuser_acompte"
+                : outcome === "jour_j"
                 ? "devis_acompte_refuse"
                 : "devis_acompte_annule",
             titre:
-              action === "verser"
+              outcome === "verse"
                 ? "Acompte sous séquestre validé !"
-                : action === "refuser_acompte"
+                : outcome === "jour_j"
                 ? "Règlement prévu le jour J"
                 : "Règlement d'acompte réinitialisé",
             message:
-              action === "verser"
+              outcome === "verse"
                 ? `${isClient ? "Le client" : "Le traiteur"} a validé le règlement de l'acompte (${montant} €) sous séquestre Dabari. Prestation confirmée !`
-                : action === "refuser_acompte"
+                : outcome === "jour_j"
                 ? `${isClient ? "Le client" : "Le traiteur"} a convenu d'un règlement du solde le jour de l'événement.`
                 : "Le statut de l'acompte a été réinitialisé en attente.",
             data: {
@@ -1641,19 +2200,25 @@ export const payerAcompteCommandeTraiteurDevis = async (
     }
 
     // Si acompte versé, envoyer email au traiteur
-    if (action === "verser" && commande.traiteur?.profile?.email) {
-      sendAcompteNotificationMail({
-        traiteurEmail: commande.traiteur.profile.email,
-        traiteurName: commande.traiteur.name,
-        clientName: commande.client?.full_name || "Client",
-        acompteMontant: meta.acompte_montant || 0,
-        dateEvenement: commande.date_evenement
-          ? new Date(commande.date_evenement).toLocaleDateString("fr-FR")
-          : undefined,
-        transactionRef: meta.acompte_transaction_ref || undefined,
-      }).catch((err) => console.error("Erreur email acompte traiteur:", err));
+    if (outcome === "verse" && commande.traiteur?.user_id) {
+      const traiteurProfile = await tx.profile.findUnique({
+        where: { id: commande.traiteur.user_id },
+        select: { email: true },
+      });
+      if (traiteurProfile?.email) {
+        sendAcompteNotificationMail({
+          traiteurEmail: traiteurProfile.email,
+          traiteurName: commande.traiteur.name,
+          clientName: commande.client?.full_name || "Client",
+          acompteMontant: next.acompte_montant || 0,
+          dateEvenement: commande.date_evenement
+            ? new Date(commande.date_evenement).toLocaleDateString("fr-FR")
+            : undefined,
+          transactionRef: next.acompte_transaction_ref || undefined,
+        }).catch((err) => console.error("Erreur email acompte traiteur:", err));
+      }
     }
 
-    return updated;
+    return { commande: updated, outcome };
   });
 };

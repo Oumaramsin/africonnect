@@ -4,6 +4,18 @@ import bcrypt from "bcryptjs";
 const prisma = new PrismaClient();
 
 async function main() {
+  // Le seed vide TOUTES les tables et crée des comptes au mot de passe connu : réservé à une base locale
+  const isLocalDatabase = /@(localhost|127\.0\.0\.1|db)(:\d+)?\//.test(process.env.DATABASE_URL || "");
+  if (
+    (process.env.NODE_ENV === "production" || !isLocalDatabase) &&
+    process.env.ALLOW_DESTRUCTIVE_SEED !== "true"
+  ) {
+    throw new Error(
+      "Seed refusé : base non locale ou NODE_ENV=production (il effacerait toutes les données réelles). " +
+        "Définissez ALLOW_DESTRUCTIVE_SEED=true uniquement si c'est volontaire.",
+    );
+  }
+
   console.log("🌱 Début du peuplement de la base de données...");
 
   // Nettoyage des anciennes données
@@ -28,14 +40,15 @@ async function main() {
     data: {
       email: "admin@africonnect.app",
       password: hashedPassword,
-      role: "Admin",
+      is_email_verified: true,
+      role: "admin",
       profile: {
         create: {
           full_name: "Administrateur AfriConnect",
           email: "admin@africonnect.app",
           phone: "+33100000000",
           city: "Paris",
-          role: "Admin",
+          role: "admin",
         },
       },
     },
@@ -47,6 +60,7 @@ async function main() {
       email: "client@email.com",
       phone: "+33612345678",
       password: hashedPassword,
+      is_email_verified: true,
       role: "client",
       profile: {
         create: {
@@ -67,6 +81,7 @@ async function main() {
       email: "chef.fatou@email.com",
       phone: "+33798765432",
       password: hashedPassword,
+      is_email_verified: true,
       role: "traiteur",
       profile: {
         create: {
@@ -87,6 +102,7 @@ async function main() {
       email: "voyageur.kofi@email.com",
       phone: "+33655544433",
       password: hashedPassword,
+      is_email_verified: true,
       role: "gp",
       profile: {
         create: {
@@ -107,7 +123,7 @@ async function main() {
   // 2. Création du Traiteur
   const traiteur = await prisma.traiteur.create({
     data: {
-      id: userTraiteur.profile!.id, // relation 1-to-1 sur l'id
+      user_id: userTraiteur.id, // traiteur rattaché au compte chef.fatou@email.com
       name: "Les Marmites de Fatou",
       bio: "Cuisine authentique du Sénégal et de l'Afrique de l'Ouest. Plats traditionnels préparés sur commande avec des ingrédients frais.",
       cuisine_type: ["Sénégal", "Afrique de l'Ouest", "Côte d'Ivoire"],

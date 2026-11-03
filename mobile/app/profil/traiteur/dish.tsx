@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -19,7 +19,14 @@ import { useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../../utils/api";
+import {
+  MAX_IMAGES_PER_UPLOAD,
+  PickedImage,
+  filterPickedImages,
+  uploadImages,
+} from "../../../utils/imageValidation";
+import { showErrorAlert } from "../../../utils/alerts";
 
 import { CUISINES } from "../../../utils/constants";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
@@ -60,7 +67,31 @@ export default function TraiteurDishFormScreen() {
     return [];
   });
 
+  // Verrou anti double soumission (l'état `saving` n'est pas encore à jour au second appui)
+  const submittingRef = useRef(false);
+  // Type et taille des photos choisies, par URI locale (utiles à l'envoi)
+  const pickedImagesRef = useRef(new Map<string, PickedImage>());
+  // Photos déjà envoyées (URI locale → URL distante) : une relance ne les renvoie pas et garde
+  // un corps de requête identique (même clé d'idempotence, donc pas de plat en double)
+  const uploadedUrlsRef = useRef(new Map<string, string>());
+  const redirectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (redirectTimerRef.current) clearTimeout(redirectTimerRef.current);
+    };
+  }, []);
+
   const pickImages = async () => {
+    const remainingSlots = MAX_IMAGES_PER_UPLOAD - imageUris.length;
+    if (remainingSlots <= 0) {
+      showErrorAlert(
+        "Limite atteinte",
+        `${MAX_IMAGES_PER_UPLOAD} photos maximum par plat. Retirez une photo pour en ajouter une autre.`,
+      );
+      return;
+    }
+
     try {
       const permissionResult =
         await ImagePicker.requestMediaLibraryPermissionsAsync();
@@ -75,12 +106,25 @@ export default function TraiteurDishFormScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
+        selectionLimit: remainingSlots,
         quality: 0.8,
       });
 
       if (!result.canceled && result.assets) {
-        const newUris = result.assets.map((asset) => asset.uri);
-        setImageUris((prev) => [...prev, ...newUris]);
+        // JPEG, PNG ou WebP de 5 Mo maximum, 5 photos au total
+        const { accepted, rejectionMessage } = filterPickedImages(
+          result.assets,
+          remainingSlots,
+        );
+        accepted.forEach((asset) => pickedImagesRef.current.set(asset.uri, asset));
+        if (accepted.length > 0) {
+          setImageUris((prev) =>
+            [...prev, ...accepted.map((asset) => asset.uri)].slice(0, MAX_IMAGES_PER_UPLOAD),
+          );
+        }
+        if (rejectionMessage) {
+          showErrorAlert("Photos non ajoutées", rejectionMessage);
+        }
       }
     } catch (err) {
       console.warn("Erreur sélection photos:", err);
@@ -92,6 +136,7 @@ export default function TraiteurDishFormScreen() {
   };
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     setError("");
     setSuccess("");
 
@@ -115,7 +160,9 @@ export default function TraiteurDishFormScreen() {
       return;
     }
 
+    submittingRef.current = true;
     setSaving(true);
+    let succeeded = false;
 
     try {
       const token = await getSecureToken("token");
@@ -124,107 +171,89 @@ export default function TraiteurDishFormScreen() {
         return;
       }
 
-      // Distinguer images déjà distantes (URL commençant par http) des fichiers locaux
-      const remoteUrls = imageUris.filter((u) => u.startsWith("http"));
-      const localUris = imageUris.filter((u) => !u.startsWith("http"));
+      // Distinguer images déjà distantes (URL commençant par http) des fichiers locaux ;
+      // les photos locales déjà envoyées lors d'une tentative précédente ne sont pas renvoyées
+      const isRemote = (uri: string) => uri.startsWith("http");
+      const urisToUpload = imageUris.filter(
+        (uri) => !isRemote(uri) && !uploadedUrlsRef.current.has(uri),
+      );
 
-      let uploadedNewUrls: string[] = [];
-
-      if (localUris.length > 0) {
-        const formData = new FormData();
-        localUris.forEach((uri) => {
-          const filename = uri.split("/").pop() || "dish_photo.jpg";
-          const match = /\.(\w+)$/.exec(filename);
-          const type = match ? `image/${match[1]}` : `image/jpeg`;
-          formData.append("files", {
-            uri,
-            name: filename,
-            type,
-          } as any);
-        });
-        formData.append("folder", "dishes");
-
-        const uploadRes = await apiFetch("/upload/multiple", {
-          method: "POST",
-          body: formData,
-        });
-
-        const uploadData = await uploadRes.json();
-        if (!uploadRes.ok) {
-          throw new Error(
-            uploadData.error ||
-              uploadData.message ||
-              "Échec du téléchargement des photos.",
-          );
+      if (urisToUpload.length > 0) {
+        const upload = await uploadImages(
+          urisToUpload.map((uri) => pickedImagesRef.current.get(uri) ?? { uri }),
+          "dishes",
+        );
+        if (!upload.ok) {
+          setError(upload.error);
+          return;
         }
-        uploadedNewUrls = uploadData.urls || [];
+        urisToUpload.forEach((uri, index) => {
+          uploadedUrlsRef.current.set(uri, upload.urls[index]);
+        });
       }
 
-      const finalImageUrls = [...remoteUrls, ...uploadedNewUrls];
+      // Ordre des photos conservé tel qu'affiché
+      const finalImageUrls = imageUris.map((uri) =>
+        isRemote(uri) ? uri : (uploadedUrlsRef.current.get(uri) as string),
+      );
 
-      if (!isEditing) {
-        const response = await apiFetch("/traiteur/dishes", {
-          method: "POST",
-          body: JSON.stringify({
-            name: name.trim(),
-            description: description.trim(),
-            price: parseFloat(price),
-            cuisine_type: cuisineType,
-            is_available: isAvailable,
-            image_urls: finalImageUrls,
-          }),
-        });
+      const body = JSON.stringify({
+        name: name.trim(),
+        description: description.trim(),
+        price: parseFloat(price),
+        cuisine_type: cuisineType,
+        is_available: isAvailable,
+        image_urls: finalImageUrls,
+      });
 
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(
-            data.error || data.message || "Erreur lors de l'ajout du plat.",
-          );
-        }
+      const response = isEditing
+        ? await apiFetch(`/traiteur/dishes/${encodeURIComponent(String(params.id))}`, {
+            method: "PATCH",
+            body,
+          })
+        : await apiFetch("/traiteur/dishes", {
+            method: "POST",
+            body,
+          });
 
-        setSuccess("Plat ajouté à votre carte avec succès !");
-        setTimeout(() => {
-          router.replace("/profil/traiteur");
-        }, 1200);
-      } else {
-        const response = await apiFetch(`/traiteur/dishes/${params.id}`, {
-          method: "PATCH",
-          body: JSON.stringify({
-            name: name.trim(),
-            description: description.trim(),
-            price: parseFloat(price),
-            cuisine_type: cuisineType,
-            is_available: isAvailable,
-            image_urls: finalImageUrls,
-          }),
-        });
-
-        const data = await response.json();
-        if (!response.ok) {
-          throw new Error(
-            data.error ||
-              data.message ||
-              "Erreur lors de la modification du plat.",
-          );
-        }
-
-        setSuccess("Plat mis à jour avec succès !");
-        setTimeout(() => {
-          router.replace("/profil/traiteur");
-        }, 1200);
+      const data = await response.json();
+      if (!response.ok) {
+        setError(
+          getApiErrorMessage(
+            data,
+            isEditing
+              ? "Erreur lors de la modification du plat."
+              : "Erreur lors de l'ajout du plat.",
+          ),
+        );
+        return;
       }
-    } catch (err: any) {
+
+      // Le bouton reste désactivé jusqu'à la redirection : aucun second envoi possible
+      succeeded = true;
+      setSuccess(
+        isEditing
+          ? "Plat mis à jour avec succès !"
+          : "Plat ajouté à votre carte avec succès !",
+      );
+      redirectTimerRef.current = setTimeout(() => {
+        router.replace("/profil/traiteur");
+      }, 1200);
+    } catch (err) {
       console.error("Erreur enregistrement plat:", err);
-      setError(err.message || "Erreur lors de l'enregistrement du plat.");
+      setError(getErrorMessage(err, "Erreur lors de l'enregistrement du plat."));
     } finally {
-      setSaving(false);
+      if (!succeeded) {
+        submittingRef.current = false;
+        setSaving(false);
+      }
     }
   };
 
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
         <View style={styles.headerHero}>
@@ -259,7 +288,7 @@ export default function TraiteurDishFormScreen() {
               <View style={styles.fieldHeaderRow}>
                 <Text style={styles.fieldLabel}>Photos du plat *</Text>
                 <Text style={styles.fieldHint}>
-                  {imageUris.length} sélectionnée(s)
+                  {imageUris.length}/{MAX_IMAGES_PER_UPLOAD} sélectionnée(s)
                 </Text>
               </View>
 
@@ -275,7 +304,7 @@ export default function TraiteurDishFormScreen() {
                   Ajouter des photos du plat
                 </Text>
                 <Text style={styles.dropZoneSubtext}>
-                  Photos nettes et appétissantes (PNG, JPG, WEBP)
+                  Photos nettes et appétissantes (PNG, JPG, WEBP, 5 Mo max)
                 </Text>
               </TouchableOpacity>
 

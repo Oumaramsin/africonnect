@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,13 +10,13 @@ import {
   Platform,
   Image,
   ActivityIndicator,
-  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { saveSecureToken } from "../../utils/storage";
-import { apiFetch } from "../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../utils/api";
+import { showSuccessAlert } from "../../utils/alerts";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
 
 export default function ForgotPasswordScreen() {
@@ -33,9 +33,13 @@ export default function ForgotPasswordScreen() {
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Verrou synchrone : un double appui ne doit pas envoyer deux requêtes (le second envoi du
+  // code de réinitialisation échouerait, le code ayant déjà été utilisé)
+  const submittingRef = useRef(false);
 
   // ── Étape 1 : Demande de code par e-mail ──
   const handleRequestCode = async () => {
+    if (submittingRef.current) return;
     setError(null);
 
     const trimmedEmail = email.trim().toLowerCase();
@@ -44,6 +48,7 @@ export default function ForgotPasswordScreen() {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
 
     try {
@@ -56,25 +61,27 @@ export default function ForgotPasswordScreen() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.message || "Erreur lors de la demande.");
-        setLoading(false);
+        setError(getApiErrorMessage(data, "Erreur lors de la demande."));
         return;
       }
 
       setStep(2);
-      Alert.alert(
+      // showSuccessAlert : Alert.alert n'affiche rien dans la version web
+      showSuccessAlert(
         "Code envoyé",
         `Un code de sécurité à 6 chiffres a été envoyé à ${trimmedEmail}. Vérifiez également vos courriers indésirables (spams).`,
       );
-    } catch (err: any) {
-      setError(err.message || "Impossible de contacter le serveur Dabari.");
+    } catch (err) {
+      setError(getErrorMessage(err, "Impossible de contacter le serveur Dabari."));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
 
   // ── Étape 2 : Réinitialisation du mot de passe ──
   const handleResetPassword = async () => {
+    if (submittingRef.current) return;
     setError(null);
 
     const trimmedCode = code.trim();
@@ -83,8 +90,8 @@ export default function ForgotPasswordScreen() {
       return;
     }
 
-    if (!newPassword || newPassword.length < 6) {
-      setError("Le nouveau mot de passe doit comporter au moins 6 caractères.");
+    if (!newPassword || newPassword.length < 8) {
+      setError("Le nouveau mot de passe doit comporter au moins 8 caractères.");
       return;
     }
 
@@ -93,7 +100,9 @@ export default function ForgotPasswordScreen() {
       return;
     }
 
+    submittingRef.current = true;
     setLoading(true);
+    let navigating = false;
 
     try {
       const res = await apiFetch("/auth/reset-password", {
@@ -109,30 +118,34 @@ export default function ForgotPasswordScreen() {
       const data = await res.json();
 
       if (!res.ok) {
-        setError(data.message || "Le code est incorrect ou a expiré.");
-        setLoading(false);
+        setError(getApiErrorMessage(data, "Le code est incorrect ou a expiré."));
         return;
       }
 
       // Connexion automatique après réinitialisation
-      if (data.token) {
+      const loggedIn = typeof data.token === "string" && Boolean(data.token);
+      if (loggedIn) {
         await saveSecureToken("token", data.token);
       }
 
-      Alert.alert(
+      // showSuccessAlert : Alert.alert n'affiche rien dans la version web, où l'utilisateur
+      // restait sur le formulaire sans être redirigé
+      navigating = true;
+      showSuccessAlert(
         "Mot de passe modifié",
-        "Votre mot de passe a été réinitialisé avec succès ! Vous êtes maintenant connecté.",
-        [
-          {
-            text: "Continuer",
-            onPress: () => router.replace("/accueil"),
-          },
-        ],
+        loggedIn
+          ? "Votre mot de passe a été réinitialisé avec succès ! Vous êtes maintenant connecté."
+          : "Votre mot de passe a été réinitialisé avec succès ! Connectez-vous avec votre nouveau mot de passe.",
+        () => router.replace(loggedIn ? "/accueil" : "/login"),
       );
-    } catch (err: any) {
-      setError(err.message || "Impossible de contacter le serveur.");
+    } catch (err) {
+      setError(getErrorMessage(err, "Impossible de contacter le serveur."));
     } finally {
-      setLoading(false);
+      // Après un succès, le bouton reste désactivé jusqu'à la redirection
+      if (!navigating) {
+        submittingRef.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -302,7 +315,7 @@ export default function ForgotPasswordScreen() {
                     />
                     <TextInput
                       style={[styles.input, { paddingRight: 44 }]}
-                      placeholder="Minimum 6 caractères"
+                      placeholder="Minimum 8 caractères"
                       placeholderTextColor="#9CA3AF"
                       value={newPassword}
                       onChangeText={setNewPassword}

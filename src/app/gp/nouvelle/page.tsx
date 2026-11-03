@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState, useMemo, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -27,12 +27,12 @@ import {
   Clock,
   Info,
 } from "lucide-react";
-import { getValidToken, authFetch } from "@/lib/auth";
+import { hasSession, authFetch, apiErrorMessage, sendErrorMessage } from "@/lib/auth";
 import AddressAutocomplete, {
   getQuarterOrCityFromAddress,
 } from "@/components/AddressAutocomplete";
 import { GP_COUNTRIES } from "@/lib/types/gp";
-import { verifyAddressExists } from "@/lib/addressValidation";
+import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
 import { COMMON_CITIES } from "@/lib/constants/locations";
 import CountryFlag from "@/components/ui/CountryFlag";
 
@@ -94,10 +94,15 @@ export default function NouvelleAnnoncePage() {
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [success, setSuccess] = useState(false);
   const [acceptCharter, setAcceptCharter] = useState(true);
+  // Erreur de publication, affichée dans la modale de confirmation (qui reste ouverte pour réessayer)
+  const [submitError, setSubmitError] = useState<string | null>(null);
+  // Adresses acceptées sans vérification (service d'adresses injoignable)
+  const [addressUnverified, setAddressUnverified] = useState(false);
+  // Verrou contre la double soumission (posé avant le rendu suivant)
+  const submittingRef = useRef(false);
 
   useEffect(() => {
-    const token = getValidToken();
-    if (!token) {
+    if (!hasSession()) {
       router.push("/login");
       return;
     }
@@ -188,6 +193,7 @@ export default function NouvelleAnnoncePage() {
     }
 
     try {
+      let unverified = false;
       // Si le pays de départ est la France, vérifier que l'adresse de dépôt existe bien
       if (data.departure_country === "France") {
         const checkPickup = await verifyAddressExists(
@@ -202,6 +208,7 @@ export default function NouvelleAnnoncePage() {
           setLoading(false);
           return;
         }
+        unverified = unverified || Boolean(checkPickup.unverified);
       }
 
       // Si le pays d'arrivée est la France, vérifier que l'adresse de récupération existe bien
@@ -218,8 +225,11 @@ export default function NouvelleAnnoncePage() {
           setLoading(false);
           return;
         }
+        unverified = unverified || Boolean(checkDropoff.unverified);
       }
 
+      setAddressUnverified(unverified);
+      setSubmitError(null);
       setPendingData(data);
       setShowConfirmModal(true);
     } catch (e: unknown) {
@@ -230,9 +240,14 @@ export default function NouvelleAnnoncePage() {
     }
   };
 
+  // Même annonce = même corps : une relance après une coupure réutilise la clé d'idempotence et
+  // l'API renvoie l'annonce déjà publiée au lieu d'en créer une seconde
   const onSubmit = async (data: FormData) => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError(null);
+    setSubmitError(null);
 
     try {
       const response = await authFetch(
@@ -264,18 +279,18 @@ export default function NouvelleAnnoncePage() {
       const resData = await response.json();
 
       if (!response.ok) {
-        throw new Error(
-          resData.message || "Erreur lors de la création de l'annonce",
+        setSubmitError(
+          apiErrorMessage(resData, "Erreur lors de la création de l'annonce"),
         );
+        return;
       }
 
       setShowConfirmModal(false);
       setSuccess(true);
     } catch (err: unknown) {
-      const e = err as { message?: string };
-      setError(e.message || "Une erreur est survenue");
-      setShowConfirmModal(false);
+      setSubmitError(sendErrorMessage(err, "Une erreur est survenue"));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -847,7 +862,7 @@ export default function NouvelleAnnoncePage() {
       </form>
 
       {/* ── BARRE MOBILE STICKY ── */}
-      <div className="fixed bottom-0 inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
+      <div className="fixed bottom-above-nav inset-x-0 bg-white/95 backdrop-blur-md border-t border-slate-200 p-3.5 z-40 lg:hidden shadow-lg">
         <div className="flex items-center justify-between gap-3 max-w-lg mx-auto">
           <div>
             <span className="text-[11px] text-slate-400 block font-medium">
@@ -921,11 +936,28 @@ export default function NouvelleAnnoncePage() {
               </div>
             </div>
 
+            {addressUnverified && (
+              <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-xl px-3 py-2">
+                {UNVERIFIED_ADDRESS_NOTICE}
+              </p>
+            )}
+
+            {submitError && (
+              <div
+                role="alert"
+                className="bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl p-3.5 text-xs font-semibold flex items-start gap-2"
+              >
+                <AlertTriangle size={16} className="shrink-0 text-rose-600 mt-0.5" />
+                <span>{submitError}</span>
+              </div>
+            )}
+
             <div className="flex items-center justify-end gap-3 pt-2">
               <button
                 type="button"
                 onClick={() => setShowConfirmModal(false)}
-                className="flex-1 py-3.5 rounded-2xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer"
+                disabled={loading}
+                className="flex-1 py-3.5 rounded-2xl text-xs font-bold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors cursor-pointer disabled:opacity-50"
               >
                 Modifier
               </button>
@@ -933,9 +965,9 @@ export default function NouvelleAnnoncePage() {
                 type="button"
                 onClick={() => onSubmit(pendingData)}
                 disabled={loading}
-                className="flex-1 py-3.5 rounded-2xl text-xs font-bold bg-[#1D6B45] text-white hover:bg-[#154d31] transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5"
+                className="flex-1 py-3.5 rounded-2xl text-xs font-bold bg-[#1D6B45] text-white hover:bg-[#154d31] transition-all shadow-md cursor-pointer flex items-center justify-center gap-1.5 disabled:opacity-60"
               >
-                {loading ? "Publication..." : "Confirmer la publication"}
+                {loading ? "Publication..." : submitError ? "Réessayer" : "Confirmer la publication"}
               </button>
             </div>
           </div>

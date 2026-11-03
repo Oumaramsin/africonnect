@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -18,7 +18,9 @@ import { useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import * as ImagePicker from "expo-image-picker";
 import { getSecureToken } from "../../../utils/storage";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage } from "../../../utils/api";
+import { PickedImage, uploadImage, validateImage } from "../../../utils/imageValidation";
+import { showErrorAlert } from "../../../utils/alerts";
 import { CUISINES, ZONES } from "../../../utils/constants";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 
@@ -56,6 +58,12 @@ export default function EditTraiteurProfileScreen() {
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Verrou anti double soumission (l'état `saving` n'est pas encore à jour au second appui)
+  const submittingRef = useRef(false);
+  // Photo choisie (type, taille) et photo déjà envoyée : une relance ne la renvoie pas
+  const pickedImageRef = useRef<PickedImage | null>(null);
+  const uploadedImageRef = useRef<{ uri: string; url: string } | null>(null);
+
   const toggleCuisine = (cuisine: string) => {
     setSelectedCuisines((prev) =>
       prev.includes(cuisine)
@@ -90,40 +98,26 @@ export default function EditTraiteurProfileScreen() {
       });
 
       if (!result.canceled && result.assets && result.assets[0]) {
-        setImageUri(result.assets[0].uri);
+        const asset = result.assets[0];
+        // JPEG, PNG ou WebP de 5 Mo maximum
+        const check = validateImage(asset);
+        if (!check.valid) {
+          showErrorAlert(
+            "Photo non acceptée",
+            check.error || "Cette photo ne peut pas être utilisée.",
+          );
+          return;
+        }
+        pickedImageRef.current = asset;
+        setImageUri(asset.uri);
       }
     } catch (err) {
       console.warn("Erreur sélection photo:", err);
     }
   };
 
-  const uploadLocalImage = async (localUri: string): Promise<string | null> => {
-    try {
-      const formData = new FormData();
-      const filename = localUri.split("/").pop() || "workshop_logo.jpg";
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : `image/jpeg`;
-
-      formData.append("file", {
-        uri: localUri,
-        name: filename,
-        type: type,
-      } as any);
-
-      const response = await apiFetch("/upload/single", {
-        method: "POST",
-        body: formData,
-      });
-
-      const data = await response.json();
-      return data.url || null;
-    } catch (err) {
-      console.error("Erreur upload photo profil:", err);
-      return null;
-    }
-  };
-
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     setError(null);
 
     if (!name.trim()) {
@@ -136,7 +130,9 @@ export default function EditTraiteurProfileScreen() {
       return;
     }
 
+    submittingRef.current = true;
     setSaving(true);
+    let succeeded = false;
 
     try {
       const token = await getSecureToken("token");
@@ -147,15 +143,24 @@ export default function EditTraiteurProfileScreen() {
 
       let finalImageUrl = imageUri;
 
-      // Télécharger uniquement si l'image est un nouveau fichier local
+      // Télécharger uniquement si l'image est un nouveau fichier local, une seule fois même si
+      // l'enregistrement doit être relancé
       if (imageUri && !imageUri.startsWith("http")) {
-        const uploadedUrl = await uploadLocalImage(imageUri);
-        if (!uploadedUrl) {
-          setError("Échec de l'envoi de la photo de l'atelier.");
-          setSaving(false);
-          return;
+        if (uploadedImageRef.current?.uri === imageUri) {
+          finalImageUrl = uploadedImageRef.current.url;
+        } else {
+          const upload = await uploadImage(
+            pickedImageRef.current?.uri === imageUri
+              ? pickedImageRef.current
+              : { uri: imageUri },
+          );
+          if (!upload.ok) {
+            setError(upload.error);
+            return;
+          }
+          finalImageUrl = upload.urls[0];
+          uploadedImageRef.current = { uri: imageUri, url: upload.urls[0] };
         }
-        finalImageUrl = uploadedUrl;
       }
 
       const response = await apiFetch("/traiteur/profile", {
@@ -173,26 +178,31 @@ export default function EditTraiteurProfileScreen() {
       const data = await response.json();
       if (!response.ok) {
         setError(
-          data.error ||
-            data.message ||
-            "Erreur lors de la sauvegarde du profil traiteur.",
+          getApiErrorMessage(data, "Erreur lors de la sauvegarde du profil traiteur."),
         );
         return;
       }
 
+      // Le bouton reste désactivé jusqu'à la redirection
+      succeeded = true;
       router.replace("/profil/traiteur");
-    } catch (err: any) {
+    } catch (err) {
       console.error("Erreur sauvegarde:", err);
-      setError("Erreur de connexion avec le serveur.");
+      setError(
+        getErrorMessage(err, "Erreur lors de la sauvegarde du profil traiteur."),
+      );
     } finally {
-      setSaving(false);
+      if (!succeeded) {
+        submittingRef.current = false;
+        setSaving(false);
+      }
     }
   };
 
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── HEADER FOREST GREEN (#0B3B24) ── */}
         <View style={styles.headerHero}>
@@ -218,14 +228,6 @@ export default function EditTraiteurProfileScreen() {
           extraScrollHeight={140}
         >
           <View style={styles.formCard}>
-            {/* Bannière d'erreur */}
-            {Boolean(error) && (
-              <View style={styles.errorBox}>
-                <Ionicons name="alert-circle" size={18} color="#B91C1C" />
-                <Text style={styles.errorText}>{error}</Text>
-              </View>
-            )}
-
             {/* 1. Photo de l'atelier */}
             <View style={styles.fieldGroup}>
               <Text style={styles.fieldLabel}>Logo ou Photo de l'atelier</Text>
@@ -390,6 +392,14 @@ export default function EditTraiteurProfileScreen() {
                 détails de leurs commandes et devis.
               </Text>
             </View>
+
+            {/* Bannière d'erreur, juste au-dessus du bouton, là où l'utilisateur regarde */}
+            {Boolean(error) && (
+              <View style={styles.errorBox}>
+                <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                <Text style={styles.errorText}>{error}</Text>
+              </View>
+            )}
 
             {/* Bouton de validation */}
             <TouchableOpacity

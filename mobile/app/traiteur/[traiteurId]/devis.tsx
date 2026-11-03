@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -19,8 +19,9 @@ import { Ionicons } from "@expo/vector-icons";
 
 import { Traiteur, formatWhatsAppUrl } from "../../../utils/types/traiteur";
 import { getSecureToken } from "../../../utils/storage";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../../../utils/api";
 import AddressAutocomplete from "../../../components/AddressAutocomplete";
+import LoadErrorState from "../../../components/LoadErrorState";
 import { verifyAddressExists } from "../../../utils/addressValidation";
 import { EVENT_TYPES } from "../../../utils/constants";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
@@ -54,37 +55,80 @@ export default function DevisScreen() {
   const [error, setError] = useState("");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [checkingAddress, setCheckingAddress] = useState(false);
   const [success, setSuccess] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
 
-  useEffect(() => {
-    let ignore = false;
-    async function fetchTraiteur() {
+  // Chargement du traiteur : en cours / erreur (avec relance) / introuvable (404 uniquement)
+  const [loadingTraiteur, setLoadingTraiteur] = useState(true);
+  const [loadError, setLoadError] = useState<{ message: string; offline: boolean } | null>(null);
+  const [notFound, setNotFound] = useState(false);
+  // Identifiant du dernier chargement lancé : ignore les réponses obsolètes ou arrivées après la sortie de l'écran
+  const loadIdRef = useRef(0);
+
+  // Verrous synchrones contre la double soumission (l'état n'est pas encore à jour au 2e appui)
+  const submittingRef = useRef(false);
+  const checkingAddressRef = useRef(false);
+  // Adresse déjà vérifiée : elle n'est pas renormalisée à la relance, pour renvoyer exactement le
+  // même corps (donc la même clé d'idempotence) si l'issue du premier envoi est inconnue
+  const validatedAddressRef = useRef<string | null>(null);
+
+  const loadTraiteur = useCallback(async () => {
+    const loadId = ++loadIdRef.current;
+    setLoadingTraiteur(true);
+    try {
       const token = await getSecureToken("token");
+      if (loadId !== loadIdRef.current) return;
       if (!token) {
-        router.push("/login");
+        // Connexion requise : on remplace l'écran pour ne pas y revenir bloqué sur le chargement
+        router.replace("/login");
+        return;
+      }
+      if (!traiteurId) {
+        setLoadError(null);
+        setNotFound(true);
         return;
       }
 
-      if (!traiteurId) return;
-      try {
-        const response = await apiFetch(`/traiteur/${traiteurId}`);
-        if (response.ok) {
-          const data = await response.json();
-          if (!ignore) {
-            setTraiteur(data.data?.traiteur || null);
-            setIsLoggedIn(true);
-          }
-        }
-      } catch (err) {
-        console.error("Erreur récupération traiteur pour devis:", err);
+      const response = await apiFetch(`/traiteur/${encodeURIComponent(String(traiteurId))}`);
+      const data = await response.json();
+      if (loadId !== loadIdRef.current) return;
+
+      if (response.status === 404) {
+        setLoadError(null);
+        setNotFound(true);
+        return;
       }
+      // Erreur serveur ou réponse illisible (corps tronqué par une coupure) : relance possible
+      const loadedTraiteur: Traiteur | null = response.ok ? data.data?.traiteur || null : null;
+      if (!loadedTraiteur) {
+        setLoadError({
+          message: getApiErrorMessage(data, "Impossible de charger les informations du traiteur."),
+          offline: false,
+        });
+        return;
+      }
+      setTraiteur(loadedTraiteur);
+      setLoadError(null);
+      setNotFound(false);
+    } catch (err) {
+      if (loadId !== loadIdRef.current) return;
+      console.error("Erreur récupération traiteur pour devis:", err);
+      setLoadError({
+        message: getErrorMessage(err, "Impossible de charger les informations du traiteur."),
+        offline: isNetworkError(err),
+      });
+    } finally {
+      if (loadId === loadIdRef.current) setLoadingTraiteur(false);
     }
-    fetchTraiteur();
-    return () => {
-      ignore = true;
-    };
   }, [traiteurId, router]);
+
+  useEffect(() => {
+    loadTraiteur();
+    return () => {
+      // Sortie de l'écran ou changement de traiteur : la réponse en cours sera ignorée
+      loadIdRef.current += 1;
+    };
+  }, [loadTraiteur]);
 
   const parsedNbPersonnes = parseInt(nbPersonnes, 10);
   const isFormValid =
@@ -94,6 +138,7 @@ export default function DevisScreen() {
     adresse.trim().length > 0;
 
   const handlePreSubmit = async () => {
+    if (checkingAddressRef.current || submittingRef.current) return;
     if (!dateEvenement || !nbPersonnes || !adresse.trim()) {
       setError("Merci de remplir tous les champs obligatoires (*)");
       return;
@@ -110,16 +155,28 @@ export default function DevisScreen() {
       return;
     }
 
-    const check = await verifyAddressExists(adresse.trim());
-    if (!check.isValid) {
-      setError(
-        check.error ||
-          "L'adresse indiquée n'a pas été reconnue. Veuillez sélectionner une adresse existante dans les suggestions."
-      );
-      return;
-    }
-    if (check.normalizedAddress && check.normalizedAddress !== adresse.trim()) {
-      setAdresse(check.normalizedAddress);
+    // Adresse modifiée depuis la dernière vérification : nouvelle vérification (bouton désactivé)
+    if (adresse.trim() !== validatedAddressRef.current) {
+      checkingAddressRef.current = true;
+      setCheckingAddress(true);
+      try {
+        const check = await verifyAddressExists(adresse.trim());
+        if (!check.isValid) {
+          setError(
+            check.error ||
+              "L'adresse indiquée n'a pas été reconnue. Veuillez sélectionner une adresse existante dans les suggestions."
+          );
+          return;
+        }
+        const normalized = check.normalizedAddress || adresse.trim();
+        if (normalized !== adresse.trim()) {
+          setAdresse(normalized);
+        }
+        validatedAddressRef.current = normalized.trim();
+      } finally {
+        checkingAddressRef.current = false;
+        setCheckingAddress(false);
+      }
     }
 
     setError("");
@@ -127,15 +184,18 @@ export default function DevisScreen() {
   };
 
   const confirmOrder = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     setError("");
-    const token = await getSecureToken("token");
-    if (!token) {
-      setError("Veuillez vous connecter pour envoyer une demande de devis.");
-      setLoading(false);
-      return;
-    }
     try {
+      const token = await getSecureToken("token");
+      if (!token) {
+        setError("Veuillez vous connecter pour envoyer une demande de devis.");
+        return;
+      }
+      // Corps déterministe : relancer la même demande après une coupure renvoie le même corps,
+      // donc la même clé d'idempotence, et le serveur ne crée pas de doublon
       const response = await apiFetch("/traiteur", {
         method: "POST",
         body: JSON.stringify({
@@ -147,18 +207,20 @@ export default function DevisScreen() {
           notes: notes.trim() || undefined,
         }),
       });
-      const data = await response.json();
+      // Le statut fait foi : une réponse 2xx au corps illisible (coupure) reste une demande envoyée
+      const data = await response.json().catch(() => ({}));
       if (!response.ok) {
-        setError(data.error || data.message || "Erreur lors de la demande de devis");
-        setLoading(false);
+        // La modale reste ouverte avec le message : l'utilisateur peut relancer ou modifier
+        setError(getApiErrorMessage(data, "Erreur lors de la demande de devis"));
         return;
       }
       setShowConfirmModal(false);
       setSuccess(true);
-    } catch (e: any) {
+    } catch (e: unknown) {
       console.error("Erreur devis:", e);
-      setError("Une erreur est survenue lors de l'envoi de la demande.");
+      setError(getErrorMessage(e, "Une erreur est survenue lors de l'envoi de la demande."));
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
@@ -184,7 +246,7 @@ export default function DevisScreen() {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.container} edges={["top"]}>
-          <StatusBar barStyle="light-content" backgroundColor="#165034" />
+          <StatusBar barStyle="light-content" />
           <View style={styles.successContainer}>
             <View style={styles.successIconCircle}>
               <Ionicons name="checkmark-circle" size={68} color="#1D6B45" />
@@ -230,11 +292,53 @@ export default function DevisScreen() {
     );
   }
 
-  if (!isLoggedIn) {
+  // Échec du chargement (réseau ou serveur) : message et relance, la carte reste affichée pendant la relance
+  if (loadError) {
+    return (
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.container} edges={["top"]}>
+          <StatusBar barStyle="light-content" />
+          <LoadErrorState
+            style={{ flex: 1 }}
+            title="Impossible de charger le traiteur"
+            message={loadError.message}
+            offline={loadError.offline}
+            retrying={loadingTraiteur}
+            onRetry={loadTraiteur}
+            secondaryLabel="Retour"
+            onSecondary={() => router.back()}
+          />
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (notFound) {
     return (
       <View style={styles.topGreenWrapper}>
         <SafeAreaView style={styles.centerLoading} edges={["top"]}>
-          <StatusBar barStyle="light-content" backgroundColor="#165034" />
+          <StatusBar barStyle="light-content" />
+          <Ionicons name="alert-circle-outline" size={48} color="#FFFFFF" />
+          <Text style={[styles.loadingText, { textAlign: "center", paddingHorizontal: 24 }]}>
+            Ce traiteur est introuvable ou n'est plus disponible.
+          </Text>
+          <TouchableOpacity
+            style={styles.successHomeBtn}
+            onPress={() => router.replace("/traiteur")}
+            activeOpacity={0.85}
+          >
+            <Text style={styles.successHomeBtnText}>Voir les traiteurs</Text>
+          </TouchableOpacity>
+        </SafeAreaView>
+      </View>
+    );
+  }
+
+  if (loadingTraiteur || !traiteur) {
+    return (
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.centerLoading} edges={["top"]}>
+          <StatusBar barStyle="light-content" />
           <ActivityIndicator size="large" color="#FFFFFF" />
           <Text style={styles.loadingText}>Vérification du profil...</Text>
         </SafeAreaView>
@@ -245,7 +349,7 @@ export default function DevisScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#165034" />
+        <StatusBar barStyle="light-content" />
 
         {/* ── 1. HEADER HERO DABARI ── */}
         <View style={styles.headerHero}>
@@ -468,13 +572,13 @@ export default function DevisScreen() {
           <TouchableOpacity
             style={[
               styles.submitBtn,
-              (!isFormValid || loading) && styles.submitBtnDisabled,
+              (!isFormValid || loading || checkingAddress) && styles.submitBtnDisabled,
             ]}
             activeOpacity={0.88}
             onPress={handlePreSubmit}
-            disabled={!isFormValid || loading}
+            disabled={!isFormValid || loading || checkingAddress}
           >
-            {loading ? (
+            {loading || checkingAddress ? (
               <ActivityIndicator color="#FFFFFF" size="small" />
             ) : (
               <>
@@ -507,6 +611,14 @@ export default function DevisScreen() {
                   </Text>{" "}
                   pour {nbPersonnes} convives à la date du {dateEvenement}.
                 </Text>
+
+                {/* Échec de l'envoi : affiché dans la modale, au-dessus du bouton de relance */}
+                {Boolean(error) && (
+                  <View style={styles.errorBanner}>
+                    <Ionicons name="alert-circle" size={16} color="#B91C1C" />
+                    <Text style={styles.errorBannerText}>{error}</Text>
+                  </View>
+                )}
 
                 <View style={styles.modalActionsRow}>
                   <TouchableOpacity

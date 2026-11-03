@@ -1,16 +1,15 @@
 import type { MetadataRoute } from "next";
+import { absoluteUrl } from "@/lib/site";
 
+// Les pages privées ne sont pas bloquées ici : elles portent une balise noindex que les robots
+// doivent pouvoir lire (une page bloquée par robots.txt peut quand même être indexée sans contenu).
 export default function robots(): MetadataRoute.Robots {
-  const baseUrl = "https://dabari.app";
-
   return {
-    rules: [
-      {
-        userAgent: "*",
-        allow: ["/", "/dashboard", "/traiteur", "/gp", "/services"],
-        disallow: ["/admin/", "/profil/", "/commandes/", "/api/"],
-      },
-    ],
-    sitemap: `${baseUrl}/sitemap.xml`,
+    rules: {
+      userAgent: "*",
+      allow: "/",
+      disallow: "/api/",
+    },
+    sitemap: absoluteUrl("/sitemap.xml"),
   };
 }

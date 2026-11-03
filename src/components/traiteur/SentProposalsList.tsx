@@ -15,7 +15,7 @@ import {
   Quote,
   Send,
 } from "lucide-react";
-import { authFetch, getValidToken } from "@/lib/auth";
+import { apiErrorMessage, authFetch, hasSession, loadErrorMessage } from "@/lib/auth";
 import { TraiteurProposal, formatWhatsAppUrl } from "@/lib/types/traiteur";
 import Image from "next/image";
 
@@ -39,7 +39,7 @@ export default function SentProposalsList({ onLoaded }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    if (!getValidToken()) {
+    if (!hasSession()) {
       setLoading(false);
       return;
     }
@@ -51,13 +51,14 @@ export default function SentProposalsList({ onLoaded }: Props) {
       );
       const json = await res.json().catch(() => ({}));
       if (!res.ok) {
-        throw new Error(json.error || "Impossible de charger vos propositions");
+        setError(apiErrorMessage(json, "Impossible de charger vos propositions"));
+        return;
       }
       const list: TraiteurProposal[] = json.data?.proposals || [];
       setProposals(list);
       onLoaded?.(list.map((p) => p.request_id));
-    } catch (e: any) {
-      setError(e.message || "Erreur de chargement");
+    } catch (e: unknown) {
+      setError(loadErrorMessage(e, "Erreur de chargement"));
     } finally {
       setLoading(false);
     }
@@ -76,8 +77,18 @@ export default function SentProposalsList({ onLoaded }: Props) {
 
   if (error) {
     return (
-      <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl p-4">
-        {error}
+      <div
+        role="alert"
+        className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-2xl p-4 flex flex-col sm:flex-row sm:items-center gap-3"
+      >
+        <span className="flex-1">{error}</span>
+        <button
+          type="button"
+          onClick={() => load()}
+          className="self-start sm:self-auto px-3.5 py-1.5 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold transition-colors"
+        >
+          Réessayer
+        </button>
       </div>
     );
   }

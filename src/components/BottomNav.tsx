@@ -11,18 +11,18 @@ import {
   ShieldCheck,
   LogIn,
 } from "lucide-react";
-import { getValidToken, decodeToken, removeToken } from "@/lib/auth";
+import { useNavSession } from "@/hooks/useNavSession";
 
 const NAV_ITEMS = [
-  { href: "/dashboard", icon: <Home size={22} />, label: "Accueil" },
+  { href: "/", icon: <Home size={22} />, label: "Accueil" },
   { href: "/services", icon: <LayoutGrid size={22} />, label: "Services" },
 ];
 
 export default function BottomNav() {
   const pathname = usePathname();
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  // Session et compteur de notifications partagés avec la Navbar (aucun appel réseau en double)
+  const { isLoggedIn, user, unreadCount } = useNavSession(pathname);
+  const isAdmin = user?.isAdmin ?? false;
   const [isKeyboardOpen, setIsKeyboardOpen] = useState(false);
 
   useEffect(() => {
@@ -67,84 +67,10 @@ export default function BottomNav() {
     };
   }, []);
 
-  useEffect(() => {
-    const fetchUnread = async () => {
-      const token = getValidToken();
-      if (!token) {
-        setIsLoggedIn(false);
-        setIsAdmin(false);
-        setUnreadCount(0);
-        return;
-      }
-      try {
-        const decodedPayload = decodeToken(token);
-        if (!decodedPayload) {
-          removeToken();
-          setIsLoggedIn(false);
-          setIsAdmin(false);
-          setUnreadCount(0);
-          return;
-        }
-
-        setIsLoggedIn(true);
-        setIsAdmin(decodedPayload.role === "admin");
-
-        if (pathname.startsWith("/commandes")) {
-          setUnreadCount(0);
-          return;
-        }
-
-        const res = await fetch(
-          `${process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api"}/notifications`,
-          {
-            headers: {
-              Authorization: `Bearer ${token}`,
-            },
-            cache: "no-store",
-          }
-        );
-
-        if (res.status === 401) {
-          removeToken();
-          setIsLoggedIn(false);
-          setIsAdmin(false);
-          setUnreadCount(0);
-          return;
-        }
-
-        if (res.ok) {
-          const data = await res.json();
-          if (pathname.startsWith("/commandes")) {
-            setUnreadCount(0);
-          } else {
-            setUnreadCount(data.unread_count || 0);
-          }
-        }
-      } catch (error) {
-        console.error("Erreur dans le fetch des notifications :", error);
-      }
-    };
-
-    fetchUnread();
-
-    const handleNotifUpdate = () => {
-      if (pathname.startsWith("/commandes")) {
-        setUnreadCount(0);
-      } else {
-        fetchUnread();
-      }
-    };
-
-    window.addEventListener("notifications-updated", handleNotifUpdate);
-    return () => {
-      window.removeEventListener("notifications-updated", handleNotifUpdate);
-    };
-  }, [pathname]);
-
   const hideOn = ["/login", "/register", "/reset-password", "/forgot-password"];
   if (hideOn.includes(pathname)) return null;
 
-  let items = [...NAV_ITEMS];
+  const items = [...NAV_ITEMS];
 
   if (isLoggedIn) {
     items.push(
@@ -179,7 +105,7 @@ export default function BottomNav() {
         {items.map((item) => {
           const isActive =
             pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(item.href));
+            (item.href !== "/" && pathname.startsWith(item.href));
 
           const isCommandes = item.href === "/commandes";
 

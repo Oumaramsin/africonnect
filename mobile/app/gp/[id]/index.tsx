@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import {
   StyleSheet,
   Text,
@@ -19,9 +19,10 @@ import { useFocusEffect, useRouter, useLocalSearchParams } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../../utils/storage";
 import { GpListing, formatWhatsAppUrl } from "../../../utils/types/gp";
-import { apiFetch } from "../../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../../../utils/api";
 import { COUNTRY_DIAL_CODES } from "../../../utils/constants/dialCodes";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
+import LoadErrorState from "../../../components/LoadErrorState";
 
 export default function GpBookingScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -36,6 +37,15 @@ export default function GpBookingScreen() {
   const [error, setError] = useState<string | null>(null);
   const [showForm, setShowForm] = useState(false);
 
+  // Chargement de l'annonce : une erreur (réseau ou serveur) propose « Réessayer », seul un 404
+  // affiche « introuvable »
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadErrorOffline, setLoadErrorOffline] = useState(false);
+  const [notFound, setNotFound] = useState(false);
+  const [retrying, setRetrying] = useState(false);
+  // Verrou contre la double soumission (un second appui peut précéder le rendu du bouton désactivé)
+  const submittingRef = useRef(false);
+
   const [weight_kg, setWeight_kg] = useState("");
   const [content_desc, setContent_desc] = useState("");
   const [declared_value, setDeclared_value] = useState("");
@@ -49,43 +59,70 @@ export default function GpBookingScreen() {
     COUNTRY_DIAL_CODES.find((c) => c.code === recipient_phone_code) ||
     COUNTRY_DIAL_CODES[0];
 
+  // Au retour sur l'écran, l'annonce est actualisée sans écran de chargement : si cela échoue,
+  // l'annonce déjà affichée reste visible avec un message discret.
+  const loadListing = useCallback(async () => {
+    try {
+      if (!id) {
+        setNotFound(true);
+        return;
+      }
+      const token = await getSecureToken("token");
+      setIsLoggedIn(Boolean(token));
+
+      const response = await apiFetch(`/gp/${encodeURIComponent(String(id))}`);
+      const data = await response.json();
+      if (response.status === 404) {
+        setNotFound(true);
+        setListing(null);
+        setLoadError(null);
+        return;
+      }
+      const gp = response.ok ? data?.data?.gp : null;
+      if (!gp) {
+        setLoadError(getApiErrorMessage(data, "Erreur lors du chargement du GP"));
+        setLoadErrorOffline(false);
+        return;
+      }
+      setListing(gp);
+      setNotFound(false);
+      setLoadError(null);
+    } catch (err) {
+      setLoadError(getErrorMessage(err, "Erreur de connexion au serveur"));
+      setLoadErrorOffline(isNetworkError(err));
+    } finally {
+      setLoading(false);
+      setRetrying(false);
+    }
+  }, [id]);
+
   useFocusEffect(
     useCallback(() => {
-      const load = async () => {
-        if (!id) return;
-        const token = await getSecureToken("token");
-        if (token) {
-          setIsLoggedIn(true);
-        }
-
-        try {
-          const response = await apiFetch(`/gp/${id}`);
-          const data = await response.json();
-          if (!response.ok) {
-            setError(data.message || "Erreur lors du chargement du GP");
-            setLoading(false);
-            return;
-          }
-          setListing(data.data.gp);
-        } catch (err) {
-          setError("Erreur de connexion au serveur");
-        } finally {
-          setLoading(false);
-        }
-      };
-      load();
-    }, [id])
+      loadListing();
+    }, [loadListing])
   );
 
-  const total = listing
-    ? parseFloat(weight_kg || "0") * listing.price_per_kg
-    : 0;
+  const retryLoad = () => {
+    setRetrying(true);
+    loadListing();
+  };
+
+  // Page ouverte directement (lien, rechargement sur le web) : pas d'historique, retour à la liste
+  const goBackToList = () => {
+    if (router.canGoBack()) router.back();
+    else router.replace("/gp");
+  };
 
   const cleanWeightStr = weight_kg.trim().replace(",", ".");
   const cleanDeclaredStr = declared_value.trim().replace(",", ".");
 
   const weightNum = parseFloat(cleanWeightStr);
   const declaredValNum = parseFloat(cleanDeclaredStr);
+
+  // Poids saisi avec une virgule (« 2,5 ») compris comme 2,5 kg et non 2 kg
+  const total = listing && !isNaN(weightNum)
+    ? weightNum * listing.price_per_kg
+    : 0;
 
   const isValidNumberFormat = (str: string) => /^\d+([.,]\d+)?$/.test(str);
 
@@ -161,24 +198,30 @@ export default function GpBookingScreen() {
     setError(null);
   };
 
+  // La modale reste ouverte pendant l'envoi : en cas d'échec, le message s'y affiche et « Réessayer »
+  // renvoie exactement la même demande (même clé d'idempotence, pas de doublon côté serveur).
   const confirmOrder = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setSubmitting(true);
-    const token = await getSecureToken("token");
-    if (!token) {
-      router.push("/login");
-      setSubmitting(false);
-      return;
-    }
-
-    const safeDeclaredValue =
-      declared_value.trim() !== "" && !isDeclaredValInvalid
-        ? declaredValNum
-        : 0;
-
-    const fullRecipientPhone = `${recipient_phone_code} ${recipient_phone_number.trim()}`;
+    setError(null);
 
     try {
-      const response = await apiFetch(`/gp/${id}/order`, {
+      const token = await getSecureToken("token");
+      if (!token) {
+        setShowConfirmModal(false);
+        router.push("/login");
+        return;
+      }
+
+      const safeDeclaredValue =
+        declared_value.trim() !== "" && !isDeclaredValInvalid
+          ? declaredValNum
+          : 0;
+
+      const fullRecipientPhone = `${recipient_phone_code} ${recipient_phone_number.trim()}`;
+
+      const response = await apiFetch(`/gp/${encodeURIComponent(String(id))}/order`, {
         method: "POST",
         body: JSON.stringify({
           weight_kg: weightNum,
@@ -193,8 +236,8 @@ export default function GpBookingScreen() {
       });
       const data = await response.json();
       if (!response.ok) {
-        setError(data.error || data.message || "Erreur lors de l'envoi de la commande");
-        setSubmitting(false);
+        // Saisie conservée : le message s'affiche dans la modale, l'envoi peut être relancé
+        setError(getApiErrorMessage(data, "Erreur lors de l'envoi de la commande"));
         return;
       }
       setListing((prev) =>
@@ -205,10 +248,13 @@ export default function GpBookingScreen() {
             }
           : null,
       );
+      setShowConfirmModal(false);
       setSuccess(true);
     } catch (err) {
-      setError("Erreur lors de l'envoi de la commande");
+      // Coupure ou délai dépassé : issue inconnue, la relance renvoie la même demande sans doublon
+      setError(getErrorMessage(err, "Erreur lors de l'envoi de la commande"));
     } finally {
+      submittingRef.current = false;
       setSubmitting(false);
     }
   };
@@ -235,6 +281,27 @@ export default function GpBookingScreen() {
     );
   }
 
+  // Chargement impossible (réseau ou serveur) : « Réessayer », sans conclure que l'annonce n'existe pas
+  if (!listing && loadError && !notFound) {
+    return (
+      <View style={styles.topGreenWrapper}>
+        <SafeAreaView style={styles.container} edges={["top"]}>
+          <StatusBar barStyle="light-content" />
+          <LoadErrorState
+            title="Impossible de charger l'annonce"
+            message={loadError}
+            offline={loadErrorOffline}
+            retrying={retrying}
+            onRetry={retryLoad}
+            secondaryLabel="← Retour aux annonces"
+            onSecondary={goBackToList}
+            style={styles.loadErrorWrapper}
+          />
+        </SafeAreaView>
+      </View>
+    );
+  }
+
   if (!listing) {
     return (
       <View style={styles.topGreenWrapper}>
@@ -244,7 +311,7 @@ export default function GpBookingScreen() {
             <Text style={styles.notFoundText}>Annonce GP introuvable</Text>
             <TouchableOpacity
               style={styles.backBtnCentered}
-              onPress={() => router.back()}
+              onPress={goBackToList}
             >
               <Text style={styles.backBtnCenteredText}>← Retour aux annonces</Text>
             </TouchableOpacity>
@@ -367,6 +434,28 @@ export default function GpBookingScreen() {
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
           extraScrollHeight={140}
         >
+          {/* Actualisation échouée : l'annonce déjà chargée reste affichée */}
+          {Boolean(loadError) && (
+            <TouchableOpacity
+              style={[styles.errorBox, styles.refreshErrorBox]}
+              onPress={retryLoad}
+              disabled={retrying}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={loadErrorOffline ? "cloud-offline-outline" : "alert-circle"}
+                size={18}
+                color="#B91C1C"
+              />
+              <Text style={styles.errorText}>{`Actualisation impossible : ${loadError}`}</Text>
+              {retrying ? (
+                <ActivityIndicator size="small" color="#B91C1C" />
+              ) : (
+                <Text style={styles.errorRetryText}>Réessayer</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
           {listing.is_delayed && (
             <View style={styles.delayAlertBanner}>
               <Ionicons name="warning" size={20} color="#D97706" />
@@ -561,14 +650,6 @@ export default function GpBookingScreen() {
                   </TouchableOpacity>
                 </View>
 
-                {/* Message d'erreur */}
-                {Boolean(error) && (
-                  <View style={styles.errorBox}>
-                    <Ionicons name="alert-circle" size={18} color="#B91C1C" />
-                    <Text style={styles.errorText}>{error}</Text>
-                  </View>
-                )}
-
                 {/* Champ 1: Poids du colis */}
                 <View style={styles.fieldGroup}>
                   <Text style={styles.fieldLabel}>POIDS DU COLIS (KG) *</Text>
@@ -700,6 +781,14 @@ export default function GpBookingScreen() {
                   </Text>
                 </View>
 
+                {/* Message d'erreur, juste au-dessus du bouton pour rester visible */}
+                {Boolean(error) && (
+                  <View style={styles.errorBox}>
+                    <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                    <Text style={styles.errorText}>{error}</Text>
+                  </View>
+                )}
+
                 {/* Bouton de Soumission */}
                 <TouchableOpacity
                   style={[
@@ -741,7 +830,9 @@ export default function GpBookingScreen() {
           transparent
           animationType="fade"
           visible={showConfirmModal}
-          onRequestClose={() => setShowConfirmModal(false)}
+          onRequestClose={() => {
+            if (!submittingRef.current) setShowConfirmModal(false);
+          }}
         >
           <View style={styles.modalOverlay}>
             <View style={styles.modalCard}>
@@ -770,29 +861,38 @@ export default function GpBookingScreen() {
                 </View>
               )}
 
+              {/* Échec de l'envoi : affiché dans la modale, au-dessus des boutons */}
+              {Boolean(error) && (
+                <View style={[styles.errorBox, styles.modalErrorBox]}>
+                  <Ionicons name="alert-circle" size={18} color="#B91C1C" />
+                  <Text style={styles.errorText}>{error}</Text>
+                </View>
+              )}
+
               <View style={styles.modalButtonsRow}>
                 <TouchableOpacity
-                  style={styles.modalCancelBtn}
+                  style={[styles.modalCancelBtn, submitting && styles.submitOrderBtnDisabled]}
                   onPress={() => setShowConfirmModal(false)}
                   disabled={submitting}
                   activeOpacity={0.8}
                 >
-                  <Text style={styles.modalCancelBtnText}>Annuler</Text>
+                  <Text style={styles.modalCancelBtnText}>
+                    {error ? "Modifier" : "Annuler"}
+                  </Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity
-                  style={styles.modalConfirmBtn}
-                  onPress={() => {
-                    setShowConfirmModal(false);
-                    confirmOrder();
-                  }}
+                  style={[styles.modalConfirmBtn, submitting && styles.submitOrderBtnDisabled]}
+                  onPress={confirmOrder}
                   disabled={submitting}
                   activeOpacity={0.8}
                 >
                   {submitting ? (
                     <ActivityIndicator color="#FFFFFF" size="small" />
                   ) : (
-                    <Text style={styles.modalConfirmBtnText}>Oui, envoyer</Text>
+                    <Text style={styles.modalConfirmBtnText}>
+                      {error ? "Réessayer" : "Oui, envoyer"}
+                    </Text>
                   )}
                 </TouchableOpacity>
               </View>
@@ -1444,6 +1544,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "600",
     color: "#B91C1C",
+  },
+  errorRetryText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#B91C1C",
+    textDecorationLine: "underline",
+  },
+  refreshErrorBox: {
+    marginBottom: 0,
+  },
+  modalErrorBox: {
+    width: "100%",
+    marginTop: 12,
+  },
+  loadErrorWrapper: {
+    flex: 1,
   },
 
   /* Écran de Succès */

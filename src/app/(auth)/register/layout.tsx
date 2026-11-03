@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
+import { NOINDEX_ROBOTS } from "@/lib/site";
 
 export const metadata: Metadata = {
   title: "Créer un compte",
   description:
     "Rejoignez Dabari, la plateforme de la diaspora africaine. Commandez auprès de traiteurs d'exception ou devenez transporteur GP certifié.",
+  robots: NOINDEX_ROBOTS,
 };
 
 export default function RegisterLayout({

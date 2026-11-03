@@ -1,4 +1,4 @@
-import React, { useCallback, useState, useMemo } from "react";
+import React, { useCallback, useState, useMemo, useRef } from "react";
 import {
   StyleSheet,
   Text,
@@ -10,14 +10,16 @@ import {
   Image,
   ActivityIndicator,
   Modal,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../../utils/storage";
 import { GpListing } from "../../utils/types/gp";
-import { apiFetch } from "../../utils/api";
+import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../../utils/api";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
+import LoadErrorState from "../../components/LoadErrorState";
 
 const destination = [
   { label: "Tout voir", value: "tout", icon: "globe-outline" },
@@ -47,45 +49,66 @@ export default function GpScreen() {
   const [showDestinationModal, setShowDestinationModal] = useState(false);
   const [sortByDistance, setSortByDistance] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [retrying, setRetrying] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [error, setError] = useState("");
+  const [errorOffline, setErrorOffline] = useState(false);
+  // Vrai dès qu'une liste a été reçue : un échec d'actualisation la laisse alors affichée
+  const [hasLoaded, setHasLoaded] = useState(false);
+  const hasLoadedRef = useRef(false);
   const [gp, setGp] = useState<GpListing[]>([]);
+
+  // `silent` : actualisation (retour sur l'écran, tirer pour rafraîchir, réessai) sans remplacer la
+  // liste affichée par l'indicateur de chargement.
+  const loadListings = useCallback(async (silent = false) => {
+    if (!silent) setIsLoading(true);
+    try {
+      const token = await getSecureToken("token");
+      setIsLoggedIn(Boolean(token));
+
+      const response = await apiFetch("/gp");
+      const data = await response.json();
+      if (!response.ok) {
+        setError(getApiErrorMessage(data, "Erreur lors de la récupération des GP"));
+        setErrorOffline(false);
+        return;
+      }
+      setGp(data.data?.gp || []);
+      hasLoadedRef.current = true;
+      setHasLoaded(true);
+      setError("");
+    } catch (err) {
+      setError(
+        getErrorMessage(err, "Impossible de contacter le serveur. Vérifiez votre connexion."),
+      );
+      setErrorOffline(isNetworkError(err));
+    } finally {
+      setIsLoading(false);
+      setRefreshing(false);
+      setRetrying(false);
+    }
+  }, []);
 
   useFocusEffect(
     useCallback(() => {
-      const load = async () => {
-        setIsLoading(true);
-        setError("");
-        const token = await getSecureToken("token");
-        if (token) {
-          setIsLoggedIn(true);
-        } else {
-          setIsLoggedIn(false);
-        }
-
-        try {
-          const response = await apiFetch("/gp");
-          const data = await response.json();
-          if (!response.ok) {
-            setError(
-              data.error ||
-                data.message ||
-                "Erreur lors de la récupération des GP",
-            );
-            return;
-          }
-          setGp(data.data.gp || []);
-        } catch (error) {
-          setError(
-            "Impossible de contacter le serveur. Vérifiez votre connexion.",
-          );
-        } finally {
-          setIsLoading(false);
-        }
-      };
-      load();
-    }, []),
+      // Premier affichage : indicateur de chargement ; retours suivants : actualisation discrète
+      loadListings(hasLoadedRef.current);
+    }, [loadListings]),
   );
+
+  const handleRefresh = () => {
+    setRefreshing(true);
+    loadListings(true);
+  };
+
+  const handleRetry = () => {
+    setRetrying(true);
+    loadListings(true);
+  };
+
+  // Chargement impossible sans aucune liste reçue : ni compteur ni « aucun trajet »
+  const showLoadError = Boolean(error) && !hasLoaded;
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return "";
@@ -174,7 +197,7 @@ export default function GpScreen() {
   return (
     <View style={styles.topGreenWrapper}>
       <SafeAreaView style={styles.container} edges={["top"]}>
-        <StatusBar barStyle="light-content" backgroundColor="#0B3B24" />
+        <StatusBar barStyle="light-content" />
 
         {/* Header Vert Compact */}
         <View style={styles.headerCard}>
@@ -329,13 +352,37 @@ export default function GpScreen() {
           style={styles.mainScrollView}
           contentContainerStyle={[styles.scrollContent, { paddingBottom: 140 }]}
           extraScrollHeight={140}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={handleRefresh}
+              tintColor="#1D6B45"
+              colors={["#1D6B45"]}
+            />
+          }
         >
-          {/*  Erreur Réseau / Serveur */}
-          {Boolean(error) && (
-            <View style={styles.errorBanner}>
-              <Ionicons name="alert-circle" size={20} color="#B91C1C" />
-              <Text style={styles.errorBannerText}>{error}</Text>
-            </View>
+          {/*  Actualisation échouée : les annonces déjà chargées restent affichées */}
+          {Boolean(error) && hasLoaded && (
+            <TouchableOpacity
+              style={styles.errorBanner}
+              onPress={handleRetry}
+              disabled={retrying}
+              activeOpacity={0.8}
+            >
+              <Ionicons
+                name={errorOffline ? "cloud-offline-outline" : "alert-circle"}
+                size={20}
+                color="#B91C1C"
+              />
+              <Text style={styles.errorBannerText}>
+                {`Actualisation impossible : ${error}`}
+              </Text>
+              {retrying ? (
+                <ActivityIndicator size="small" color="#B91C1C" />
+              ) : (
+                <Text style={styles.errorBannerRetry}>Réessayer</Text>
+              )}
+            </TouchableOpacity>
           )}
           {/* Banner Sécurité */}
           <View style={styles.securityBanner}>
@@ -373,10 +420,12 @@ export default function GpScreen() {
               </Text>
             </TouchableOpacity>
 
-            <Text style={styles.countText}>
-              {filteredGp.length} GP{" "}
-              {filteredGp.length > 1 ? "disponibles" : "disponible"}
-            </Text>
+            {!isLoading && !showLoadError && (
+              <Text style={styles.countText}>
+                {filteredGp.length} GP{" "}
+                {filteredGp.length > 1 ? "disponibles" : "disponible"}
+              </Text>
+            )}
           </View>
 
           {isLoading ? (
@@ -386,6 +435,15 @@ export default function GpScreen() {
                 Chargement des annonces GP...
               </Text>
             </View>
+          ) : showLoadError ? (
+            <LoadErrorState
+              title="Annonces GP indisponibles"
+              message={error}
+              offline={errorOffline}
+              retrying={retrying}
+              onRetry={handleRetry}
+              style={styles.loadErrorState}
+            />
           ) : filteredGp.length === 0 ? (
             <View style={styles.emptyContainer}>
               <Ionicons name="airplane-outline" size={48} color="#94A3B8" />
@@ -975,6 +1033,15 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     color: "#B91C1C",
+  },
+  errorBannerRetry: {
+    fontSize: 13,
+    fontWeight: "800",
+    color: "#B91C1C",
+    textDecorationLine: "underline",
+  },
+  loadErrorState: {
+    paddingHorizontal: 0,
   },
 
   /* Sécurité Banner */

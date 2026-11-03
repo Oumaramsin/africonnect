@@ -5,7 +5,7 @@ class PaypalController {
     try {
       return res.status(200).json({ message: "PayPal createOrder stub endpoint" });
     } catch (error: any) {
-      return res.status(500).json({ message: error.message });
+      return res.status(500).json({ message: "Erreur serveur." });
     }
   };
 
@@ -13,7 +13,7 @@ class PaypalController {
     try {
       return res.status(200).json({ message: "PayPal captureOrder stub endpoint" });
     } catch (error: any) {
-      return res.status(500).json({ message: error.message });
+      return res.status(500).json({ message: "Erreur serveur." });
     }
   };
 }
