@@ -14,6 +14,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import { openNotificationTarget } from "../utils/notificationRoutes";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
 import { apiFetch } from "../utils/api";
@@ -233,49 +234,8 @@ export default function NotificationsScreen() {
       handleMarkAsRead(notif.id);
     }
 
-    // 2. Navigation contextuelle basée sur data
-    const data = notif.data || {};
-
-    if (data.commande_id) {
-      router.push({
-        pathname: "/commandes",
-        params: { tab: "traiteur", commande_id: data.commande_id },
-      });
-      return;
-    }
-
-    if (data.order_id) {
-      router.push({
-        pathname: "/commandes",
-        params: { tab: "traiteur", sub: "plats" },
-      });
-      return;
-    }
-
-    if (data.request_id || data.listing_id) {
-      router.push({
-        pathname: "/commandes",
-        params: { tab: "gp" },
-      });
-      return;
-    }
-
-    if (data.proposalId || data.requestId) {
-      router.push({
-        pathname: "/commandes",
-        params: { tab: "traiteur", sub: "mes_demandes" },
-      });
-      return;
-    }
-
-    // Si alerte sécurité admin
-    if (notif.type === "security_alert") {
-      router.push("/admin" as any);
-      return;
-    }
-
-    // Fallback par défaut vers l'espace commandes
-    router.push("/commandes");
+    // 2. Navigation contextuelle (même logique que l'ouverture d'une notification push)
+    openNotificationTarget({ type: notif.type, data: notif.data });
   };
 
   return (

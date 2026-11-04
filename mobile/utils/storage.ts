@@ -1,5 +1,8 @@
-import { Platform } from "react-native";
+import { DeviceEventEmitter, Platform } from "react-native";
 import * as SecureStore from "expo-secure-store";
+
+/** Émis à chaque ouverture de session (jeton d'authentification enregistré), quel que soit l'écran. */
+export const SESSION_STARTED_EVENT = "dabari_session_started";
 
 export async function saveSecureToken(key: string, value: string): Promise<void> {
   if (Platform.OS === "web") {
@@ -11,6 +14,8 @@ export async function saveSecureToken(key: string, value: string): Promise<void>
   } else {
     await SecureStore.setItemAsync(key, value);
   }
+  // Connexion, inscription ou réinitialisation : l'appareil s'inscrit aux notifications push
+  if (key === "token") DeviceEventEmitter.emit(SESSION_STARTED_EVENT);
 }
 
 export async function getSecureToken(key: string): Promise<string | null> {

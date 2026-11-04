@@ -5,6 +5,7 @@ import { View } from "react-native";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import BottomNav from "../components/BottomNav";
 import NetworkBanner from "../components/NetworkBanner";
+import PushNotificationsManager from "../components/PushNotificationsManager";
 
 export default function RootLayout() {
   return (
@@ -26,6 +27,7 @@ export default function RootLayout() {
         />
         <BottomNav />
         <NetworkBanner />
+        <PushNotificationsManager />
       </View>
     </SafeAreaProvider>
   );

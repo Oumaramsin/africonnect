@@ -10,6 +10,7 @@ import gpRouter from "./routes/gp";
 import adminRouter from "./routes/admin";
 import uploadRouter from "./routes/upload";
 import notificationRouter from "./routes/notification";
+import pushTokensRouter from "./routes/pushTokens";
 
 import { generalLimiter, authLimiter, uploadLimiter } from "./middlewares/rateLimiter";
 import AuthMiddleware from "./middlewares/authMiddleware";
@@ -115,6 +116,7 @@ app.use("/api/commande", commandeRouter);
 app.use("/api/gp", gpRouter);
 app.use("/api/admin", adminRouter);
 app.use("/api/notifications", notificationRouter);
+app.use("/api/push-tokens", pushTokensRouter);
 
 // Health Check Endpoint
 app.get("/api/health", async (req, res) => {

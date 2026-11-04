@@ -28,7 +28,7 @@
       },
       "package": "com.dabari.app",
       "permissions": [
-        "READ_EXTERNAL_STORAGE"
+        "android.permission.READ_EXTERNAL_STORAGE"
       ],
       "blockedPermissions": [
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -65,7 +65,25 @@
           "resizeMode": "contain",
           "backgroundColor": "#FFFFFF"
         }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/notification-icon.png",
+          "color": "#1D6B45",
+          "defaultChannel": "default"
+        }
       ]
-    ]
+    ],
+    "extra": {
+      "router": {
+        "asyncRoutes": {
+          "web": true
+        }
+      },
+      "eas": {
+        "projectId": "36d984d3-05dc-4bfb-a365-fd4b147bba24"
+      }
+    }
   }
 }

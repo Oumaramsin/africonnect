@@ -1,3 +1,12 @@
 {
-  "expo": {}
+  "expo": {
+    "extra": {
+      "eas": {
+        "projectId": "36d984d3-05dc-4bfb-a365-fd4b147bba24"
+      }
+    },
+    "android": {
+      "package": "com.ramsindabari.dabari"
+    }
+  }
 }

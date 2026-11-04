@@ -19,7 +19,8 @@ model User {
   created_at           DateTime  @default(now()) @db.Timestamptz(6)
 
   // Relations
-  profile Profile?
+  profile     Profile?
+  push_tokens PushToken[]
 
   @@map("users")
 }
@@ -309,4 +310,21 @@ model TraiteurProposal {
   @@index([traiteur_id])
   @@index([status])
   @@map("traiteur_proposals")
+}
+
+/// Jetons de notification push (Expo) des appareils mobiles connectés : un appareil = un jeton,
+/// rattaché au dernier compte qui s'y est connecté. Supprimés avec le compte.
+model PushToken {
+  id         String   @id @default(uuid()) @db.Uuid
+  user_id    String   @db.Uuid
+  token      String   @unique
+  platform   String?
+  created_at DateTime @default(now()) @db.Timestamptz(6)
+  updated_at DateTime @default(now()) @updatedAt @db.Timestamptz(6)
+
+  // Relations
+  user User @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@index([user_id])
+  @@map("push_tokens")
 }

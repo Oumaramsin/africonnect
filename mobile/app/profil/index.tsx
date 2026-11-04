@@ -17,6 +17,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { clearUserSession, getSecureToken } from "../../utils/storage";
+import { unregisterPushNotifications } from "../../utils/pushNotifications";
 import {
   apiFetch,
   getApiErrorMessage,
@@ -166,6 +167,8 @@ export default function ProfilScreen() {
 
   async function disconnect() {
     setShowLogoutModal(false);
+    // Le téléphone ne reçoit plus les notifications push du compte (avant la suppression du jeton)
+    await unregisterPushNotifications();
     // Jeton et panier en cours supprimés : le compte suivant ne retrouve pas ce panier
     await clearUserSession();
     router.replace("/login");
