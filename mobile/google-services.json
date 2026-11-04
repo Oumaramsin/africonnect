@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "133297778726",
+    "project_id": "dabari-pro",
+    "storage_bucket": "dabari-pro.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:133297778726:android:e2d6e340e045399db4b6e7",
+        "android_client_info": {
+          "package_name": "com.dabari.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD9s_20DCPHXS6Bzp6cF-PTbeMm8Q05T0c"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
