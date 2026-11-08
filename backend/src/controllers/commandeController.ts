@@ -9,10 +9,9 @@ import {
   getAuthUserId,
   isUserAdmin,
   isValidUUID,
-  ACOMPTE_MAX_POURCENTAGE,
-  ACOMPTE_TYPES,
   COMMANDE_TRAITEUR_STATUS,
   DevisConditionsInput,
+  parseDevisConditionsInput,
   ORDER_PLAT_STATUS,
   GP_REQUEST_STATUS,
 } from "../utils/types";
@@ -493,60 +492,6 @@ const mapDevisErrorToStatus = (error: any): number => {
 const sendDevisError = (res: Response, error: unknown, fallback: string) =>
   sendErrorResponse(res, error, fallback, mapDevisErrorToStatus(error));
 
-const DEVIS_TEXT_MAX_LENGTH = 3000;
-
-/**
- * Conditions envoyées par le traiteur (JSON sérialisé, ou texte libre des anciennes versions) :
- * seuls le texte, le type et le pourcentage d'acompte sont retenus, le reste est ignoré.
- */
-const parseDevisConditionsInput = (raw: string): { value?: DevisConditionsInput; error?: string } => {
-  const trimmed = raw.trim();
-  if (!trimmed.startsWith("{")) {
-    return trimmed.length > DEVIS_TEXT_MAX_LENGTH
-      ? { error: "Le texte des conditions ne doit pas dépasser 3 000 caractères." }
-      : { value: { texte: trimmed } };
-  }
-
-  let parsed: any;
-  try {
-    parsed = JSON.parse(trimmed);
-  } catch {
-    return { error: "Les conditions du devis sont illisibles." };
-  }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    return { error: "Les conditions du devis sont illisibles." };
-  }
-
-  const value: DevisConditionsInput = {};
-  if (parsed.texte !== undefined && parsed.texte !== null) {
-    if (typeof parsed.texte !== "string" || parsed.texte.length > DEVIS_TEXT_MAX_LENGTH) {
-      return { error: "Le texte des conditions doit être un texte de 3 000 caractères maximum." };
-    }
-    value.texte = parsed.texte.trim();
-  }
-  if (parsed.acompte_type !== undefined && parsed.acompte_type !== null) {
-    if (!ACOMPTE_TYPES.includes(parsed.acompte_type)) {
-      return { error: "Type d'acompte invalide (aucun, obligatoire ou optionnel)." };
-    }
-    value.acompte_type = parsed.acompte_type;
-  }
-  // Le pourcentage est ignoré (forcé à 0) quand aucun acompte n'est demandé
-  const rawPourcentage = parsed.acompte_pourcentage;
-  if (value.acompte_type !== "aucun" && rawPourcentage !== undefined && rawPourcentage !== null && rawPourcentage !== "") {
-    const pourcentage =
-      typeof rawPourcentage === "number"
-        ? rawPourcentage
-        : typeof rawPourcentage === "string"
-          ? Number(rawPourcentage.trim().replace(",", "."))
-          : NaN;
-    if (!Number.isFinite(pourcentage) || pourcentage < 0 || pourcentage > ACOMPTE_MAX_POURCENTAGE) {
-      return { error: `Le pourcentage d'acompte doit être compris entre 0 et ${ACOMPTE_MAX_POURCENTAGE} %.` };
-    }
-    value.acompte_pourcentage = pourcentage;
-  }
-  return { value };
-};
-
 /** Vrai si la valeur est fournie mais n'est pas une chaîne (tableau, objet, nombre...). */
 const isNonStringValue = (value: unknown) => value !== undefined && value !== null && typeof value !== "string";
 
@@ -766,12 +711,13 @@ export const payerAcompteCommandeTraiteurDevisController = async (
     if (
       action !== "verser" &&
       action !== "refuser_acompte" &&
-      action !== "annuler_reglement"
+      action !== "annuler_reglement" &&
+      action !== "contester_acompte"
     ) {
       return res.status(400).json({
         success: false,
         error:
-          "Action d'acompte invalide. Valeurs acceptées : 'verser' ou 'refuser_acompte'.",
+          "Action d'acompte invalide. Valeurs acceptées : 'verser', 'refuser_acompte', 'annuler_reglement' ou 'contester_acompte'.",
       });
     }
 
@@ -787,13 +733,17 @@ export const payerAcompteCommandeTraiteurDevisController = async (
       data: { commande },
       message:
         outcome === "verse"
-          ? "Acompte consigné sous séquestre Dabari avec succès."
+          ? "Règlement de l'acompte enregistré : le traiteur en est informé."
           : outcome === "jour_j"
           ? "Choix de règlement sans acompte enregistré."
           : outcome === "annule"
           ? "Statut de l'acompte réinitialisé."
+          : outcome === "conteste"
+          ? "Acompte signalé comme non reçu : le client est prévenu."
           : action === "verser"
           ? "L'acompte de ce devis est déjà enregistré."
+          : action === "contester_acompte"
+          ? "L'acompte n'est pas déclaré réglé : il n'y a rien à signaler."
           : "Aucune modification : ce choix est déjà enregistré.",
     });
   } catch (error: any) {

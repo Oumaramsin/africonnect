@@ -77,7 +77,7 @@ export default async function OpengraphImage() {
             Traiteurs africains & transport de colis GP
           </div>
           <div style={{ fontSize: 30, marginTop: 20, color: "rgba(255, 255, 255, 0.82)", lineHeight: 1.3 }}>
-            La plateforme de confiance de la diaspora africaine, avec paiement sous séquestre.
+            La plateforme de confiance de la diaspora africaine : traiteurs et colis GP.
           </div>
           <div style={{ fontSize: 30, marginTop: 36, color: "#FBBF24" }}>www.dabari.fr</div>
         </div>

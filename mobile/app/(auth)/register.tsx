@@ -100,8 +100,8 @@ export default function RegisterScreen() {
         setError(getApiErrorMessage(data, "Erreur lors de l'inscription."));
         return;
       }
-      // Inscription par e-mail : étape du code, y compris quand l'inscription est rejouée pour un
-      // compte pas encore vérifié dont le code est toujours valide (l'API répond alors par un succès).
+      // Inscription par e-mail avec vérification activée côté API : étape du code, y compris quand
+      // l'inscription est rejouée pour un compte pas encore vérifié dont le code est toujours valide.
       if (method === "email" && data.requiresVerification !== false) {
         setInfoMessage(
           typeof data.message === "string" && data.message
@@ -109,6 +109,12 @@ export default function RegisterScreen() {
             : "Un code de vérification à 6 chiffres a été envoyé à votre adresse e-mail.",
         );
         setVerifyStep(true);
+      } else if (typeof data.token === "string" && data.token) {
+        // Compte actif d'emblée (vérification e-mail désactivée, ou inscription par téléphone) :
+        // l'API a ouvert la session, comme après une connexion
+        await saveSecureToken("token", data.token);
+        navigating = true;
+        router.replace("/accueil");
       } else {
         navigating = true;
         router.replace("/login");

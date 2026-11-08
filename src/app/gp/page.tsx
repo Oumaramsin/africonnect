@@ -10,7 +10,7 @@ export const revalidate = 60;
 export const metadata: Metadata = pageMetadata({
   title: "GP : transport de colis international sécurisé",
   description:
-    "Envoyez vos colis et bagages entre l'Afrique (Sénégal, Côte d'Ivoire, Cameroun...) et l'Europe avec des voyageurs GP vérifiés. Tarifs au kilo transparents et paiement sous séquestre.",
+    "Envoyez vos colis et bagages entre l'Afrique (Sénégal, Côte d'Ivoire, Cameroun...) et l'Europe avec des voyageurs GP vérifiés. Tarifs au kilo transparents, paiement direct au voyageur.",
   path: "/gp",
 });
 

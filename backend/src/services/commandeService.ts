@@ -2045,18 +2045,20 @@ export const signCommandeTraiteurDevis = async (
 };
 
 /** Effet d'une action d'acompte : `inchange` quand l'état demandé était déjà en place. */
-export type AcompteOutcome = "verse" | "jour_j" | "annule" | "inchange";
+export type AcompteOutcome = "verse" | "jour_j" | "annule" | "conteste" | "inchange";
 
 /**
- * Gestion déclarative de l'acompte par le client (ou un administrateur) : aucun paiement réel
- * n'est encaissé par l'API. La référence de transaction est toujours générée par le serveur et
- * une action sans effet (déjà réglé, choix déjà enregistré) ne notifie personne.
+ * Gestion déclarative de l'acompte : aucun paiement réel n'est encaissé par l'API. Le client (ou un
+ * administrateur) déclare l'acompte réglé, choisit le règlement le jour J ou remet en attente ; le
+ * traiteur du devis (ou un administrateur) peut signaler qu'il n'a pas reçu un acompte déclaré réglé
+ * (« contester_acompte »), y compris sur un devis signé par les deux. La référence de transaction est
+ * toujours générée par le serveur et une action sans effet ne notifie personne.
  */
 export const payerAcompteCommandeTraiteurDevis = async (
   commandeId: string,
   userId: string,
   isAdmin: boolean,
-  action: "verser" | "refuser_acompte" | "annuler_reglement",
+  action: "verser" | "refuser_acompte" | "annuler_reglement" | "contester_acompte",
 ) => {
   return await db.$transaction(async (tx) => {
     const responseInclude = {
@@ -2074,8 +2076,14 @@ export const payerAcompteCommandeTraiteurDevis = async (
 
     // Seul le client (qui règle l'acompte) ou un administrateur peut changer le statut de l'acompte :
     // le traiteur ne doit pas pouvoir déclarer payé ou réinitialiser un acompte à la place du client.
+    // Seule exception : le traiteur du devis signale un acompte déclaré réglé qu'il n'a pas reçu.
     const isClient = commande.client_id === userId;
-    if (!isClient && !isAdmin) {
+    const isTraiteurOfDevis = Boolean(commande.traiteur?.user_id) && commande.traiteur?.user_id === userId;
+    if (action === "contester_acompte") {
+      if (!isTraiteurOfDevis && !isAdmin) {
+        throw new Error("Seul le traiteur de ce devis peut signaler un acompte non reçu.");
+      }
+    } else if (!isClient && !isAdmin) {
       throw new Error("Seul le client peut gérer le règlement de l'acompte.");
     }
 
@@ -2095,7 +2103,18 @@ export const payerAcompteCommandeTraiteurDevis = async (
     const next: DevisConditionsMetadata = { ...meta };
     let outcome: AcompteOutcome = "inchange";
 
-    if (action === "verser") {
+    if (action === "contester_acompte") {
+      // Acompte déjà « à régler » (double clic, relance, client revenu en arrière) : rien à signaler
+      if (!meta.acompte_paye) {
+        return { commande, outcome };
+      }
+      next.acompte_paye = false;
+      next.acompte_paye_at = null;
+      next.acompte_transaction_ref = null;
+      next.acompte_choix_jour_j = false;
+      next.acompte_conteste_at = new Date().toISOString();
+      outcome = "conteste";
+    } else if (action === "verser") {
       // Déjà réglé (double clic, relance) : commande renvoyée telle quelle, sans notification ni e-mail
       if (meta.acompte_paye) {
         return { commande, outcome };
@@ -2106,11 +2125,13 @@ export const payerAcompteCommandeTraiteurDevis = async (
       next.acompte_paye = true;
       next.acompte_paye_at = new Date().toISOString();
       // Référence générée par le serveur : celle éventuellement envoyée par le client est ignorée
-      next.acompte_transaction_ref = `DAB-SEC-${Date.now().toString(36).toUpperCase()}-${crypto
+      next.acompte_transaction_ref = `DAB-ACP-${Date.now().toString(36).toUpperCase()}-${crypto
         .randomBytes(3)
         .toString("hex")
         .toUpperCase()}`;
       next.acompte_choix_jour_j = false;
+      // Nouvelle déclaration après un signalement du traiteur : le signalement est clos
+      next.acompte_conteste_at = null;
       outcome = "verse";
     } else if (meta.acompte_paye) {
       // « refuser_acompte » est aussi envoyé par les applications pour annuler le règlement déclaré
@@ -2162,41 +2183,51 @@ export const payerAcompteCommandeTraiteurDevis = async (
       include: responseInclude,
     });
 
-    const recipientUserId = isClient ? commande.traiteur?.user_id : commande.client_id;
+    // Signalement du traiteur : le client est prévenu ; sinon, l'autre partie que l'auteur de l'action.
+    // La notification fait partie de la transaction (le push ne part qu'après validation) : si elle
+    // échoue, l'action est annulée plutôt que laissée sans prévenir personne.
+    const recipientUserId =
+      outcome === "conteste" ? commande.client_id : isClient ? commande.traiteur?.user_id : commande.client_id;
     if (recipientUserId) {
-      try {
-        const montant = next.acompte_montant || 0;
-        await tx.notification.create({
-          data: {
-            user_id: recipientUserId,
-            type:
-              outcome === "verse"
-                ? "devis_acompte_verse"
-                : outcome === "jour_j"
-                ? "devis_acompte_refuse"
-                : "devis_acompte_annule",
-            titre:
-              outcome === "verse"
-                ? "Acompte sous séquestre validé !"
-                : outcome === "jour_j"
-                ? "Règlement prévu le jour J"
-                : "Règlement d'acompte réinitialisé",
-            message:
-              outcome === "verse"
-                ? `${isClient ? "Le client" : "Le traiteur"} a validé le règlement de l'acompte (${montant} €) sous séquestre Dabari. Prestation confirmée !`
-                : outcome === "jour_j"
-                ? `${isClient ? "Le client" : "Le traiteur"} a convenu d'un règlement du solde le jour de l'événement.`
-                : "Le statut de l'acompte a été réinitialisé en attente.",
-            data: {
-              commande_id: commandeId,
-              acompte_montant: montant,
-              action,
-            },
-          },
-        });
-      } catch (notifErr) {
-        console.error("Erreur notification acompte:", notifErr);
-      }
+      const montant = next.acompte_montant || 0;
+      const auteur = isClient ? "Le client" : "Le traiteur";
+      const dateEvenement = commande.date_evenement
+        ? new Date(commande.date_evenement).toLocaleDateString("fr-FR")
+        : null;
+      const notice: Record<Exclude<AcompteOutcome, "inchange">, { type: string; titre: string; message: string }> = {
+        verse: {
+          type: "devis_acompte_verse",
+          titre: "Acompte déclaré réglé",
+          message: `${auteur} indique avoir réglé l'acompte de ${montant} € directement auprès de vous. Pensez à vérifier sa bonne réception.`,
+        },
+        jour_j: {
+          type: "devis_acompte_refuse",
+          titre: "Règlement prévu le jour J",
+          message: `${auteur} a convenu d'un règlement du solde le jour de l'événement.`,
+        },
+        conteste: {
+          type: "devis_acompte_conteste",
+          titre: "Acompte non reçu par le traiteur",
+          message: `${commande.traiteur?.name || "Le traiteur"} indique ne pas avoir reçu l'acompte de ${montant} € que vous avez déclaré réglé${
+            dateEvenement ? ` pour l'événement du ${dateEvenement}` : ""
+          }. Vérifiez votre règlement avec lui ; vous pourrez le déclarer de nouveau une fois réglé.`,
+        },
+        annule: {
+          type: "devis_acompte_annule",
+          titre: "Règlement d'acompte réinitialisé",
+          message: "Le statut de l'acompte a été réinitialisé en attente.",
+        },
+      };
+      const { type, titre, message } = notice[outcome as Exclude<AcompteOutcome, "inchange">];
+      await tx.notification.create({
+        data: {
+          user_id: recipientUserId,
+          type,
+          titre,
+          message,
+          data: { commande_id: commandeId, acompte_montant: montant, action },
+        },
+      });
     }
 
     // Si acompte versé, envoyer email au traiteur

@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState, useCallback, useRef } from "react";
+import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   StyleSheet,
   Text,
@@ -11,15 +11,17 @@ import {
   ActivityIndicator,
   Modal,
   RefreshControl,
+  DeviceEventEmitter,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { Traiteur, TraiteurRequest } from "../../utils/types/traiteur";
 import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from "../../utils/api";
 import { getSecureToken } from "../../utils/storage";
-import { showSuccessAlert } from "../../utils/alerts";
 import AppKeyboardScrollView from "../../components/AppKeyboardScrollView";
+import { PROPOSALS_UPDATED_EVENT } from "../../utils/appEvents";
+import { formatEuros, getNegociation, hasPendingCounterOffer } from "../../utils/negociation";
 import LoadErrorState from "../../components/LoadErrorState";
 
 const CUISINE_FILTERS = [
@@ -61,8 +63,12 @@ const getInitials = (name: string): string => {
 
 export default function TraiteurScreen() {
   const router = useRouter();
+  // Ouverture depuis une notification d'offre (contre-proposition...) : onglet des annonces
+  const params = useLocalSearchParams<{ tab?: string }>();
 
-  const [activeTab, setActiveTab] = useState<"traiteurs" | "demandes">("traiteurs");
+  const [activeTab, setActiveTab] = useState<"traiteurs" | "demandes">(
+    params.tab === "demandes" ? "demandes" : "traiteurs",
+  );
   const [traiteurs, setTraiteurs] = useState<Traiteur[]>([]);
   const [requests, setRequests] = useState<TraiteurRequest[]>([]);
   const [loadingTraiteurs, setLoadingTraiteurs] = useState(true);
@@ -95,15 +101,6 @@ export default function TraiteurScreen() {
   // Détection du rôle traiteur & propositions déjà envoyées
   const [isTraiteurUser, setIsTraiteurUser] = useState(false);
   const [sentRequestIds, setSentRequestIds] = useState<string[]>([]);
-
-  // Proposition de devis (si l'utilisateur est traiteur et répond à une demande)
-  const [selectedRequestForProposal, setSelectedRequestForProposal] = useState<TraiteurRequest | null>(null);
-  const [proposedPrice, setProposedPrice] = useState("");
-  const [proposalMessage, setProposalMessage] = useState("");
-  const [sendingProposal, setSendingProposal] = useState(false);
-  const [proposalError, setProposalError] = useState<string | null>(null);
-  // Verrou synchrone contre le double envoi (double appui avant le nouveau rendu)
-  const sendingProposalRef = useRef(false);
 
   // Les annonces ne sont proposées qu'aux traiteurs : les autres restent sur la liste des chefs
   const currentTab = isTraiteurUser ? activeTab : "traiteurs";
@@ -220,6 +217,27 @@ export default function TraiteurScreen() {
     loadAll();
   }, [loadAll]);
 
+  // Retour sur l'écran (après une réponse, un devis envoyé ailleurs) : annonces relues sans écran d'attente
+  const firstFocusRef = useRef(true);
+  useFocusEffect(
+    useCallback(() => {
+      if (firstFocusRef.current) {
+        firstFocusRef.current = false;
+        return;
+      }
+      void loadTraiteurAccess(true);
+    }, [loadTraiteurAccess]),
+  );
+
+  // Devis envoyé depuis l'écran de proposition : annonces et propositions envoyées mises à jour
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(PROPOSALS_UPDATED_EVENT, () => {
+      void fetchSentProposals();
+      void fetchRequests(true);
+    });
+    return () => subscription.remove();
+  }, [fetchSentProposals, fetchRequests]);
+
   // Tirer pour rafraîchir : les listes affichées restent visibles pendant le chargement
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -265,64 +283,81 @@ export default function TraiteurScreen() {
     });
   }, [requests, searchQuery]);
 
-  const openProposalModal = (req: TraiteurRequest) => {
-    setProposalError(null);
-    setSelectedRequestForProposal(req);
+  // Un double appui n'empile pas deux fois le même écran
+  const navLockRef = useRef(false);
+  const navigateOnce = (href: Parameters<typeof router.push>[0]) => {
+    if (navLockRef.current) return;
+    navLockRef.current = true;
+    router.push(href);
+    setTimeout(() => {
+      navLockRef.current = false;
+    }, 800);
   };
 
-  // Fermeture bloquée pendant l'envoi : le résultat doit s'afficher dans la modale
-  const closeProposalModal = () => {
-    if (sendingProposalRef.current) return;
-    setProposalError(null);
-    setSelectedRequestForProposal(null);
+  // Proposition de devis : écran dédié (prix, acompte, détail de l'offre, signature du traiteur). Seul
+  // l'identifiant est transmis : l'écran relit l'annonce auprès de l'API.
+  const openProposalScreen = (req: TraiteurRequest) => {
+    navigateOnce({ pathname: "/traiteur/proposer" as any, params: { requestId: req.id } });
   };
 
-  // Envoi d'une proposition tarifaire par un traiteur
-  const handleSendProposal = async () => {
-    if (!selectedRequestForProposal || sendingProposalRef.current) return;
-    setProposalError(null);
-    const numPrice = parseFloat(proposedPrice.replace(",", "."));
-    if (isNaN(numPrice) || numPrice <= 0) {
-      setProposalError("Veuillez saisir un tarif proposé valide en euros.");
-      return;
-    }
-    if (!proposalMessage.trim()) {
-      setProposalError("Veuillez préciser votre offre ou le menu proposé.");
-      return;
+  // Réponse à une contre-proposition du client : écran dédié (prix maintenu ou nouveau devis)
+  const openNegotiation = (req: TraiteurRequest) => {
+    navigateOnce({ pathname: "/traiteur/negociation" as any, params: { requestId: req.id } });
+  };
+
+  /** Offre déjà envoyée sur une annonce : état, négociation en cours et réponse attendue. */
+  const renderOwnProposalStatus = (req: TraiteurRequest) => {
+    // L'API ne renvoie à un traiteur que sa propre offre sur chaque annonce
+    const own = req.proposals?.[0];
+    const entries = getNegociation(own?.negociation);
+    const lastEntry = entries[entries.length - 1];
+    const price = own ? formatEuros(Number(own.proposed_price)) : null;
+
+    if (own && own.status === "pending" && hasPendingCounterOffer(entries) && lastEntry) {
+      return (
+        <View style={styles.counterBox}>
+          <View style={styles.counterHeader}>
+            <Ionicons name="swap-vertical" size={14} color="#6D28D9" />
+            <Text style={styles.counterTitle}>
+              Contre-proposition : {formatEuros(lastEntry.prix)}
+              <Text style={styles.counterSub}> (votre devis : {price})</Text>
+            </Text>
+          </View>
+          {lastEntry.message ? (
+            <Text style={styles.counterMessage} numberOfLines={3}>
+              « {lastEntry.message} »
+            </Text>
+          ) : null}
+          <TouchableOpacity style={styles.counterBtn} onPress={() => openNegotiation(req)} activeOpacity={0.85}>
+            <Ionicons name="chatbubbles-outline" size={13} color="#FFFFFF" />
+            <Text style={styles.counterBtnText}>Répondre au client</Text>
+          </TouchableOpacity>
+        </View>
+      );
     }
 
-    const requestId = selectedRequestForProposal.id;
-    sendingProposalRef.current = true;
-    setSendingProposal(true);
-    try {
-      // Saisie conservée en cas d'échec : une relance renvoie le même corps (même clé d'idempotence)
-      const res = await apiFetch(`/traiteur/requests/${requestId}/proposals`, {
-        method: "POST",
-        body: JSON.stringify({
-          proposed_price: numPrice,
-          message: proposalMessage.trim(),
-        }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) {
-        // Dont 409 IDEMPOTENCY_IN_PROGRESS : la même proposition est encore en cours de traitement
-        setProposalError(getApiErrorMessage(data, "Erreur lors de l'envoi de la proposition."));
-        return;
-      }
-
-      setSentRequestIds((prev) => [...prev, requestId]);
-      setSelectedRequestForProposal(null);
-      setProposedPrice("");
-      setProposalMessage("");
-      showSuccessAlert("Proposition transmise", "Votre devis a été envoyé à l'organisateur avec succès !");
-      fetchRequests(true);
-    } catch (e) {
-      setProposalError(getErrorMessage(e, "Impossible d'envoyer la proposition."));
-    } finally {
-      sendingProposalRef.current = false;
-      setSendingProposal(false);
+    if (own?.status === "rejected") {
+      return (
+        <View style={styles.ownRequestRow}>
+          <Ionicons name="close-circle-outline" size={15} color="#64748B" />
+          <Text style={styles.ownRequestText}>Le client a décliné votre devis</Text>
+        </View>
+      );
     }
+
+    const text = !own
+      ? "Votre devis a été transmis à l'organisateur"
+      : lastEntry?.type === "prix_maintenu"
+        ? `Prix maintenu à ${price} : en attente du client`
+        : lastEntry?.type === "nouveau_devis"
+          ? `Nouveau devis de ${price} transmis au client`
+          : `Votre devis de ${price} a été transmis à l'organisateur`;
+    return (
+      <View style={styles.alreadySentRow}>
+        <Ionicons name="checkmark-circle" size={15} color="#059669" />
+        <Text style={styles.alreadySentText}>{text}</Text>
+      </View>
+    );
   };
 
   return (
@@ -488,7 +523,7 @@ export default function TraiteurScreen() {
             </View>
             <View style={styles.reassuranceItem}>
               <Ionicons name="lock-closed" size={12} color="#1D6B45" />
-              <Text style={styles.reassuranceText}>Séquestre Dabari</Text>
+              <Text style={styles.reassuranceText}>Devis signé en ligne</Text>
             </View>
           </View>
 
@@ -779,15 +814,17 @@ export default function TraiteurScreen() {
                     </View>
 
                     {/* Action ou Statut traiteur */}
-                    {sentRequestIds.includes(req.id) ? (
-                      <View style={styles.alreadySentRow}>
-                        <Ionicons name="checkmark-circle" size={15} color="#059669" />
-                        <Text style={styles.alreadySentText}>Votre devis a été transmis à l'organisateur</Text>
+                    {(req.proposals?.length ?? 0) > 0 || sentRequestIds.includes(req.id) ? (
+                      renderOwnProposalStatus(req)
+                    ) : req.is_own ? (
+                      <View style={styles.ownRequestRow}>
+                        <Ionicons name="person-circle-outline" size={15} color="#64748B" />
+                        <Text style={styles.ownRequestText}>Votre annonce : vous ne pouvez pas y répondre</Text>
                       </View>
                     ) : (
                       <TouchableOpacity
                         style={styles.proposeBtn}
-                        onPress={() => openProposalModal(req)}
+                        onPress={() => openProposalScreen(req)}
                         activeOpacity={0.85}
                       >
                         <Ionicons name="send" size={13} color="#FFFFFF" />
@@ -800,89 +837,6 @@ export default function TraiteurScreen() {
             )
           )}
         </AppKeyboardScrollView>
-
-        {/* ── 4. MODALE DE RÉPONSE / PROPOSITION TRAITEUR ── */}
-        {selectedRequestForProposal && (
-          <Modal
-            transparent
-            animationType="slide"
-            visible={Boolean(selectedRequestForProposal)}
-            onRequestClose={closeProposalModal}
-          >
-            <View style={styles.modalOverlay}>
-              <View style={styles.modalCard}>
-                <View style={styles.modalHeader}>
-                  <View>
-                    <Text style={styles.modalTitle}>Proposer un Devis</Text>
-                    <Text style={styles.modalSubtitle}>
-                      {selectedRequestForProposal.title ||
-                        `Événement ${selectedRequestForProposal.event_type || ""}`.trim()}
-                    </Text>
-                  </View>
-                  <TouchableOpacity
-                    style={[styles.modalCloseBtn, sendingProposal && styles.btnDisabled]}
-                    onPress={closeProposalModal}
-                    disabled={sendingProposal}
-                  >
-                    <Ionicons name="close" size={20} color="#64748B" />
-                  </TouchableOpacity>
-                </View>
-
-                <View style={styles.modalForm}>
-                  <Text style={styles.modalLabel}>Votre proposition tarifaire (€ TTC) :</Text>
-                  <TextInput
-                    style={styles.modalInput}
-                    keyboardType="numeric"
-                    placeholder="Ex: 1800"
-                    placeholderTextColor="#94A3B8"
-                    value={proposedPrice}
-                    onChangeText={setProposedPrice}
-                  />
-
-                  <Text style={[styles.modalLabel, { marginTop: 10 }]}>Votre message & détails du menu :</Text>
-                  <TextInput
-                    style={[styles.modalInput, { height: 90, textAlignVertical: "top" }]}
-                    multiline
-                    placeholder="Précisez les entrées, plats, desserts, matériel ou service inclus..."
-                    placeholderTextColor="#94A3B8"
-                    value={proposalMessage}
-                    onChangeText={setProposalMessage}
-                  />
-
-                  {/* Erreur affichée dans la modale (et non derrière elle) ; la saisie est conservée */}
-                  {proposalError && (
-                    <View style={styles.modalErrorBox}>
-                      <Ionicons name="alert-circle-outline" size={16} color="#B91C1C" />
-                      <Text style={styles.modalErrorText}>{proposalError}</Text>
-                    </View>
-                  )}
-
-                  <View style={styles.modalActionRow}>
-                    <TouchableOpacity
-                      style={[styles.modalCancelBtn, sendingProposal && styles.btnDisabled]}
-                      onPress={closeProposalModal}
-                      disabled={sendingProposal}
-                    >
-                      <Text style={styles.modalCancelBtnText}>Annuler</Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[styles.modalSubmitBtn, sendingProposal && styles.btnDisabled]}
-                      onPress={handleSendProposal}
-                      disabled={sendingProposal}
-                    >
-                      {sendingProposal ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                      ) : (
-                        <Text style={styles.modalSubmitBtnText}>Transmettre l'offre</Text>
-                      )}
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              </View>
-            </View>
-          </Modal>
-        )}
 
         {/* ── MODALE DE FILTRAGE PAR SPÉCIALITÉ / PAYS (STYLE WEB) ── */}
         <Modal
@@ -1722,6 +1676,43 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#065F46",
   },
+  counterBox: {
+    backgroundColor: "#FAF5FF",
+    borderColor: "#DDD6FE",
+    borderWidth: 1,
+    borderRadius: 12,
+    padding: 10,
+    gap: 6,
+  },
+  counterHeader: { flexDirection: "row", alignItems: "center", gap: 6 },
+  counterTitle: { flex: 1, fontSize: 12.5, fontWeight: "800", color: "#4C1D95" },
+  counterSub: { fontSize: 11.5, fontWeight: "600", color: "#6D28D9" },
+  counterMessage: { fontSize: 12, color: "#334155", fontStyle: "italic", lineHeight: 17 },
+  counterBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    backgroundColor: "#6D28D9",
+    borderRadius: 10,
+    paddingVertical: 9,
+  },
+  counterBtnText: { color: "#FFFFFF", fontSize: 12, fontWeight: "800" },
+  ownRequestRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#F1F5F9",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    marginTop: 12,
+  },
+  ownRequestText: {
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#475569",
+  },
   proposeBtn: {
     flexDirection: "row",
     alignItems: "center",
@@ -1740,106 +1731,5 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "rgba(15, 23, 42, 0.75)",
     justifyContent: "flex-end",
-  },
-  modalCard: {
-    backgroundColor: "#FFFFFF",
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    padding: 20,
-    gap: 14,
-  },
-  modalHeader: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    justifyContent: "space-between",
-  },
-  modalTitle: {
-    fontSize: 16,
-    fontWeight: "900",
-    color: "#0F172A",
-  },
-  modalSubtitle: {
-    fontSize: 12,
-    color: "#64748B",
-    marginTop: 2,
-  },
-  modalCloseBtn: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "#F1F5F9",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalForm: {
-    gap: 8,
-  },
-  modalLabel: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#334155",
-  },
-  modalInput: {
-    backgroundColor: "#F8FAFC",
-    borderColor: "#CBD5E1",
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    fontSize: 13,
-    color: "#0F172A",
-  },
-  modalActionRow: {
-    flexDirection: "row",
-    gap: 10,
-    marginTop: 10,
-  },
-  modalCancelBtn: {
-    flex: 1,
-    backgroundColor: "#E2E8F0",
-    borderRadius: 10,
-    paddingVertical: 11,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalCancelBtnText: {
-    fontSize: 12,
-    fontWeight: "700",
-    color: "#475569",
-  },
-  modalSubmitBtn: {
-    flex: 2,
-    backgroundColor: "#1D6B45",
-    borderRadius: 10,
-    paddingVertical: 11,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  modalSubmitBtnText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "800",
-  },
-  modalErrorBox: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#FEE2E2",
-    borderColor: "#FCA5A5",
-    borderWidth: 1,
-    borderRadius: 10,
-    paddingHorizontal: 12,
-    paddingVertical: 9,
-    marginTop: 6,
-  },
-  modalErrorText: {
-    flex: 1,
-    fontSize: 12,
-    color: "#B91C1C",
-    fontWeight: "600",
-    lineHeight: 16,
-  },
-  btnDisabled: {
-    opacity: 0.6,
   },
 });

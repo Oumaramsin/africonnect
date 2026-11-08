@@ -390,10 +390,10 @@ export default function GpScreen() {
               <Ionicons name="shield-checkmark" size={22} color="#D4870A" />
             </View>
             <View style={{ flex: 1 }}>
-              <Text style={styles.securityTitle}>Paiement 100% Sécurisé</Text>
+              <Text style={styles.securityTitle}>Paiement direct au voyageur</Text>
               <Text style={styles.securitySub}>
-                Vos fonds sont bloqués en toute sécurité jusqu'à la confirmation
-                de livraison du colis.
+                Vous réglez le voyageur directement, selon les modalités
+                convenues ensemble. Dabari ne perçoit aucun fonds.
               </Text>
             </View>
           </View>

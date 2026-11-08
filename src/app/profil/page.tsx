@@ -605,7 +605,7 @@ export default function ProfilPage() {
                       Conditions Générales (CGU)
                     </h3>
                     <p className="text-[11px] text-slate-500">
-                      Cadre légal, cotransportage & séquestre
+                      Cadre légal, cotransportage & paiements
                     </p>
                   </div>
                 </div>

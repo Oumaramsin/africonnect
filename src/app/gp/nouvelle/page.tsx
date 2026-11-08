@@ -370,8 +370,8 @@ export default function NouvelleAnnoncePage() {
               Rentabilisez vos kilos disponibles
             </h1>
             <p className="text-white/85 text-xs sm:text-sm leading-relaxed">
-              Transportez des colis en toute légalité et sécurité. Votre paiement
-              est consigné sous séquestre par Dabari et débloqué à la remise.
+              Transportez des colis en toute légalité et sécurité. Vos expéditeurs
+              vous règlent directement, selon les modalités convenues ensemble.
             </p>
           </div>
 
@@ -840,8 +840,8 @@ export default function NouvelleAnnoncePage() {
         <div className="bg-emerald-50 rounded-2xl p-4 sm:p-5 border border-emerald-100 flex items-center gap-3.5">
           <ShieldCheck size={24} className="text-[#1D6B45] shrink-0" />
           <p className="text-xs sm:text-sm text-emerald-900/90 leading-relaxed">
-            <strong>Garantie Séquestre Dabari :</strong> Vos gains vous sont
-            transférés dès que le destinataire confirme la remise de son colis.
+            <strong>Paiement direct :</strong> vos expéditeurs vous règlent
+            directement ; Dabari ne perçoit aucun fonds.
           </p>
         </div>
 

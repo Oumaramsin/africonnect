@@ -257,7 +257,7 @@ export default function DemandeTraiteurScreen() {
           <View style={styles.reassuranceRow}>
             <View style={styles.reassuranceBadge}>
               <Ionicons name="shield-checkmark" size={12} color="#6EE7B7" />
-              <Text style={styles.reassuranceText}>Séquestre Dabari</Text>
+              <Text style={styles.reassuranceText}>Devis signé en ligne</Text>
             </View>
             <View style={styles.reassuranceBadge}>
               <Ionicons name="restaurant" size={12} color="#FCD34D" />

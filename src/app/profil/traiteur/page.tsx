@@ -30,6 +30,7 @@ import {
   apiErrorMessage,
   authFetch,
   hasSession,
+  invalidateCurrentUser,
   loadErrorMessage,
   sendErrorMessage,
 } from "@/lib/auth";
@@ -272,6 +273,9 @@ export default function TraiteurEspacePage() {
       }
 
       setTraiteur(data.data.traiteur);
+      // Rôle et profil traiteur ont changé : l'utilisateur en cache est relu (onglets traiteur,
+      // blocage des demandes à son propre profil)
+      invalidateCurrentUser();
       setView("profil");
       setProfileImageFile(null);
     } catch (err: unknown) {
@@ -1014,7 +1018,7 @@ export default function TraiteurEspacePage() {
                       className="text-[#1D6B45] shrink-0 mt-0.5"
                     />
                     <span>
-                      Paiements sécurisés et garantis via la plateforme.
+                      Vos clients vous règlent directement ; devis et acomptes sont suivis sur la plateforme.
                     </span>
                   </div>
                 </div>

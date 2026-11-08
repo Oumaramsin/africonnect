@@ -51,6 +51,10 @@ import EditGpModal from "@/components/commandes/EditGpModal";
 import EditTraiteurRequestModal from "@/components/commandes/EditTraiteurRequestModal";
 import ProposalCard from "@/components/commandes/ProposalCard";
 import ConfirmDialog from "@/components/commandes/ConfirmDialog";
+import AcceptProposalModal from "@/components/commandes/AcceptProposalModal";
+import CounterOfferModal from "@/components/commandes/CounterOfferModal";
+import { sortOrdersByPriority, type SortableOrder } from "@/lib/orderPriority";
+import { getNegociation, hasPendingCounterOffer } from "@/lib/negociation";
 import GpTrackingTimeline, {
   getGpStatusLabel,
   getNextGpStatus,
@@ -194,32 +198,13 @@ type GpRequest = {
 
 type Tab = "envoyees" | "receptions" | "recues";
 
-/** Commandes en attente d'abord, puis les plus récentes. */
-const sortOrdersByPendingFirst = <
-  T extends {
-    statut?: string | null;
-    status?: string | null;
-    created_at?: string | null;
-  },
->(
-  items: T[],
-): T[] => {
-  return [...items].sort((a, b) => {
-    const statusA = a.statut || a.status || "";
-    const statusB = b.statut || b.status || "";
-
-    const isPendingA = statusA === "en_attente" || statusA === "pending";
-    const isPendingB = statusB === "en_attente" || statusB === "pending";
-
-    if (isPendingA && !isPendingB) return -1;
-    if (!isPendingA && isPendingB) return 1;
-
-    //tri ordre décroissant
-    const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-    const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-    return dateB - dateA;
-  });
-};
+// Tri par priorité (action attendue, à venir, en attente, passé, annulé) : src/lib/orderPriority.ts
+const sortDevisClient = <T extends SortableOrder>(items: T[]) => sortOrdersByPriority(items, "devis", "client");
+const sortPlatsClient = <T extends SortableOrder>(items: T[]) => sortOrdersByPriority(items, "plat", "client");
+const sortGpClient = <T extends SortableOrder>(items: T[]) => sortOrdersByPriority(items, "gp", "client");
+const sortDevisPro = <T extends SortableOrder>(items: T[]) => sortOrdersByPriority(items, "devis", "pro");
+const sortPlatsPro = <T extends SortableOrder>(items: T[]) => sortOrdersByPriority(items, "plat", "pro");
+const sortGpPro = <T extends SortableOrder>(items: T[]) => sortOrdersByPriority(items, "gp", "pro");
 
 export default function CommandesPage() {
   const [tab, setTab] = useState<Tab>("envoyees");
@@ -254,7 +239,8 @@ export default function CommandesPage() {
   const [proposalActionLoading, setProposalActionLoading] = useState<string | null>(null);
   const [proposalConfirm, setProposalConfirm] = useState<{
     proposal: TraiteurProposal;
-    action: "accept" | "reject";
+    // counter : contre-proposition (prix plus bas) du client
+    action: "accept" | "reject" | "counter";
     eventType: string;
   } | null>(null);
 
@@ -304,25 +290,34 @@ export default function CommandesPage() {
   const [gpStatusError, setGpStatusError] = useState<string | null>(null);
   // Verrous contre la double soumission (posés avant le rendu suivant)
   const proposalActionRef = useRef(false);
+  // Notifications marquées lues à l'ouverture de la page seulement (pas à chaque actualisation, qui
+  // effacerait celles arrivées entre-temps)
+  const notificationsMarkedRef = useRef(false);
+  // Traiteur : contre-propositions de clients qui attendent sa réponse (bandeau vers « Mes propositions »)
+  const [traiteurCounterCount, setTraiteurCounterCount] = useState(0);
   const gpStatusActionRef = useRef(false);
 
-  const loadAll = useCallback(async () => {
+  // Renvoie les commandes envoyées chargées, ou null si le chargement n'a pas abouti
+  const loadAll = useCallback(async (): Promise<CommandeTraiteur[] | null> => {
     if (!hasSession()) {
       router.push("/login");
-      return;
+      return null;
     }
     setRefreshing(true);
     try {
       const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
-      authFetch(`${apiUrl}/notifications/read-all`, {
-        method: "PATCH",
-      })
-        .then(() => {
-          if (typeof window !== "undefined") {
-            window.dispatchEvent(new CustomEvent("notifications-updated"));
-          }
+      if (!notificationsMarkedRef.current) {
+        notificationsMarkedRef.current = true;
+        authFetch(`${apiUrl}/notifications/read-all`, {
+          method: "PATCH",
         })
-        .catch((err) => console.error("Erreur mark-all-as-read:", err));
+          .then(() => {
+            if (typeof window !== "undefined") {
+              window.dispatchEvent(new CustomEvent("notifications-updated"));
+            }
+          })
+          .catch((err) => console.error("Erreur mark-all-as-read:", err));
+      }
 
       const response = await authFetch(
         `${apiUrl}/commande`,
@@ -334,33 +329,56 @@ export default function CommandesPage() {
       );
       if (response.status === 401) {
         router.push("/login");
-        return;
+        return null;
       }
       const res = await response.json();
       if (!response.ok) {
         setLoadError(apiErrorMessage(res, "Erreur de chargement des commandes."));
-        return;
+        return null;
       }
       const profile = res.data?.orders;
       if (!profile) {
         setLoadError("Réponse inattendue du serveur. Réessayez dans un instant.");
-        return;
+        return null;
       }
       setCurrentUserId(profile.id || null);
       // ── 1. Commandes envoyées (Client) ──
-      setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
-      setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
-      setGpEnvoyees(sortOrdersByPendingFirst(profile.gp_requests || []));
+      const sentCommandes: CommandeTraiteur[] = sortDevisClient(profile.commandes || []);
+      setCommandesEnvoyees(sentCommandes);
+      setOrdersEnvoyees(sortPlatsClient(profile.orders || []));
+      setGpEnvoyees(sortGpClient(profile.gp_requests || []));
       // ── 2. Recherches de traiteur (Client) & Devis reçus ──
-      setMyTraiteurRequests(profile.traiteur_requests || []);
+      const requestsList: TraiteurRequest[] = profile.traiteur_requests || [];
+      setMyTraiteurRequests(requestsList);
+      // Fenêtre d'offre ouverte (signature, contre-proposition) : elle affiche la version à jour de l'offre
+      setProposalConfirm((prev) => {
+        if (!prev) return prev;
+        const fresh = requestsList.flatMap((r) => r.proposals || []).find((p) => p.id === prev.proposal.id);
+        return fresh ? { ...prev, proposal: fresh } : prev;
+      });
       // ── 3. Statut & Commandes reçues (Traiteur) ──
       const traiteurData = profile.traiteurs?.[0];
       if (profile.role === "traiteur" || traiteurData) {
         setIsTraiteur(true);
+        // Contre-propositions des clients en attente de réponse : bandeau vers « Mes propositions »
+        authFetch(`${apiUrl}/traiteur/proposals/me`)
+          .then((r) => (r.ok ? r.json() : null))
+          .then((body) => {
+            const sent: TraiteurProposal[] = Array.isArray(body?.data?.proposals) ? body.data.proposals : [];
+            setTraiteurCounterCount(
+              sent.filter(
+                (p) =>
+                  p.status === "pending" &&
+                  p.request?.status === "open" &&
+                  hasPendingCounterOffer(getNegociation(p.negociation)),
+              ).length,
+            );
+          })
+          .catch(() => undefined);
         setCommandesRecues(
-          sortOrdersByPendingFirst(traiteurData?.commandes || []),
+          sortDevisPro(traiteurData?.commandes || []),
         );
-        setOrdersRecues(sortOrdersByPendingFirst(traiteurData?.orders || []));
+        setOrdersRecues(sortPlatsPro(traiteurData?.orders || []));
       }
       // ── 4. Statut & Demandes reçues (GP Voyageur) ──
       const gpListings = profile.gp_listings || [];
@@ -370,13 +388,15 @@ export default function CommandesPage() {
         const allGpRequestsReceived = gpListings.flatMap(
           (l: any) => l.requests || [],
         );
-        setGpRecues(sortOrdersByPendingFirst(allGpRequestsReceived));
+        setGpRecues(sortGpPro(allGpRequestsReceived));
       }
       setLoadError(null);
       setHasLoaded(true);
+      return sentCommandes;
     } catch (error) {
       console.error("Erreur lors de la récupération des commandes:", error);
       setLoadError(loadErrorMessage(error, "Impossible de charger vos commandes."));
+      return null;
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -394,6 +414,7 @@ export default function CommandesPage() {
   async function handleProposalStatus(
     proposal: TraiteurProposal,
     status: "accepted" | "rejected",
+    clientSignature?: string,
   ): Promise<boolean> {
     if (proposalActionRef.current) return false;
     proposalActionRef.current = true;
@@ -408,7 +429,18 @@ export default function CommandesPage() {
           headers: {
             "Content-Type": "application/json",
           },
-          body: JSON.stringify({ status }),
+          // Accepter, c'est signer le devis : signature du client, montant et version lus (refusée si
+          // le traiteur a envoyé un nouveau devis entre-temps, même au même prix)
+          body: JSON.stringify(
+            status === "accepted"
+              ? {
+                  status,
+                  client_signature: clientSignature,
+                  prix_devis_attendu: Number(proposal.proposed_price),
+                  devis_signe_le: proposal.traiteur_signed_at ?? null,
+                }
+              : { status },
+          ),
         },
       );
       if (!res.ok) {
@@ -416,9 +448,24 @@ export default function CommandesPage() {
         setProposalError(
           apiErrorMessage(data, `Erreur lors de ${actionLabel} de la proposition.`),
         );
+        // Offre modifiée entre-temps : la liste (et la fenêtre ouverte) affichent la nouvelle version
+        if (res.status === 409) void loadAll();
         return false;
       }
-      await loadAll();
+      const data = await res.json().catch(() => ({}));
+      const commandeId =
+        status === "accepted" && typeof data?.data?.commande_id === "string"
+          ? (data.data.commande_id as string)
+          : null;
+      const sentCommandes = await loadAll();
+      // Offre acceptée : le devis signé (par les deux parties, sauf ancienne offre non signée par le
+      // traiteur) s'ouvre aussitôt (acompte, impression, PDF). Il reste ensuite dans « Envoyées ».
+      const devis = commandeId ? sentCommandes?.find((c) => c.id === commandeId) : undefined;
+      if (devis) {
+        setTab("envoyees");
+        setIsDevisTraiteurView(false);
+        setSelectedDevisCommande(devis);
+      }
       return true;
     } catch (e: unknown) {
       console.error(`Erreur ${actionLabel} proposition:`, e);
@@ -431,13 +478,54 @@ export default function CommandesPage() {
   }
 
   async function confirmProposalAction() {
-    if (!proposalConfirm) return;
-    const { proposal, action } = proposalConfirm;
-    const done = await handleProposalStatus(
-      proposal,
-      action === "accept" ? "accepted" : "rejected",
-    );
+    if (!proposalConfirm || proposalConfirm.action !== "reject") return;
+    const done = await handleProposalStatus(proposalConfirm.proposal, "rejected");
     if (done) setProposalConfirm(null);
+  }
+
+  async function confirmAcceptProposal(signature: string) {
+    if (!proposalConfirm || proposalConfirm.action !== "accept") return;
+    const done = await handleProposalStatus(proposalConfirm.proposal, "accepted", signature);
+    if (done) setProposalConfirm(null);
+  }
+
+  // Contre-proposition du client (prix plus bas, message facultatif) ; l'erreur reste dans la fenêtre
+  async function confirmCounterOffer(prix: number, message: string) {
+    if (!proposalConfirm || proposalConfirm.action !== "counter" || proposalActionRef.current) return;
+    const proposal = proposalConfirm.proposal;
+    proposalActionRef.current = true;
+    setProposalActionLoading(proposal.id);
+    setProposalError(null);
+    try {
+      const res = await authFetch(
+        `${process.env.NEXT_PUBLIC_API_URL}/traiteur/proposals/${proposal.id}/contre-offre`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            prix,
+            message: message || null,
+            // Refusée si le traiteur a changé son devis entre-temps
+            prix_devis_attendu: Number(proposal.proposed_price),
+          }),
+        },
+      );
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setProposalError(apiErrorMessage(data, "Impossible d'envoyer votre contre-proposition."));
+        // Offre modifiée entre-temps (réponse du traiteur, offre close) : la liste est relue
+        if (res.status === 409) void loadAll();
+        return;
+      }
+      setProposalConfirm(null);
+      void loadAll();
+    } catch (e: unknown) {
+      console.error("Erreur contre-proposition:", e);
+      setProposalError(sendErrorMessage(e, "Erreur réseau lors de l'envoi de votre contre-proposition."));
+    } finally {
+      proposalActionRef.current = false;
+      setProposalActionLoading(null);
+    }
   }
 
   const closeProposalConfirm = () => {
@@ -463,7 +551,7 @@ export default function CommandesPage() {
         return;
       }
       setCommandesRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortDevisPro(
           prev.map((c) =>
             c.id === commande.id ? { ...c, statut: "acceptee" } : c,
           ),
@@ -496,7 +584,7 @@ export default function CommandesPage() {
         return;
       }
       setCommandesRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortDevisPro(
           prev.map((c) =>
             c.id === commande.id
               ? { ...c, statut: "refusee", message_traiteur: message }
@@ -530,7 +618,7 @@ export default function CommandesPage() {
         return;
       }
       setOrdersRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortPlatsPro(
           prev.map((o) => (o.id === order.id ? { ...o, status: "accepted" } : o)),
         ),
       );
@@ -560,7 +648,7 @@ export default function CommandesPage() {
         return;
       }
       setOrdersRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortPlatsPro(
           prev.map((o) => (o.id === order.id ? { ...o, status: "rejected" } : o)),
         ),
       );
@@ -590,7 +678,7 @@ export default function CommandesPage() {
         return;
       }
       setGpRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortGpPro(
           prev.map((r) =>
             r.id === request.id ? { ...r, status: "accepted" } : r,
           ),
@@ -623,7 +711,7 @@ export default function CommandesPage() {
         return;
       }
       setGpRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortGpPro(
           prev.map((r) =>
             r.id === request.id ? { ...r, status: "rejected" } : r,
           ),
@@ -665,14 +753,14 @@ export default function CommandesPage() {
         return;
       }
       setGpRecues((prev) =>
-        sortOrdersByPendingFirst(
+        sortGpPro(
           prev.map((r) =>
             r.id === request.id ? { ...r, status: newStatus } : r,
           ),
         ),
       );
       setGpEnvoyees((prev) =>
-        sortOrdersByPendingFirst(
+        sortGpClient(
           prev.map((r) =>
             r.id === request.id ? { ...r, status: newStatus } : r,
           ),
@@ -790,7 +878,7 @@ export default function CommandesPage() {
           acompteBadge = (
             <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300">
               <CheckCircle2 size={11} className="text-emerald-700" />
-              Acompte consigné ({meta.acompte_montant || 0} €)
+              Acompte déclaré réglé ({meta.acompte_montant || 0} €)
             </span>
           );
         } else if (meta.acompte_montant > 0) {
@@ -1000,6 +1088,20 @@ export default function CommandesPage() {
             </button>
           )}
         </div>
+
+        {isTraiteur && traiteurCounterCount > 0 && (
+          <Link
+            href="/traiteur?tab=mes_propositions"
+            className="relative z-10 flex items-center justify-between gap-3 rounded-2xl bg-violet-50 border border-violet-200 px-4 py-3 text-violet-900 hover:bg-violet-100 transition-colors"
+          >
+            <span className="text-xs sm:text-sm font-bold">
+              {traiteurCounterCount === 1
+                ? "Un client vous a fait une contre-proposition"
+                : `${traiteurCounterCount} clients vous ont fait une contre-proposition`}
+            </span>
+            <span className="text-xs font-extrabold underline shrink-0">Répondre</span>
+          </Link>
+        )}
 
         {/* Sous-filtres Traiteur / GP */}
         {tab !== "receptions" && (
@@ -1779,7 +1881,13 @@ export default function CommandesPage() {
                               <button
                                 type="button"
                                 onClick={() => setEditingTraiteurRequest(req)}
-                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1D6B45] hover:text-[#165637] hover:bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors"
+                                disabled={proposals.some((p) => p.status === "pending")}
+                                title={
+                                  proposals.some((p) => p.status === "pending")
+                                    ? "Annonce non modifiable : vous avez reçu des devis signés sur ces termes"
+                                    : undefined
+                                }
+                                className="inline-flex items-center gap-1.5 text-xs font-semibold text-[#1D6B45] hover:text-[#165637] hover:bg-emerald-50 px-3 py-1.5 rounded-xl border border-emerald-200 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
                               >
                                 <Edit3 size={13} />
                                 Modifier
@@ -1913,6 +2021,9 @@ export default function CommandesPage() {
                                   }
                                   onReject={() =>
                                     setProposalConfirm({ proposal: prop, action: "reject", eventType: req.event_type })
+                                  }
+                                  onCounter={() =>
+                                    setProposalConfirm({ proposal: prop, action: "counter", eventType: req.event_type })
                                   }
                                 />
                               ));
@@ -2653,48 +2764,51 @@ export default function CommandesPage() {
         request={editingTraiteurRequest}
       />
 
-      {/* Confirmation acceptation / refus d'une proposition */}
-      <ConfirmDialog
-        isOpen={Boolean(proposalConfirm)}
-        variant={proposalConfirm?.action === "reject" ? "danger" : "primary"}
-        icon={proposalConfirm?.action === "reject" ? "warning" : "check"}
-        title={
-          proposalConfirm?.action === "reject"
-            ? "Décliner cette offre ?"
-            : "Accepter cette offre ?"
+      {/* Acceptation d'une offre : signature du devis par le client */}
+      <AcceptProposalModal
+        key={
+          proposalConfirm?.action === "accept"
+            ? `${proposalConfirm.proposal.id}-${proposalConfirm.proposal.traiteur_signed_at ?? ""}-${proposalConfirm.proposal.proposed_price}`
+            : "aucune-offre"
         }
+        proposal={proposalConfirm?.action === "accept" ? proposalConfirm.proposal : null}
+        eventType={proposalConfirm?.eventType ?? ""}
+        loading={Boolean(proposalActionLoading)}
+        error={proposalConfirm?.action === "accept" ? proposalError : null}
+        onConfirm={confirmAcceptProposal}
+        onClose={closeProposalConfirm}
+      />
+
+      {/* Contre-proposition : le client propose un prix plus bas au traiteur */}
+      <CounterOfferModal
+        key={proposalConfirm?.action === "counter" ? `contre-${proposalConfirm.proposal.id}` : "aucune-contre-offre"}
+        proposal={proposalConfirm?.action === "counter" ? proposalConfirm.proposal : null}
+        eventType={proposalConfirm?.eventType ?? ""}
+        loading={Boolean(proposalActionLoading)}
+        error={proposalConfirm?.action === "counter" ? proposalError : null}
+        onConfirm={confirmCounterOffer}
+        onClose={closeProposalConfirm}
+      />
+
+      {/* Refus d'une proposition */}
+      <ConfirmDialog
+        isOpen={proposalConfirm?.action === "reject"}
+        variant="danger"
+        icon="warning"
+        title="Décliner cette offre ?"
         description={
-          proposalConfirm ? (
-            proposalConfirm.action === "reject" ? (
-              <>
-                Vous allez décliner le devis de{" "}
-                <span className="font-semibold text-gray-800">
-                  {proposalConfirm.proposal.traiteur?.name || "ce traiteur"}
-                </span>{" "}
-                ({Number(proposalConfirm.proposal.proposed_price || 0).toLocaleString("fr-FR")} €). Le traiteur ne pourra plus vous recontacter pour cette annonce.
-              </>
-            ) : (
-              <>
-                Vous allez retenir le devis de{" "}
-                <span className="font-semibold text-gray-800">
-                  {proposalConfirm.proposal.traiteur?.name || "ce traiteur"}
-                </span>{" "}
-                à{" "}
-                <span className="font-semibold text-[#1D6B45]">
-                  {Number(proposalConfirm.proposal.proposed_price || 0).toLocaleString("fr-FR")} €
-                </span>{" "}
-                pour votre événement ({proposalConfirm.eventType}). L&apos;annonce sera clôturée et le traiteur sera prévenu.
-              </>
-            )
+          proposalConfirm?.action === "reject" ? (
+            <>
+              Vous allez décliner le devis de{" "}
+              <span className="font-semibold text-gray-800">
+                {proposalConfirm.proposal.traiteur?.name || "ce traiteur"}
+              </span>{" "}
+              ({Number(proposalConfirm.proposal.proposed_price || 0).toLocaleString("fr-FR")} €). Le traiteur ne pourra
+              plus vous recontacter pour cette annonce.
+            </>
           ) : null
         }
-        confirmLabel={
-          proposalError
-            ? "Réessayer"
-            : proposalConfirm?.action === "reject"
-              ? "Oui, décliner"
-              : "Oui, accepter"
-        }
+        confirmLabel={proposalError ? "Réessayer" : "Oui, décliner"}
         loadingLabel="Validation..."
         loading={Boolean(proposalActionLoading)}
         error={proposalError}

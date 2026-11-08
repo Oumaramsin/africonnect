@@ -3,6 +3,7 @@
 import { useRef, useState } from "react";
 import Link from "next/link";
 import Image from "next/image";
+import { useRouter } from "next/navigation";
 import {
   Mail,
   Smartphone,
@@ -18,12 +19,19 @@ import {
   Sparkles,
   CheckCircle2,
 } from "lucide-react";
-import { apiErrorMessage, authFetch, sendErrorMessage } from "@/lib/auth";
+import {
+  apiErrorMessage,
+  authFetch,
+  hasSession,
+  invalidateCurrentUser,
+  sendErrorMessage,
+} from "@/lib/auth";
 import EmailVerificationStep from "../_components/EmailVerificationStep";
 
 type Method = "email" | "phone";
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [method, setMethod] = useState<Method>("email");
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -36,10 +44,25 @@ export default function RegisterPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState(false);
+  // Session ouverte par l'API à la création du compte (cookie posé) : accès direct à l'espace
+  const [sessionOpened, setSessionOpened] = useState(false);
 
   const [verifyStep, setVerifyStep] = useState(false);
   // Verrou contre la double soumission (posé avant le rendu suivant)
   const submittingRef = useRef(false);
+
+  // Écran de bienvenue : selon que l'API a ouvert la session (compte actif d'emblée, ou code validé)
+  const showWelcome = () => {
+    const opened = hasSession();
+    if (opened) invalidateCurrentUser();
+    setSessionOpened(opened);
+    setSuccess(true);
+  };
+
+  const goToHome = () => {
+    router.push("/");
+    router.refresh();
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -104,12 +127,13 @@ export default function RegisterPage() {
         return;
       }
 
-      // Inscription par e-mail : saisie du code. C'est aussi le cas d'une inscription rejouée
-      // (compte non vérifié dont le code est encore valide) : l'API répond alors par un succès.
+      // Inscription par e-mail avec vérification activée côté API : saisie du code. C'est aussi le cas
+      // d'une inscription rejouée (compte non vérifié dont le code est encore valide).
       if (method === "email" && data.requiresVerification !== false) {
         setVerifyStep(true);
       } else {
-        setSuccess(true);
+        // Compte actif d'emblée (vérification e-mail désactivée, ou inscription par téléphone)
+        showWelcome();
       }
     } catch (err) {
       setError(sendErrorMessage(err, "Impossible de contacter le serveur."));
@@ -204,7 +228,7 @@ export default function RegisterPage() {
           {/* Témoignage / Footer panneau gauche */}
           <div className="relative z-10 pt-4 border-t border-white/15 flex items-center justify-between text-xs text-white/70">
             <span className="flex items-center gap-1.5 font-medium">
-              <CheckCircle2 size={14} className="text-emerald-300" /> Sécurité & Séquestre Garanti
+              <CheckCircle2 size={14} className="text-emerald-300" /> Devis signés en ligne
             </span>
             <span className="text-[11px] text-white/60">Dabari v1.0</span>
           </div>
@@ -225,18 +249,31 @@ export default function RegisterPage() {
                     <Sparkles size={24} className="text-[#D4870A]" />
                   </h2>
                   <p className="text-xs sm:text-sm text-slate-600 leading-relaxed max-w-xs mx-auto">
-                    Votre compte a été créé avec succès ! Vous pouvez désormais vous connecter pour profiter de tous nos services.
+                    {sessionOpened
+                      ? "Votre compte a été créé avec succès et vous êtes connecté(e) : profitez dès maintenant de tous nos services."
+                      : "Votre compte a été créé avec succès ! Vous pouvez désormais vous connecter pour profiter de tous nos services."}
                   </p>
                 </div>
 
                 <div className="pt-2">
-                  <Link
-                    href="/login"
-                    className="w-full bg-[#1D6B45] hover:bg-[#155234] text-white py-3.5 rounded-2xl font-bold text-xs sm:text-sm shadow-md shadow-[#1D6B45]/20 hover:shadow-lg active:scale-[0.99] transition-all inline-flex items-center justify-center gap-2"
-                  >
-                    <span>Se connecter maintenant</span>
-                    <ArrowRight size={16} />
-                  </Link>
+                  {sessionOpened ? (
+                    <button
+                      type="button"
+                      onClick={goToHome}
+                      className="w-full bg-[#1D6B45] hover:bg-[#155234] text-white py-3.5 rounded-2xl font-bold text-xs sm:text-sm shadow-md shadow-[#1D6B45]/20 hover:shadow-lg active:scale-[0.99] transition-all inline-flex items-center justify-center gap-2"
+                    >
+                      <span>Découvrir Dabari</span>
+                      <ArrowRight size={16} />
+                    </button>
+                  ) : (
+                    <Link
+                      href="/login"
+                      className="w-full bg-[#1D6B45] hover:bg-[#155234] text-white py-3.5 rounded-2xl font-bold text-xs sm:text-sm shadow-md shadow-[#1D6B45]/20 hover:shadow-lg active:scale-[0.99] transition-all inline-flex items-center justify-center gap-2"
+                    >
+                      <span>Se connecter maintenant</span>
+                      <ArrowRight size={16} />
+                    </Link>
+                  )}
                 </div>
               </div>
             ) : verifyStep ? (
@@ -245,7 +282,7 @@ export default function RegisterPage() {
                 email={email}
                 backLabel="Modifier l'adresse email saisie"
                 onBack={() => setVerifyStep(false)}
-                onVerified={() => setSuccess(true)}
+                onVerified={showWelcome}
                 onExpired={(message) => {
                   // Code expiré (> 15 min) : retour au formulaire d'inscription
                   setError(message);

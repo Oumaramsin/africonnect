@@ -29,6 +29,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     { url: absoluteUrl("/services"), changeFrequency: "monthly", priority: 0.6 },
     { url: absoluteUrl("/cgu"), changeFrequency: "yearly", priority: 0.3 },
     { url: absoluteUrl("/suppression-compte"), changeFrequency: "yearly", priority: 0.2 },
+    { url: absoluteUrl("/confidentialite"), changeFrequency: "yearly", priority: 0.2 },
+    { url: absoluteUrl("/mentions-legales"), changeFrequency: "yearly", priority: 0.2 },
   ];
 
   const [traiteurs, listings] = await Promise.all([

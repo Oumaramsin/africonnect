@@ -2,7 +2,7 @@ export interface CGUArticle {
   id: number;
   number: string;
   title: string;
-  category: "Général" | "Transport GP" | "Sécurité & Douanes" | "Responsabilités" | "Paiement & Séquestre" | "Légal & RGPD";
+  category: "Général" | "Transport GP" | "Sécurité & Douanes" | "Responsabilités" | "Paiement & Acompte" | "Légal & RGPD";
   summary: string;
   paragraphs: string[];
   bulletPoints?: string[];
@@ -31,14 +31,14 @@ export const cguData: CGUDocument = {
   title: "Conditions Générales d'Utilisation et de Service",
   subtitle:
     "Plateforme DABARI — Mise en relation pour cotransportage occasionnel de colis & prestations de traiteurs de la diaspora",
-  version: "Version officielle 2026.1",
-  lastUpdated: "Octobre 2026",
+  version: "Version officielle 2026.2",
+  lastUpdated: "Novembre 2026",
   publisher: {
-    name: "DABARI SAS",
+    name: "RAMSIN (plateforme Dabari)",
     description: "Plateforme numérique d'intermédiation technique et de confiance pour la diaspora africaine",
     contactEmail: "contact@ramsin.fr",
     legalNote:
-      "Ce document définit le cadre légal applicable entre Dabari et ses utilisateurs pour le transport solidaire de colis (GP) et les services événementiels traiteurs.",
+      "Ce document définit le cadre légal applicable entre RAMSIN, éditeur de la plateforme Dabari, et ses utilisateurs pour le transport solidaire de colis (GP) et les services événementiels traiteurs.",
   },
   keyPillars: [
     {
@@ -48,8 +48,8 @@ export const cguData: CGUDocument = {
     },
     {
       icon: "Lock",
-      title: "Séquestre Sécurisé",
-      description: "Consignation protectrice des acomptes jusqu'à confirmation d'exécution du service.",
+      title: "Paiement Direct",
+      description: "Acomptes et soldes réglés directement entre utilisateurs : Dabari ne détient aucun fonds.",
     },
     {
       icon: "AlertTriangle",
@@ -65,7 +65,8 @@ export const cguData: CGUDocument = {
       category: "Général",
       summary: "Définition du service et délimitation du rôle d'intermédiaire technique.",
       paragraphs: [
-        "Les présentes Conditions Générales d’Utilisation (« CGU ») ont pour objet de définir les modalités et conditions d’utilisation de la plateforme DABARI (« la Plateforme »), service de mise en relation entre :",
+        "La plateforme DABARI (« la Plateforme »), accessible sur le site www.dabari.fr et dans l’application mobile Dabari, est éditée par RAMSIN, SASU au capital de 300 €, immatriculée au RCS de Créteil sous le numéro 941 420 408, dont le siège social est situé 27 rue des Frères Lumière, 94260 Fresnes (France), joignable à l’adresse contact@ramsin.fr (voir les Mentions légales).",
+        "Les présentes Conditions Générales d’Utilisation (« CGU ») ont pour objet de définir les modalités et conditions d’utilisation de la Plateforme, service de mise en relation entre :",
       ],
       bulletPoints: [
         "des particuliers effectuant un déplacement pour leur propre compte et disposant d’une capacité de transport disponible (« le Cotransporteur ») ;",
@@ -137,7 +138,7 @@ export const cguData: CGUDocument = {
       category: "Responsabilités",
       summary: "Absence de détention des colis, limites légales d'intervention et droit de la consommation.",
       paragraphs: [
-        "6.1. La Plateforme fournit un outil de mise en relation (annonces, messagerie, éventuellement paiement séquestré). Elle n’intervient pas dans le transport physique du colis, n’en a jamais la garde, la détention ou le contrôle, et n’est ni transporteur ni commissionnaire de transport au sens du code de commerce ou du code des transports.",
+        "6.1. La Plateforme fournit un outil de mise en relation (annonces, devis en ligne, suivi des réservations). Elle ne perçoit, ne détient ni ne transfère aucun paiement entre utilisateurs. Elle n’intervient pas dans le transport physique du colis, n’en a jamais la garde, la détention ou le contrôle, et n’est ni transporteur ni commissionnaire de transport au sens du code de commerce ou du code des transports.",
         "6.2. En conséquence, la Plateforme ne peut être tenue responsable :",
       ],
       bulletPoints: [
@@ -180,13 +181,14 @@ export const cguData: CGUDocument = {
     {
       id: 9,
       number: "Article 9",
-      title: "Paiement, acompte et frais de service (Séquestre Dabari SAS)",
-      category: "Paiement & Séquestre",
-      summary: "Fonctionnement du séquestre de protection, commission de service et libération des montants.",
+      title: "Paiement, acompte et frais de service",
+      category: "Paiement & Acompte",
+      summary: "Paiements réglés directement entre utilisateurs, acompte déclaratif et gratuité actuelle du service.",
       paragraphs: [
-        "9.1. La Plateforme met en œuvre un dispositif de séquestre sécurisé permettant de cantonner les acomptes et règlements jusqu'à confirmation de la bonne fin de la prestation convenue (remise du colis vérifié ou réalisation de la prestation culinaire traiteur).",
-        "9.2. Une commission ou des frais de service de mise en relation sont prélevés par la Plateforme pour assurer l'infrastructure technique, la modération des profils et le cantonnement sécurisé des fonds.",
-        "9.3. En cas d'annulation dûment constatée selon les règles du devis ou de signalement de non-réalisation, le séquestre permet le remboursement de l'acompte consigné selon les conditions applicables.",
+        "9.1. Les paiements (acompte et solde d'une prestation traiteur, participation aux frais de cotransportage) sont effectués directement entre les utilisateurs, selon les modalités et moyens de paiement qu'ils conviennent entre eux. La Plateforme ne perçoit, ne détient, ne cantonne ni ne transfère aucun fonds pour le compte des utilisateurs.",
+        "9.2. Le devis peut prévoir un acompte. Son règlement est indiqué dans la Plateforme par le client, à titre déclaratif, afin d'en informer le prestataire et de suivre la réservation. Cette indication ne constitue ni une preuve de paiement ni une garantie de la Plateforme : il appartient au prestataire de vérifier la bonne réception des sommes.",
+        "9.3. En cas d'annulation, le sort de l'acompte (conservation, remboursement total ou partiel) est régi par les conditions convenues entre les utilisateurs, notamment celles du devis, et par la loi applicable. La Plateforme n'est pas tenue au remboursement des sommes versées entre utilisateurs.",
+        "9.4. L'utilisation de la Plateforme est actuellement gratuite. Des frais de service pourront être introduits ultérieurement ; ils ne s'appliqueront qu'après information préalable des utilisateurs et mise à jour des présentes CGU.",
       ],
     },
     {
@@ -208,6 +210,7 @@ export const cguData: CGUDocument = {
       paragraphs: [
         "11.1. Les données à caractère personnel collectées sont traitées conformément au Règlement Général sur la Protection des Données (RGPD) et à la loi Informatique et Libertés.",
         "11.2. Tout utilisateur dispose d'un droit d'accès, de rectification, de portabilité et d'effacement de ses données personnelles, exerçable à tout moment depuis les paramètres de son compte ou par courrier électronique adressé à contact@ramsin.fr.",
+        "11.3. Le responsable du traitement est RAMSIN. Le détail des traitements (données collectées, finalités, destinataires, durées de conservation) figure dans la Politique de confidentialité, accessible sur www.dabari.fr/confidentialite.",
       ],
     },
     {
@@ -217,7 +220,7 @@ export const cguData: CGUDocument = {
       category: "Légal & RGPD",
       summary: "Protection intégrale des marques, logos, graphismes et architecture technique Dabari.",
       paragraphs: [
-        "Les éléments constitutifs de la Plateforme (marque Dabari, logo, charte graphique, interface logicielle, base de données, algorithmes et contenus éditoriaux) demeurent la propriété exclusive de DABARI SAS. Toute reproduction, copie ou extraction non autorisée est formellement prohibée.",
+        "Les éléments constitutifs de la Plateforme (marque Dabari, logo, charte graphique, interface logicielle, base de données, algorithmes et contenus éditoriaux) demeurent la propriété exclusive de RAMSIN, éditeur de la Plateforme. Toute reproduction, copie ou extraction non autorisée est formellement prohibée.",
       ],
     },
     {

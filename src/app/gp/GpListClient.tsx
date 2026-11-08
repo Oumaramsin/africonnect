@@ -255,7 +255,7 @@ export default function GpListClient({ initialListings }: Props) {
             <div className="pt-2 flex items-center gap-2.5 sm:gap-3 flex-wrap text-xs font-semibold text-white/95">
               <div className="flex items-center gap-1.5 bg-black/20 backdrop-blur-xs px-3.5 py-1.5 rounded-xl border border-white/10">
                 <ShieldCheck size={15} className="text-emerald-300 shrink-0" />
-                <span>Paiement sous séquestre</span>
+                <span>Paiement direct au voyageur</span>
               </div>
               <div className="flex items-center gap-1.5 bg-black/20 backdrop-blur-xs px-3.5 py-1.5 rounded-xl border border-white/10">
                 <CheckCircle2 size={15} className="text-amber-300 shrink-0" />
@@ -308,11 +308,11 @@ export default function GpListClient({ initialListings }: Props) {
           </div>
           <div>
             <h3 className="font-bold text-sm text-slate-900">
-              Fonds protégés sous séquestre
+              Paiement direct, sans intermédiaire
             </h3>
             <p className="text-xs text-slate-500 mt-1 leading-relaxed">
-              Votre paiement est sécurisé par Dabari et remis au voyageur
-              uniquement une fois le colis inspecté et réceptionné.
+              Vous réglez le voyageur directement, selon les modalités convenues
+              ensemble. Dabari ne perçoit aucun fonds.
             </p>
           </div>
         </div>
@@ -588,7 +588,7 @@ export default function GpListClient({ initialListings }: Props) {
 
                       <div className="flex items-center gap-1.5 text-emerald-700 font-bold text-[11px]">
                         <ShieldCheck size={13} className="text-[#1D6B45]" />
-                        <span>Séquestre Actif</span>
+                        <span>Paiement direct</span>
                       </div>
                     </div>
 

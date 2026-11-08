@@ -20,6 +20,8 @@ import {
   createTraiteurProposalController,
   getMyTraiteurProposalsController,
   updateTraiteurProposalStatusController,
+  createCounterOfferController,
+  keepProposalPriceController,
 } from "../controllers/traiteurController";
 import AuthMiddleware from "../middlewares/authMiddleware";
 import { creationLimiter } from "../middlewares/rateLimiter";
@@ -56,6 +58,20 @@ traiteurRouter.post(
 );
 traiteurRouter.get("/proposals/me", AuthMiddleware.authenticate, getMyTraiteurProposalsController);
 traiteurRouter.patch("/proposals/:id/status", AuthMiddleware.authenticate, updateTraiteurProposalStatusController);
+// Négociation du prix : contre-proposition du client, prix maintenu par le traiteur (le nouveau devis
+// signé passe par l'envoi de proposition ci-dessus)
+traiteurRouter.post(
+  "/proposals/:id/contre-offre",
+  AuthMiddleware.authenticate,
+  creationLimiter,
+  createCounterOfferController,
+);
+traiteurRouter.post(
+  "/proposals/:id/prix-maintenu",
+  AuthMiddleware.authenticate,
+  creationLimiter,
+  keepProposalPriceController,
+);
 
 // Commandes directes et listing traiteurs
 traiteurRouter.get("/", getActiveTraiteurController);

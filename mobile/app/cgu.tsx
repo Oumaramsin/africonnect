@@ -54,12 +54,17 @@ export default function CGUScreen() {
     }));
   };
 
+  // Documents légaux publiés sur le site (ouverts dans le navigateur)
+  const openLegalPage = (path: string) => {
+    Linking.openURL(`https://www.dabari.fr${path}`).catch(() => {});
+  };
+
   const handleShare = async () => {
     try {
       await Share.share({
         title: "Conditions Générales d'Utilisation - Dabari",
         message:
-          "Consultez les Conditions Générales d'Utilisation et de Service (CGU) officielles de Dabari SAS pour le cotransportage et les services traiteurs : https://dabari.fr/cgu",
+          "Consultez les Conditions Générales d'Utilisation et de Service (CGU) officielles de Dabari (édité par RAMSIN) pour le cotransportage et les services traiteurs : https://dabari.fr/cgu",
       });
     } catch {
       // Ignoré
@@ -139,9 +144,9 @@ export default function CGUScreen() {
             <View style={[styles.pillarIconCircle, { backgroundColor: "#FEF3C7" }]}>
               <Ionicons name="lock-closed" size={18} color="#B45309" />
             </View>
-            <Text style={styles.pillarTitle}>Séquestre Dabari SAS</Text>
+            <Text style={styles.pillarTitle}>Paiement direct</Text>
             <Text style={styles.pillarDesc}>
-              Acomptes cantonnés jusqu&apos;à la confirmation effective de la prestation.
+              Acomptes et soldes réglés directement entre utilisateurs, suivis dans le devis.
             </Text>
           </View>
 
@@ -161,7 +166,7 @@ export default function CGUScreen() {
           <Ionicons name="search" size={18} color="#94A3B8" style={{ marginLeft: 12 }} />
           <TextInput
             style={styles.searchInput}
-            placeholder="Rechercher un mot-clé (séquestre, bagages, douane)..."
+            placeholder="Rechercher un mot-clé (acompte, bagages, douane)..."
             placeholderTextColor="#94A3B8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -304,6 +309,25 @@ export default function CGUScreen() {
               Contacter le service juridique Dabari
             </Text>
           </TouchableOpacity>
+
+          <View style={styles.legalLinksRow}>
+            <TouchableOpacity
+              style={styles.legalLinkBtn}
+              onPress={() => openLegalPage("/confidentialite")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="shield-checkmark-outline" size={14} color="#1D6B45" />
+              <Text style={styles.legalLinkText}>Politique de confidentialité</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.legalLinkBtn}
+              onPress={() => openLegalPage("/mentions-legales")}
+              activeOpacity={0.7}
+            >
+              <Ionicons name="business-outline" size={14} color="#1D6B45" />
+              <Text style={styles.legalLinkText}>Mentions légales</Text>
+            </TouchableOpacity>
+          </View>
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -658,5 +682,25 @@ const styles = StyleSheet.create({
     color: "#FFFFFF",
     fontSize: 12,
     fontWeight: "800",
+  },
+  legalLinksRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    columnGap: 16,
+    rowGap: 4,
+    marginTop: 10,
+  },
+  legalLinkBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingVertical: 6,
+  },
+  legalLinkText: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: "#1D6B45",
+    textDecorationLine: "underline",
   },
 });

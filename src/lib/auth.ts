@@ -26,6 +26,8 @@ export interface CurrentUser {
   role: string;
   /** Droits d'administration (rôle du compte vérifié par l'API). */
   isAdmin: boolean;
+  /** Profils traiteur de l'utilisateur (on ne se demande pas de devis à soi-même). */
+  traiteurIds: string[];
 }
 
 const readCookie = (name: string): string | null => {
@@ -145,6 +147,11 @@ const toCurrentUser = (raw: unknown): CurrentUser | null => {
     phone: optionalText(user.phone),
     role: optionalText(user.role) || "client",
     isAdmin: user.is_admin === true,
+    traiteurIds: Array.isArray(user.traiteurs)
+      ? user.traiteurs
+          .map((traiteur) => (traiteur && typeof traiteur === "object" ? (traiteur as { id?: unknown }).id : null))
+          .filter((id): id is string => typeof id === "string")
+      : [],
   };
 };
 

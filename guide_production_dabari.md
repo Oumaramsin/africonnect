@@ -132,12 +132,17 @@ JWT_SECRET=dabari_super_secret_jwt_key_prod_987654321_xzy
 # URL du Frontend Vercel (Autorisation CORS)
 CLIENT_URL=https://dabari.vercel.app
 
-# Service Emails Resend
-EMAIL_HOST=smtp.resend.com
-EMAIL_PORT=587
-EMAIL_USER=resend
-EMAIL_PASS=re_123456789_votre_cle_api_resend
-EMAIL_FROM=Dabari <noreply@dabari.app>
+# Service Emails Resend (SMTP) : ce sont les noms lus par l'API (backend/src/services/emailService.ts)
+SMTP_HOST=smtp.resend.com
+SMTP_PORT=465
+SMTP_USER=resend
+SMTP_PASS=re_123456789_votre_cle_api_resend
+SMTP_FROM=Dabari <noreply@dabari.app>   # adresse d'un domaine vérifié dans Resend
+
+# Code de vérification envoyé par e-mail à l'inscription : désactivé tant que l'envoi d'e-mails
+# n'est pas branché (l'inscription ouvre directement la session). Passer à true une fois Resend
+# configuré et testé.
+EMAIL_VERIFICATION_ENABLED=false
 
 # Stockage Médias Cloudflare R2
 S3_ENDPOINT=https://<ACCOUNT_ID>.r2.cloudflarestorage.com
@@ -196,11 +201,12 @@ DATABASE_URL="postgresql://user:password@host:5432/dabari?sslmode=require"
 JWT_SECRET="votre_cle_secrete_jwt_longue_et_securisee"
 CLIENT_URL="https://dabari.vercel.app"
 
-EMAIL_HOST="smtp.resend.com"
-EMAIL_PORT=587
-EMAIL_USER="resend"
-EMAIL_PASS="re_votre_cle_resend"
-EMAIL_FROM="Dabari <noreply@dabari.app>"
+SMTP_HOST="smtp.resend.com"
+SMTP_PORT=465
+SMTP_USER="resend"
+SMTP_PASS="re_votre_cle_resend"
+SMTP_FROM="Dabari <noreply@dabari.app>"
+EMAIL_VERIFICATION_ENABLED=false
 
 S3_ENDPOINT="https://<ACCOUNT_ID>.r2.cloudflarestorage.com"
 S3_ACCESS_KEY_ID="votre_key_id"

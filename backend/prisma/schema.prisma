@@ -267,6 +267,8 @@ model Notification {
   // Relations
   user Profile? @relation(fields: [user_id], references: [id], onDelete: SetNull)
 
+  // Liste des notifications d'un utilisateur, compteur des non lues, suppression du compte
+  @@index([user_id, is_read])
   @@map("notifications")
 }
 
@@ -301,6 +303,16 @@ model TraiteurProposal {
   message        String
   status         String?         @default("pending")
   created_at     DateTime?       @default(now()) @db.Timestamptz(6)
+
+  // Devis proposé : conditions (JSON, même format que commandes_traiteur.conditions_devis) et
+  // engagement signé du traiteur, repris dans le devis créé quand le client signe pour accepter
+  conditions_devis   String?
+  traiteur_signature String?
+  traiteur_signed_at DateTime? @db.Timestamptz(6)
+
+  // Négociation du prix (tableau JSON écrit par le serveur seul) : contre-propositions du client,
+  // prix maintenu ou nouveau devis signé du traiteur
+  negociation        Json?
 
   // Relations
   request        TraiteurRequest @relation(fields: [request_id], references: [id], onDelete: Cascade)

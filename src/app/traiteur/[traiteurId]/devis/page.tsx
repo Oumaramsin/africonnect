@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
+import { useIsOwnTraiteur } from "@/lib/useIsOwnTraiteur";
 import Link from "next/link";
 import Image from "next/image";
 import {
@@ -58,6 +59,8 @@ export default function TraiteurDevisPage() {
   const router = useRouter();
 
   const id = Array.isArray(traiteurId) ? traiteurId[0] : traiteurId;
+  // Un traiteur ne peut pas se demander un devis à lui-même (l'API le refuse aussi)
+  const isOwnProfile = useIsOwnTraiteur(id);
 
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
   const [loadingTraiteur, setLoadingTraiteur] = useState(true);
@@ -128,6 +131,7 @@ export default function TraiteurDevisPage() {
 
   const parsedNb = parseInt(nbPersonnes, 10);
   const isFormValid = Boolean(
+    !isOwnProfile &&
     dateEvenement &&
       !isNaN(parsedNb) &&
       parsedNb > 0 &&
@@ -745,6 +749,11 @@ export default function TraiteurDevisPage() {
               <p className="text-xs text-slate-500">
                 Le chef {traiteur.name} étudiera votre demande et vous répondra sous 24 à 48 heures.
               </p>
+              {isOwnProfile && (
+                <p role="alert" className="text-xs font-semibold text-rose-700">
+                  C&apos;est votre propre profil traiteur : vous ne pouvez pas vous demander un devis.
+                </p>
+              )}
             </div>
 
             <div className="flex items-center gap-3 w-full sm:w-auto">

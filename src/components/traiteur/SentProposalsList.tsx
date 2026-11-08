@@ -14,14 +14,19 @@ import {
   Banknote,
   Quote,
   Send,
+  ArrowDownUp,
 } from "lucide-react";
 import { apiErrorMessage, authFetch, hasSession, loadErrorMessage } from "@/lib/auth";
 import { TraiteurProposal, formatWhatsAppUrl } from "@/lib/types/traiteur";
+import NegociationThread from "@/components/commandes/NegociationThread";
+import { formatEuros, getNegociation, hasPendingCounterOffer } from "@/lib/negociation";
 import Image from "next/image";
 
 type Props = {
   /** Appelé avec les IDs des annonces auxquelles le traiteur a déjà répondu */
   onLoaded?: (requestIds: string[]) => void;
+  /** Contre-proposition du client en attente : ouvre la réponse (prix maintenu ou nouveau devis) */
+  onRespond?: (proposal: TraiteurProposal) => void;
 };
 
 const formatDate = (d?: string | null) =>
@@ -33,7 +38,7 @@ const formatDate = (d?: string | null) =>
       })
     : "—";
 
-export default function SentProposalsList({ onLoaded }: Props) {
+export default function SentProposalsList({ onLoaded, onRespond }: Props) {
   const [proposals, setProposals] = useState<TraiteurProposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -150,6 +155,12 @@ export default function SentProposalsList({ onLoaded }: Props) {
         const isRejected = p.status === "rejected";
         const closedWithoutYou =
           isPending && req && req.status !== "open";
+        // Contre-proposition du client qui attend la réponse du traiteur
+        const negociation = getNegociation(p.negociation);
+        const counter =
+          isPending && !closedWithoutYou && hasPendingCounterOffer(negociation)
+            ? negociation[negociation.length - 1]
+            : null;
         const initials = (client?.full_name || "C")
           .split(" ")
           .map((s) => s[0])
@@ -180,7 +191,9 @@ export default function SentProposalsList({ onLoaded }: Props) {
                     ? "bg-gray-200 text-gray-600"
                     : closedWithoutYou
                       ? "bg-gray-100 text-gray-500"
-                      : "bg-amber-50 text-amber-800"
+                      : counter
+                        ? "bg-violet-100 text-violet-800"
+                        : "bg-amber-50 text-amber-800"
               }`}
             >
               {isAccepted && (
@@ -193,7 +206,12 @@ export default function SentProposalsList({ onLoaded }: Props) {
                   <XCircle size={13} /> Proposition déclinée par le client
                 </>
               )}
-              {isPending && !closedWithoutYou && (
+              {counter && (
+                <>
+                  <ArrowDownUp size={13} /> Contre-proposition du client : à vous de répondre
+                </>
+              )}
+              {isPending && !closedWithoutYou && !counter && (
                 <>
                   <Clock size={13} /> En attente de réponse du client
                 </>
@@ -280,6 +298,23 @@ export default function SentProposalsList({ onLoaded }: Props) {
                   {p.message}
                 </p>
               </div>
+
+              <NegociationThread entries={negociation} viewer="traiteur" />
+
+              {counter && onRespond && (
+                <div className="mt-3 rounded-xl bg-violet-50 border border-violet-200 p-3 space-y-2">
+                  <p className="text-xs font-bold text-violet-900">
+                    Le client propose {formatEuros(counter.prix)} au lieu de {formatEuros(Number(p.proposed_price || 0))}.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => onRespond(p)}
+                    className="w-full inline-flex items-center justify-center gap-1.5 text-xs font-bold text-white bg-violet-700 hover:bg-violet-800 px-4 py-2.5 rounded-xl transition-colors"
+                  >
+                    <ArrowDownUp size={14} /> Répondre : maintenir mon prix ou faire un nouveau devis
+                  </button>
+                </div>
+              )}
 
               {isAccepted && waUrl && (
                 <a

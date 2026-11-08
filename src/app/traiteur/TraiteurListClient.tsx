@@ -23,10 +23,20 @@ import {
   RotateCcw,
   WifiOff,
   Lock,
+  PenLine,
+  UserRound,
+  ArrowDownUp,
 } from "lucide-react";
-import { type Traiteur, type TraiteurRequest } from "@/lib/types/traiteur";
+import {
+  type NegociationEntry,
+  type Traiteur,
+  type TraiteurProposal,
+  type TraiteurRequest,
+} from "@/lib/types/traiteur";
 import { authFetch, getCurrentUser, isNetworkError } from "@/lib/auth";
+import { formatEuros, getNegociation, hasPendingCounterOffer } from "@/lib/negociation";
 import SentProposalsList from "@/components/traiteur/SentProposalsList";
+import CounterResponseModal from "@/components/traiteur/CounterResponseModal";
 import CountryFlag from "@/components/ui/CountryFlag";
 import CountryFilterModal from "@/components/ui/CountryFilterModal";
 import ConfirmDialog from "@/components/commandes/ConfirmDialog";
@@ -104,8 +114,45 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
   const [sendingProposal, setSendingProposal] = useState(false);
   const [proposalError, setProposalError] = useState<string | null>(null);
   const [proposalSuccess, setProposalSuccess] = useState(false);
+  // Le devis proposé : conditions d'acompte et signature (engagement) du traiteur
+  const [acompteType, setAcompteType] = useState<"aucun" | "optionnel" | "obligatoire">("optionnel");
+  const [acomptePourcent, setAcomptePourcent] = useState("30");
+  const [traiteurSignature, setTraiteurSignature] = useState("");
+  const [proposalEngaged, setProposalEngaged] = useState(false);
   // Verrou synchrone : un double clic ne doit pas envoyer deux propositions
   const sendingLockRef = useRef(false);
+  // Annonce dont le formulaire garde le brouillon : un brouillon ne passe jamais à une autre annonce
+  const draftRequestIdRef = useRef<string | null>(null);
+  // Fermeture automatique de l'écran de succès (annulée si l'utilisateur ferme lui-même)
+  const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Négociation : réponse à une contre-proposition (prix maintenu ou nouveau devis) ; le nouveau devis
+  // passe par le formulaire ci-dessus, prérempli avec l'offre en cours
+  const [respondTarget, setRespondTarget] = useState<{ request: TraiteurRequest; proposal: TraiteurProposal } | null>(
+    null,
+  );
+  const [revision, setRevision] = useState<{ currentPrice: number; counter: NegociationEntry } | null>(null);
+  // Remonte « Mes propositions » pour la recharger après une réponse
+  const [sentListKey, setSentListKey] = useState(0);
+
+  const parsedProposalPrice = parseFloat(proposedPrice.replace(",", "."));
+  const parsedAcomptePourcent = parseFloat(acomptePourcent.replace(",", "."));
+  const proposalPriceValid =
+    Number.isFinite(parsedProposalPrice) && parsedProposalPrice > 0 && parsedProposalPrice <= 1_000_000;
+  const acomptePourcentValid =
+    acompteType === "aucun" ||
+    (Number.isFinite(parsedAcomptePourcent) && parsedAcomptePourcent >= 1 && parsedAcomptePourcent <= 80);
+  const acompteMontant =
+    acompteType !== "aucun" && proposalPriceValid && acomptePourcentValid
+      ? Math.round(parsedProposalPrice * parsedAcomptePourcent) / 100
+      : 0;
+  const proposalFormValid =
+    proposalPriceValid &&
+    acomptePourcentValid &&
+    proposalMessage.trim().length > 0 &&
+    proposalMessage.length <= 3000 &&
+    traiteurSignature.trim().length >= 2 &&
+    traiteurSignature.trim().length <= 120 &&
+    proposalEngaged;
 
   const applyTraiteurs = useCallback((result: LoadResult<Traiteur[]>) => {
     if (result.ok) {
@@ -139,10 +186,22 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
   // Recherche transmise par l'accueil (?q=) : lue dans le navigateur pour que la page reste
   // générée statiquement (useSearchParams forcerait le rendu de la liste côté client)
   useEffect(() => {
-    const q = new URLSearchParams(window.location.search).get("q")?.trim();
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("q")?.trim();
     // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation unique avec l'URL au montage
     if (q) setSearchQuery(q);
+    // Lien depuis « Mes commandes » (contre-propositions à traiter) : onglet demandé
+    const tab = params.get("tab");
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- synchronisation unique avec l'URL au montage
+    if (tab === "demandes" || tab === "mes_propositions") setActiveTab(tab);
   }, []);
+
+  useEffect(
+    () => () => {
+      if (successTimerRef.current) clearTimeout(successTimerRef.current);
+    },
+    [],
+  );
 
   const loadRequests = useCallback(async () => {
     setRequestsState("loading");
@@ -269,21 +328,89 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
 
   const hasActiveFilters = searchQuery.trim().length > 0 || selectedCuisineFilter !== "all";
 
+  // Formulaire remis à neuf (après un nouveau devis, il ne doit pas garder l'offre reprise)
+  const resetProposalForm = () => {
+    setProposedPrice("");
+    setProposalMessage("");
+    setAcompteType("optionnel");
+    setAcomptePourcent("30");
+    setProposalEngaged(false);
+  };
+
+  // Après un envoi réussi : formulaire remis à neuf et listes rechargées
+  const finishProposalSuccess = () => {
+    if (successTimerRef.current) {
+      clearTimeout(successTimerRef.current);
+      successTimerRef.current = null;
+    }
+    setProposalSuccess(false);
+    setSelectedRequest(null);
+    setRevision(null);
+    resetProposalForm();
+    draftRequestIdRef.current = null;
+    void loadRequests();
+    setSentListKey((key) => key + 1);
+  };
+
   const closeProposalModal = () => {
     if (sendingProposal) return;
+    if (proposalSuccess) {
+      finishProposalSuccess();
+      return;
+    }
     setSelectedRequest(null);
     setShowConfirmProposal(false);
     setProposalError(null);
+    if (revision) {
+      setRevision(null);
+      resetProposalForm();
+      draftRequestIdRef.current = null;
+    }
+  };
+
+  const openCounterResponse = (request: TraiteurRequest, proposal: TraiteurProposal) => {
+    setRespondTarget({ request, proposal });
+  };
+
+  // Nouveau devis en réponse à une contre-proposition : formulaire prérempli avec l'offre en cours
+  const openRevision = (proposal: TraiteurProposal) => {
+    const target = respondTarget;
+    const entries = getNegociation(proposal.negociation);
+    const counter = entries[entries.length - 1];
+    if (!target || !counter || !hasPendingCounterOffer(entries)) return;
+    setRespondTarget(null);
+    setProposalError(null);
+    setProposedPrice("");
+    setProposalMessage(proposal.message || "");
+    setProposalEngaged(false);
+    try {
+      const meta = proposal.conditions_devis ? JSON.parse(proposal.conditions_devis) : null;
+      setAcompteType(
+        meta?.acompte_type === "aucun" || meta?.acompte_type === "obligatoire" ? meta.acompte_type : "optionnel",
+      );
+      setAcomptePourcent(
+        typeof meta?.acompte_pourcentage === "number" && meta.acompte_pourcentage > 0
+          ? String(meta.acompte_pourcentage)
+          : "30",
+      );
+    } catch {
+      setAcompteType("optionnel");
+      setAcomptePourcent("30");
+    }
+    setRevision({ currentPrice: Number(proposal.proposed_price || 0), counter });
+    draftRequestIdRef.current = null;
+    setSelectedRequest(target.request);
+  };
+
+  // Prix maintenu : annonces et propositions rechargées
+  const handleCounterAnswered = () => {
+    void loadRequests();
+    setSentListKey((key) => key + 1);
   };
 
   const handleOpenProposalConfirm = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedRequest || !proposedPrice || !proposalMessage.trim() || sendingProposal) {
-      return;
-    }
-    const priceNum = parseFloat(proposedPrice.replace(",", "."));
-    if (isNaN(priceNum) || priceNum <= 0) {
-      setProposalError("Le tarif proposé doit être supérieur à 0 €.");
+    if (!selectedRequest || !proposalFormValid || sendingProposal) {
       return;
     }
     setProposalError(null);
@@ -291,7 +418,7 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
   };
 
   const handleSendProposal = async () => {
-    if (!selectedRequest || !proposedPrice || !proposalMessage.trim() || sendingLockRef.current) {
+    if (!selectedRequest || !proposalFormValid || sendingLockRef.current) {
       return;
     }
     sendingLockRef.current = true;
@@ -304,8 +431,14 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          proposed_price: parseFloat(proposedPrice.replace(",", ".")),
+          proposed_price: parsedProposalPrice,
           message: proposalMessage.trim(),
+          // La proposition est un devis signé : conditions d'acompte et signature du traiteur
+          conditions_devis: JSON.stringify({
+            acompte_type: acompteType,
+            acompte_pourcentage: acompteType === "aucun" ? 0 : parsedAcomptePourcent,
+          }),
+          traiteur_signature: traiteurSignature.trim(),
         }),
       });
       const body = await response.json();
@@ -315,19 +448,18 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
       }
       if (!response.ok) {
         setProposalError(errorMessage(body, "Erreur lors de l'envoi de la proposition."));
+        // Situation changée entre-temps (réponse du client, offre déjà envoyée) : listes relues
+        if (response.status === 409) {
+          void loadRequests();
+          setSentListKey((key) => key + 1);
+        }
         return;
       }
 
       setShowConfirmProposal(false);
       setSentRequestIds((prev) => (prev.includes(requestId) ? prev : [...prev, requestId]));
       setProposalSuccess(true);
-      setTimeout(() => {
-        setProposalSuccess(false);
-        setSelectedRequest(null);
-        setProposedPrice("");
-        setProposalMessage("");
-        void loadRequests();
-      }, 1800);
+      successTimerRef.current = setTimeout(finishProposalSuccess, 1800);
     } catch (err) {
       setProposalError(
         isNetworkError(err) ? err.message : "Erreur lors de l'envoi de la proposition. Réessayez.",
@@ -869,22 +1001,55 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
                         Publié le {new Date(req.created_at).toLocaleDateString("fr-FR")}
                       </span>
 
-                      {sentRequestIds.includes(req.id) ? (
+                      {(() => {
+                        // L'API ne renvoie à un traiteur que sa propre offre sur chaque annonce
+                        const own = req.proposals?.[0];
+                        const entries = getNegociation(own?.negociation);
+                        const counter = hasPendingCounterOffer(entries) ? entries[entries.length - 1] : null;
+                        if (own && own.status === "pending" && counter) {
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => openCounterResponse(req, own)}
+                              className="inline-flex items-center gap-1.5 text-xs font-bold bg-violet-700 text-white hover:bg-violet-800 px-4 py-2 rounded-xl shadow-xs transition-all active:scale-95"
+                            >
+                              <ArrowDownUp size={13} /> Contre-proposition : {formatEuros(counter.prix)} · Répondre
+                            </button>
+                          );
+                        }
+                        if (own?.status === "rejected") {
+                          return (
+                            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-100 px-3.5 py-1.5 rounded-xl border border-slate-200">
+                              <X size={14} /> Devis décliné
+                            </span>
+                          );
+                        }
+                        return null;
+                      })() ??
+                      (sentRequestIds.includes(req.id) || (req.proposals?.length ?? 0) > 0 ? (
                         <span className="inline-flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 px-3.5 py-1.5 rounded-xl border border-emerald-200">
                           <CheckCircle2 size={14} /> Proposition envoyée
+                        </span>
+                      ) : req.is_own ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs font-bold text-slate-500 bg-slate-100 px-3.5 py-1.5 rounded-xl border border-slate-200">
+                          <UserRound size={14} /> Votre annonce
                         </span>
                       ) : (
                         <button
                           type="button"
                           onClick={() => {
                             setProposalError(null);
+                            // Brouillon propre à chaque annonce ; l'engagement se coche à chaque devis
+                            if (draftRequestIdRef.current !== req.id) resetProposalForm();
+                            draftRequestIdRef.current = req.id;
+                            setProposalEngaged(false);
                             setSelectedRequest(req);
                           }}
                           className="inline-flex items-center gap-1.5 text-xs font-bold bg-[#1D6B45] text-white hover:bg-[#154d31] px-4 py-2 rounded-xl shadow-xs transition-all active:scale-95"
                         >
                           <Send size={13} /> Faire une proposition de devis
                         </button>
-                      )}
+                      ))}
                     </div>
                   </div>
                 );
@@ -898,9 +1063,28 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
       {activeTab === "mes_propositions" && isTraiteurUser && (
         <section className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs">
           <h2 className="sr-only">Mes propositions envoyées</h2>
-          <SentProposalsList />
+          <SentProposalsList
+            key={sentListKey}
+            onRespond={(proposal) => {
+              if (proposal.request) openCounterResponse(proposal.request, proposal);
+            }}
+          />
         </section>
       )}
+
+      {/* ── RÉPONSE À UNE CONTRE-PROPOSITION DU CLIENT ── */}
+      <CounterResponseModal
+        key={respondTarget ? `reponse-${respondTarget.proposal.id}` : "aucune-reponse"}
+        proposal={respondTarget?.proposal ?? null}
+        eventLabel={
+          respondTarget
+            ? `Événement : ${respondTarget.request.event_type} (${respondTarget.request.guest_count ?? "?"} pers.)`
+            : ""
+        }
+        onRevise={openRevision}
+        onAnswered={handleCounterAnswered}
+        onClose={() => setRespondTarget(null)}
+      />
 
       {/* ── MODALE D'ENVOI DE PROPOSITION (RESPONSIVE PC & MOBILE) ── */}
       {selectedRequest && (
@@ -910,11 +1094,11 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
           aria-labelledby="proposal-dialog-title"
           className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-in fade-in duration-200"
         >
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95 duration-150">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[92vh] overflow-y-auto p-6 sm:p-8 shadow-2xl border border-slate-100 space-y-5 animate-in zoom-in-95 duration-150">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h2 id="proposal-dialog-title" className="font-extrabold text-slate-900 text-lg">
-                  Proposer un devis
+                  {revision ? "Nouveau devis" : "Proposer un devis"}
                 </h2>
                 <p className="text-xs text-slate-500">
                   Événement : {selectedRequest.event_type} ({selectedRequest.guest_count ?? "?"} pers.)
@@ -936,11 +1120,34 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
                 <div className="w-12 h-12 bg-emerald-100 text-[#1D6B45] rounded-full flex items-center justify-center mx-auto">
                   <CheckCircle2 size={26} />
                 </div>
-                <h3 className="font-bold text-slate-800 text-base">Proposition envoyée !</h3>
+                <h3 className="font-bold text-slate-800 text-base">
+                  {revision ? "Nouveau devis envoyé !" : "Proposition envoyée !"}
+                </h3>
                 <p className="text-xs text-slate-500">L&apos;organisateur a été notifié de votre offre.</p>
               </div>
             ) : (
               <form onSubmit={handleOpenProposalConfirm} className="space-y-4">
+                {/* Nouveau devis : la contre-proposition du client à laquelle il répond */}
+                {revision && (
+                  <div className="rounded-2xl bg-violet-50 border border-violet-200 p-3.5 space-y-2">
+                    <p className="text-xs font-bold text-violet-900">
+                      Le client propose {formatEuros(revision.counter.prix)} (votre devis :{" "}
+                      {formatEuros(revision.currentPrice)})
+                    </p>
+                    {revision.counter.message && (
+                      <p className="text-xs text-slate-700 italic whitespace-pre-line">
+                        « {revision.counter.message} »
+                      </p>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => setProposedPrice(String(revision.counter.prix))}
+                      className="text-[11px] font-bold text-violet-700 bg-white border border-violet-300 hover:bg-violet-100 px-3 py-1.5 rounded-full transition-colors"
+                    >
+                      Reprendre le prix du client ({formatEuros(revision.counter.prix)})
+                    </button>
+                  </div>
+                )}
                 {proposalError && !showConfirmProposal && (
                   <div
                     role="alert"
@@ -976,11 +1183,97 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
                     id="proposal-message"
                     rows={4}
                     required
+                    maxLength={3000}
                     placeholder="Détaillez vos menus, options de livraison ou service..."
                     value={proposalMessage}
                     onChange={(e) => setProposalMessage(e.target.value)}
                     className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm leading-relaxed"
                   />
+                </div>
+
+                <fieldset>
+                  <legend className="block text-xs font-bold text-slate-700 mb-1.5">Acompte demandé *</legend>
+                  <div className="grid grid-cols-3 gap-2">
+                    {(
+                      [
+                        ["aucun", "Sans acompte"],
+                        ["optionnel", "Facultatif"],
+                        ["obligatoire", "Obligatoire"],
+                      ] as const
+                    ).map(([value, label]) => (
+                      <label
+                        key={value}
+                        className={`cursor-pointer text-center px-2 py-2 rounded-xl border text-xs font-bold transition-colors ${
+                          acompteType === value
+                            ? "bg-emerald-50 border-[#1D6B45] text-emerald-800"
+                            : "bg-white border-slate-200 text-slate-600 hover:bg-slate-50"
+                        }`}
+                      >
+                        <input
+                          type="radio"
+                          name="acompte-type"
+                          value={value}
+                          checked={acompteType === value}
+                          onChange={() => setAcompteType(value)}
+                          className="sr-only"
+                        />
+                        {label}
+                      </label>
+                    ))}
+                  </div>
+                  {acompteType !== "aucun" && (
+                    <div className="mt-2 flex items-center gap-2">
+                      <label htmlFor="proposal-acompte" className="text-xs font-semibold text-slate-600">
+                        Pourcentage (1 à 80 %)
+                      </label>
+                      <input
+                        id="proposal-acompte"
+                        type="number"
+                        min="1"
+                        max="80"
+                        step="1"
+                        value={acomptePourcent}
+                        onChange={(e) => setAcomptePourcent(e.target.value)}
+                        className="w-20 px-3 py-2 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm"
+                      />
+                      {acompteMontant > 0 && (
+                        <span className="text-xs font-bold text-[#1D6B45]">
+                          soit {acompteMontant.toLocaleString("fr-FR")} €
+                        </span>
+                      )}
+                    </div>
+                  )}
+                  <p className="mt-1.5 text-[11px] text-slate-500">
+                    L&apos;acompte et le solde se règlent directement entre vous et le client : Dabari ne perçoit aucun fonds.
+                  </p>
+                </fieldset>
+
+                <div>
+                  <label htmlFor="proposal-signature" className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Signature : prénom et nom du signataire *
+                  </label>
+                  <input
+                    id="proposal-signature"
+                    type="text"
+                    maxLength={120}
+                    autoComplete="name"
+                    placeholder="Ex : Fatou Diop"
+                    value={traiteurSignature}
+                    onChange={(e) => setTraiteurSignature(e.target.value)}
+                    className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:border-[#1D6B45] focus:outline-hidden text-sm"
+                  />
+                  <label className="mt-2 flex items-start gap-2 text-xs text-slate-600 leading-relaxed cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={proposalEngaged}
+                      onChange={(e) => setProposalEngaged(e.target.checked)}
+                      className="mt-0.5 h-4 w-4 accent-[#1D6B45]"
+                    />
+                    <span>
+                      Je signe ce devis et m&apos;engage sur son prix et ses conditions. Le client l&apos;acceptera
+                      en le signant à son tour, ce qui confirmera la prestation.
+                    </span>
+                  </label>
                 </div>
 
                 <div className="pt-2 flex items-center justify-end gap-3">
@@ -994,10 +1287,10 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
                   </button>
                   <button
                     type="submit"
-                    disabled={sendingProposal}
-                    className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#1D6B45] text-white hover:bg-[#154d31] transition-colors shadow-xs disabled:opacity-60 disabled:cursor-not-allowed"
+                    disabled={sendingProposal || !proposalFormValid}
+                    className="px-5 py-2.5 rounded-xl text-xs font-bold bg-[#1D6B45] text-white hover:bg-[#154d31] transition-colors shadow-xs disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-1.5"
                   >
-                    Envoyer ma proposition
+                    <PenLine size={13} /> {revision ? "Signer et envoyer le nouveau devis" : "Signer et envoyer le devis"}
                   </button>
                 </div>
               </form>
@@ -1009,8 +1302,16 @@ export default function TraiteurListClient({ initialTraiteurs }: Props) {
       {/* Confirmation avant envoi : l'erreur éventuelle reste affichée dans la confirmation */}
       <ConfirmDialog
         isOpen={showConfirmProposal}
-        title="Confirmer l'envoi de la proposition"
-        description={`Confirmez-vous l'envoi d'une proposition de ${proposedPrice} € pour cet événement ?`}
+        title={revision ? "Envoyer ce nouveau devis signé ?" : "Envoyer ce devis signé ?"}
+        description={`Devis de ${proposalPriceValid ? parsedProposalPrice.toLocaleString("fr-FR") : proposedPrice} € (${
+          acompteType === "aucun"
+            ? "sans acompte"
+            : `acompte ${acompteType === "obligatoire" ? "obligatoire" : "facultatif"} de ${parsedAcomptePourcent} %`
+        }), signé par ${traiteurSignature.trim()}. ${
+          revision
+            ? `Il remplace votre devis de ${formatEuros(revision.currentPrice)} : le client pourra le signer ou le décliner.`
+            : "Si le client le signe à son tour, la prestation sera confirmée. Il ne pourra ensuite être remplacé que si le client vous fait une contre-proposition."
+        }`}
         confirmLabel={proposalError ? "Réessayer l'envoi" : "Confirmer et envoyer"}
         loadingLabel="Envoi en cours..."
         cancelLabel="Modifier"

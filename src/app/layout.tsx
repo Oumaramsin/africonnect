@@ -54,7 +54,7 @@ export const metadata: Metadata = {
     'gp cote d ivoire',
     'gp cameroun',
     'livraison plats africains',
-    'sequestre securise colis',
+    'devis traiteur en ligne',
   ],
   authors: [{ name: SITE_NAME }],
   creator: SITE_NAME,
@@ -75,7 +75,7 @@ export const metadata: Metadata = {
     siteName: SITE_NAME,
     title: SITE_TITLE,
     description:
-      'Traiteurs d\'exception et transport de colis GP de confiance pour la diaspora africaine. Paiement sous séquestre sécurisé.',
+      'Traiteurs d\'exception et transport de colis GP de confiance pour la diaspora africaine. Devis signés en ligne.',
   },
   twitter: {
     card: 'summary_large_image',

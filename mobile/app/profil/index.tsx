@@ -12,6 +12,7 @@ import {
   DeviceEventEmitter,
   Platform,
   KeyboardAvoidingView,
+  Linking,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
@@ -711,11 +712,49 @@ export default function ProfilScreen() {
                 <View style={{ flex: 1 }}>
                   <Text style={styles.accountActionText}>Conditions Générales (CGU)</Text>
                   <Text style={{ fontSize: 11, color: "#64748B", fontWeight: "500" }}>
-                    Cotransportage GP, séquestre Dabari & règles officielles
+                    Cotransportage GP, paiements & règles officielles
                   </Text>
                 </View>
               </View>
               <Ionicons name="chevron-forward" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.accountActionRow}
+              activeOpacity={0.7}
+              onPress={() => Linking.openURL(`https://www.dabari.fr/confidentialite`).catch(() => {})}
+            >
+              <View style={styles.accountActionLeft}>
+                <View style={[styles.actionIconCircle, { backgroundColor: "#E0F2FE" }]}>
+                  <Ionicons name="shield-checkmark-outline" size={17} color="#0369A1" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountActionText}>Politique de confidentialité</Text>
+                  <Text style={{ fontSize: 11, color: "#64748B", fontWeight: "500" }}>
+                    Données collectées, durées de conservation, vos droits
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="open-outline" size={16} color="#94A3B8" />
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.accountActionRow}
+              activeOpacity={0.7}
+              onPress={() => Linking.openURL(`https://www.dabari.fr/mentions-legales`).catch(() => {})}
+            >
+              <View style={styles.accountActionLeft}>
+                <View style={[styles.actionIconCircle, { backgroundColor: "#F1F5F9" }]}>
+                  <Ionicons name="business-outline" size={17} color="#334155" />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={styles.accountActionText}>Mentions légales</Text>
+                  <Text style={{ fontSize: 11, color: "#64748B", fontWeight: "500" }}>
+                    Éditeur RAMSIN, hébergeurs, contact
+                  </Text>
+                </View>
+              </View>
+              <Ionicons name="open-outline" size={16} color="#94A3B8" />
             </TouchableOpacity>
           </View>
 

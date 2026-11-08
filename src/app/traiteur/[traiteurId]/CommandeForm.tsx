@@ -16,6 +16,7 @@ import AddressAutocomplete from "@/components/AddressAutocomplete";
 import { hasSession, authFetch, apiErrorMessage, sendErrorMessage } from "@/lib/auth";
 import { UNVERIFIED_ADDRESS_NOTICE, verifyAddressExists } from "@/lib/addressValidation";
 import { formatWhatsAppUrl } from "@/lib/types/traiteur";
+import { useIsOwnTraiteur } from "@/lib/useIsOwnTraiteur";
 
 type Props = {
   traiteurId: string;
@@ -45,6 +46,8 @@ export default function CommandeForm({
   traiteurName,
   whatsapp,
 }: Props) {
+  // Un traiteur ne peut pas se demander un devis à lui-même (l'API le refuse aussi)
+  const isOwnProfile = useIsOwnTraiteur(traiteurId);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -338,9 +341,15 @@ export default function CommandeForm({
               />
             </div>
 
+            {isOwnProfile && (
+              <p role="alert" className="text-xs font-semibold text-rose-700 bg-rose-50 border border-rose-200 rounded-xl px-3 py-2">
+                C&apos;est votre propre profil traiteur : vous ne pouvez pas vous demander un devis.
+              </p>
+            )}
             <button
               onClick={handlePreSubmit}
               disabled={
+                isOwnProfile ||
                 loading ||
                 validatingAddress ||
                 !form.date_evenement ||

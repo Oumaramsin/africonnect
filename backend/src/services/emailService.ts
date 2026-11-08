@@ -833,7 +833,7 @@ export const sendAcompteNotificationMail = async (data: {
   dateEvenement?: string;
   transactionRef?: string;
 }) => {
-  const title = `Acompte sous séquestre validé (${data.acompteMontant.toFixed(2)} €) !`;
+  const title = `Acompte déclaré réglé (${data.acompteMontant.toFixed(2)} €)`;
 
   const html = `
     <div style="background-color: #F4F0E8; padding: 30px 10px; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;">
@@ -843,7 +843,7 @@ export const sendAcompteNotificationMail = async (data: {
         <div style="padding: 30px 24px;">
           <div style="text-align: center; margin-bottom: 20px;">
             <span style="background-color: #E8F5E9; color: #1D6B45; padding: 6px 14px; border-radius: 20px; font-size: 13px; font-weight: bold; display: inline-flex; align-items: center;">
-              ${SVG_CHECK_CIRCLE} Acompte Sous Séquestre Garanti
+              ${SVG_CHECK_CIRCLE} Acompte déclaré par le client
             </span>
           </div>
 
@@ -852,15 +852,15 @@ export const sendAcompteNotificationMail = async (data: {
           </h2>
           
           <p style="color: #4A5568; font-size: 15px; line-height: 1.6; text-align: center;">
-            Le client <strong style="color: #1D6B45;">${escapeHtml(data.clientName)}</strong> a validé le versement de son acompte de <strong>${data.acompteMontant.toFixed(2)} €</strong> sous séquestre Dabari.
+            Le client <strong style="color: #1D6B45;">${escapeHtml(data.clientName)}</strong> indique vous avoir réglé directement son acompte de <strong>${data.acompteMontant.toFixed(2)} €</strong>. Vérifiez sa bonne réception.
           </p>
 
           <div style="background-color: #FAF7F2; border-left: 4px solid #1D6B45; border-radius: 8px; padding: 18px; margin: 20px 0;">
-            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Montant sous séquestre :</strong> ${data.acompteMontant.toFixed(2)} €</p>
+            <p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Montant de l'acompte :</strong> ${data.acompteMontant.toFixed(2)} €</p>
             ${data.dateEvenement ? `<p style="margin: 4px 0; color: #2D3748; font-size: 14px;"><strong>Date événement :</strong> ${escapeHtml(data.dateEvenement)}</p>` : ""}
-            ${data.transactionRef ? `<p style="margin: 4px 0; color: #6B7280; font-size: 12px;"><strong>Réf. transaction :</strong> ${escapeHtml(data.transactionRef)}</p>` : ""}
+            ${data.transactionRef ? `<p style="margin: 4px 0; color: #6B7280; font-size: 12px;"><strong>Référence :</strong> ${escapeHtml(data.transactionRef)}</p>` : ""}
             <p style="margin: 8px 0 0 0; color: #1D6B45; font-size: 12px;">
-              🛡️ Vos fonds sont conservés en toute sécurité jusqu'à l'exécution de la prestation.
+              Le règlement se fait directement entre vous et le client : Dabari ne perçoit ni ne conserve aucun fonds.
             </p>
           </div>
 

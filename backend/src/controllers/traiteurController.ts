@@ -1,8 +1,12 @@
 import { Request, Response } from "express";
 import {
+  ACOMPTE_MAX_POURCENTAGE,
+  DevisConditionsInput,
+  NEGOCIATION_MESSAGE_MAX_LENGTH,
   getAuthUserId,
   isUserAdmin,
   isValidUUID,
+  parseDevisConditionsInput,
 } from "../utils/types";
 import {
   isOptionalTextWithin,
@@ -15,6 +19,22 @@ import {
 
 const MAX_GUEST_COUNT = 10000;
 const MAX_REQUEST_BUDGET = 10000000;
+const MAX_PROPOSAL_PRICE = 1000000;
+
+/** Montant saisi (nombre, « 1500 », « 1 500,50 ») : nombre arrondi au centime, sinon NaN. */
+const parseAmount = (value: unknown): number => {
+  const parsed =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim() !== ""
+        ? Number(value.replace(/[\s\u00a0\u202f]/g, "").replace(",", "."))
+        : NaN;
+  return Number.isFinite(parsed) ? Math.round(parsed * 100) / 100 : NaN;
+};
+
+/** Message facultatif d'une étape de négociation : texte nettoyé, ou null s'il est vide. */
+const toOptionalMessage = (value: unknown): string | null =>
+  typeof value === "string" && value.trim() ? value.trim() : null;
 
 /**
  * Nombre d'invités : entier entre 1 et 10 000. Retourne null si la valeur est vide,
@@ -99,6 +119,8 @@ import {
   createTraiteurProposal,
   getMyTraiteurProposals,
   updateTraiteurProposalStatus,
+  createCounterOffer,
+  keepProposalPrice,
 } from "../services/traiteurService";
 
 export const getActiveTraiteurController = async (
@@ -703,7 +725,7 @@ export const getAllTraiteurRequestsController = async (
       });
     }
 
-    const requests = await getAllTraiteurRequests(ownTraiteurId);
+    const requests = await getAllTraiteurRequests(ownTraiteurId, userId);
     res.json({
       success: true,
       data: { requests },
@@ -921,7 +943,7 @@ export const createTraiteurProposalController = async (
   try {
     const userId = getAuthUserId(req);
     const { requestId } = req.params;
-    const { proposed_price, message } = req.body;
+    const { proposed_price, message, conditions_devis, traiteur_signature } = req.body;
 
     if (!userId) {
       return res.status(401).json({ success: false, error: "Non autorisé" });
@@ -938,23 +960,56 @@ export const createTraiteurProposalController = async (
       });
     }
 
-    const parsedPrice = parseFloat(String(proposed_price).replace(",", "."));
-    if (isNaN(parsedPrice) || parsedPrice <= 0 || parsedPrice > 1000000) {
+    // Lecture stricte (« 1 500 » ou « 12abc » ne deviennent pas 1 € ou 12 €), arrondie au centime
+    const parsedPrice = parseAmount(proposed_price);
+    if (!Number.isFinite(parsedPrice) || parsedPrice <= 0 || parsedPrice > MAX_PROPOSAL_PRICE) {
       return res.status(400).json({
         success: false,
         error: "Le prix proposé doit être un montant supérieur à 0.",
       });
     }
 
+    // La proposition est un devis signé : conditions d'acompte et signature du traiteur obligatoires
+    if (!isRequiredTextWithin(traiteur_signature, 120)) {
+      return res.status(400).json({
+        success: false,
+        error: "Signez votre proposition (prénom et nom) : elle vous engage sur le prix et les conditions du devis.",
+      });
+    }
+    if (typeof conditions_devis !== "string" && (typeof conditions_devis !== "object" || conditions_devis === null)) {
+      return res.status(400).json({ success: false, error: "Précisez les conditions d'acompte du devis." });
+    }
+    const parsedConditions = parseDevisConditionsInput(
+      typeof conditions_devis === "string" ? conditions_devis : JSON.stringify(conditions_devis),
+    );
+    if (parsedConditions.error) {
+      return res.status(400).json({ success: false, error: parsedConditions.error });
+    }
+    const conditions: DevisConditionsInput = parsedConditions.value ?? {};
+    if (!conditions.acompte_type) {
+      return res.status(400).json({
+        success: false,
+        error: "Précisez les conditions d'acompte (sans acompte, acompte facultatif ou obligatoire).",
+      });
+    }
+    if (conditions.acompte_type !== "aucun" && !((conditions.acompte_pourcentage ?? 0) > 0)) {
+      return res.status(400).json({
+        success: false,
+        error: `Indiquez le pourcentage d'acompte (entre 1 et ${ACOMPTE_MAX_POURCENTAGE} %).`,
+      });
+    }
+
     const proposal = await createTraiteurProposal(userId, requestId, {
       proposed_price: parsedPrice,
       message: message.trim(),
+      conditions,
+      traiteur_signature: traiteur_signature.trim(),
     });
 
     res.status(201).json({
       success: true,
       data: { proposal },
-      message: "Proposition transmise avec succès au client.",
+      message: "Devis signé envoyé au client.",
     });
   } catch (error: any) {
     console.error("Erreur dans createTraiteurProposalController:", error);
@@ -983,6 +1038,84 @@ export const getMyTraiteurProposalsController = async (
   }
 };
 
+/** Contre-proposition du client : un montant plus bas que le devis reçu, avec un message facultatif. */
+export const createCounterOfferController = async (req: Request, res: Response) => {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+    const { id } = req.params;
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: "Identifiant de proposition invalide." });
+    }
+
+    const { prix, message, prix_devis_attendu } = req.body ?? {};
+    const amount = parseAmount(prix);
+    if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_PROPOSAL_PRICE) {
+      return res.status(400).json({ success: false, error: "Indiquez le montant que vous proposez, en euros." });
+    }
+    if (!isOptionalTextWithin(message, NEGOCIATION_MESSAGE_MAX_LENGTH)) {
+      return res.status(400).json({
+        success: false,
+        error: `Votre message ne doit pas dépasser ${NEGOCIATION_MESSAGE_MAX_LENGTH} caractères.`,
+      });
+    }
+    let expectedPrice: number | undefined;
+    if (prix_devis_attendu !== undefined && prix_devis_attendu !== null && prix_devis_attendu !== "") {
+      expectedPrice = parseAmount(prix_devis_attendu);
+      if (!Number.isFinite(expectedPrice)) {
+        return res.status(400).json({ success: false, error: "Montant du devis invalide." });
+      }
+    }
+
+    const proposal = await createCounterOffer(id, userId, {
+      prix: amount,
+      message: toOptionalMessage(message),
+      expectedPrice,
+    });
+    res.status(201).json({
+      success: true,
+      data: { proposal },
+      message: "Contre-proposition envoyée au traiteur.",
+    });
+  } catch (error: any) {
+    console.error("Erreur dans createCounterOfferController:", error);
+    sendErrorResponse(res, error, "Erreur serveur.");
+  }
+};
+
+/** Réponse du traiteur à une contre-proposition : il maintient son devis, avec un message facultatif. */
+export const keepProposalPriceController = async (req: Request, res: Response) => {
+  try {
+    const userId = getAuthUserId(req);
+    if (!userId) {
+      return res.status(401).json({ success: false, error: "Non autorisé" });
+    }
+    const { id } = req.params;
+    if (!isValidUUID(id)) {
+      return res.status(400).json({ success: false, error: "Identifiant de proposition invalide." });
+    }
+    const { message } = req.body ?? {};
+    if (!isOptionalTextWithin(message, NEGOCIATION_MESSAGE_MAX_LENGTH)) {
+      return res.status(400).json({
+        success: false,
+        error: `Votre message ne doit pas dépasser ${NEGOCIATION_MESSAGE_MAX_LENGTH} caractères.`,
+      });
+    }
+
+    const proposal = await keepProposalPrice(id, userId, { message: toOptionalMessage(message) });
+    res.json({
+      success: true,
+      data: { proposal },
+      message: "Réponse envoyée : votre devis est maintenu.",
+    });
+  } catch (error: any) {
+    console.error("Erreur dans keepProposalPriceController:", error);
+    sendErrorResponse(res, error, "Erreur serveur.");
+  }
+};
+
 export const updateTraiteurProposalStatusController = async (
   req: Request,
   res: Response,
@@ -990,7 +1123,7 @@ export const updateTraiteurProposalStatusController = async (
   try {
     const userId = getAuthUserId(req);
     const { id } = req.params;
-    const { status } = req.body;
+    const { status, client_signature, prix_devis_attendu, devis_signe_le } = req.body;
 
     if (!userId) {
       return res.status(401).json({ success: false, error: "Non autorisé" });
@@ -1007,13 +1140,55 @@ export const updateTraiteurProposalStatusController = async (
       });
     }
 
-    const proposal = await updateTraiteurProposalStatus(id, userId, status);
+    // Accepter une offre, c'est signer le devis : signature du client obligatoire, sur le montant lu
+    const isAcceptance = status === "accepted" || status === "acceptee";
+    if (isAcceptance && !isRequiredTextWithin(client_signature, 120)) {
+      return res.status(400).json({
+        success: false,
+        error: "Signez le devis (prénom et nom) pour accepter cette offre.",
+      });
+    }
+    // La signature porte sur le montant que le client a lu : obligatoire pour accepter (une offre
+    // modifiée entre-temps, par un nouveau devis, est alors refusée)
+    let expectedPrice: number | undefined;
+    let expectedSignedAt: string | null | undefined;
+    if (isAcceptance) {
+      expectedPrice = parseAmount(prix_devis_attendu);
+      if (!Number.isFinite(expectedPrice)) {
+        return res.status(400).json({
+          success: false,
+          error: "Montant du devis manquant : actualisez la page puis signez à nouveau.",
+        });
+      }
+      // Version du devis lue par le client : date de signature du traiteur (null pour une ancienne
+      // offre non signée). Un nouveau devis envoyé depuis, même au même prix, fait refuser la signature.
+      const validVersion =
+        devis_signe_le === null ||
+        (typeof devis_signe_le === "string" && !Number.isNaN(new Date(devis_signe_le).getTime()));
+      if (!validVersion) {
+        return res.status(400).json({
+          success: false,
+          error: "Devis non identifié : actualisez la page puis signez à nouveau.",
+        });
+      }
+      expectedSignedAt = devis_signe_le;
+    }
+
+    const proposal = await updateTraiteurProposalStatus(id, userId, status, {
+      clientSignature: isAcceptance ? client_signature : undefined,
+      expectedPrice,
+      expectedSignedAt,
+    });
     res.json({
       success: true,
-      data: { proposal },
-      message: status.includes("accept")
-        ? "Proposition acceptée avec succès !"
-        : "Proposition déclinée.",
+      // commande_id : devis créé à partir de l'offre acceptée, signé par le client (et par le traiteur
+      // quand sa proposition était signée)
+      data: { proposal, commande_id: proposal.commande_id },
+      message: !isAcceptance
+        ? "Proposition déclinée."
+        : proposal.devis_fully_signed
+          ? "Devis signé par les deux parties : la prestation est confirmée."
+          : "Devis signé : le traiteur doit encore le signer.",
     });
   } catch (error: any) {
     console.error("Erreur dans updateTraiteurProposalStatusController:", error);

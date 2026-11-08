@@ -3,7 +3,6 @@
 import { useState } from "react";
 import {
   ChefHat,
-  Check,
   CheckCircle2,
   Phone,
   Star,
@@ -13,8 +12,20 @@ import {
   X,
   Clock,
   Quote,
+  PenLine,
+  Wallet,
+  ArrowDownUp,
+  Hourglass,
 } from "lucide-react";
 import { TraiteurProposal, formatWhatsAppUrl } from "@/lib/types/traiteur";
+import { describeProposalAcompte } from "./AcceptProposalModal";
+import NegociationThread from "./NegociationThread";
+import {
+  NEGOCIATION_MAX_CONTRE_OFFRES,
+  countCounterOffers,
+  getNegociation,
+  hasPendingCounterOffer,
+} from "@/lib/negociation";
 import Image from "next/image";
 
 type Props = {
@@ -27,6 +38,8 @@ type Props = {
   formatDate: (d: string) => string;
   onAccept: () => void;
   onReject: () => void;
+  /** Prix trop élevé : contre-proposition au traiteur */
+  onCounter: () => void;
 };
 
 export default function ProposalCard({
@@ -39,12 +52,21 @@ export default function ProposalCard({
   formatDate,
   onAccept,
   onReject,
+  onCounter,
 }: Props) {
   const [imgError, setImgError] = useState(false);
   const traiteur = proposal.traiteur;
   const isPending = proposal.status === "pending";
   const isAccepted = proposal.status === "accepted";
   const isRejected = proposal.status === "rejected";
+  // Négociation : une contre-proposition à la fois, dans la limite autorisée
+  const negociation = getNegociation(proposal.negociation);
+  const counterPending = hasPendingCounterOffer(negociation);
+  const canCounter =
+    isPending &&
+    requestOpen &&
+    !counterPending &&
+    countCounterOffers(negociation) < NEGOCIATION_MAX_CONTRE_OFFRES;
 
   const price = Number(proposal.proposed_price || 0);
   const parsedBudget =
@@ -170,6 +192,26 @@ export default function ProposalCard({
           </p>
         </div>
 
+        {/* Conditions du devis proposé et signature du traiteur */}
+        <div className="mt-3 space-y-1.5 text-[11px] font-semibold">
+          <p className="flex items-center gap-1.5 text-emerald-800">
+            <Wallet size={13} className="shrink-0" />
+            {describeProposalAcompte(proposal)}
+          </p>
+          <p
+            className={`flex items-center gap-1.5 ${
+              proposal.traiteur_signature ? "text-emerald-700" : "text-amber-700"
+            }`}
+          >
+            {proposal.traiteur_signature ? <CheckCircle2 size={13} className="shrink-0" /> : <Clock size={13} className="shrink-0" />}
+            {proposal.traiteur_signature
+              ? `Devis signé par ${proposal.traiteur_signature}`
+              : "Offre non signée : le traiteur signera après votre accord"}
+          </p>
+        </div>
+
+        <NegociationThread entries={negociation} viewer="client" traiteurName={traiteur?.name} />
+
         {/* Actions */}
         <div className="mt-4 pt-3 border-t border-gray-100 flex flex-wrap items-center gap-2">
           {waUrl ? (
@@ -205,16 +247,34 @@ export default function ProposalCard({
                 onClick={onAccept}
                 className="text-xs font-bold text-white bg-[#1D6B45] hover:bg-[#155234] px-4 py-2 rounded-xl transition-all shadow-sm flex items-center gap-1.5 active:scale-95 disabled:opacity-50"
               >
-                <Check size={14} />
-                Accepter
+                <PenLine size={14} />
+                Signer et accepter
               </button>
             </div>
+          )}
+
+          {isPending && requestOpen && counterPending && (
+            <p className="w-full text-[11px] text-violet-800 font-semibold bg-violet-50 px-3 py-2 rounded-xl border border-violet-200 flex items-center gap-1.5">
+              <Hourglass size={13} className="shrink-0" />
+              Contre-proposition envoyée : en attente de la réponse du traiteur.
+            </p>
+          )}
+          {canCounter && (
+            <button
+              type="button"
+              disabled={loading}
+              onClick={onCounter}
+              className="w-full text-xs font-bold text-violet-700 bg-violet-50 hover:bg-violet-100 border border-violet-200 px-3.5 py-2 rounded-xl inline-flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+            >
+              <ArrowDownUp size={13} />
+              Trop cher ? Proposer un autre prix
+            </button>
           )}
 
           {isAccepted && (
             <p className="w-full text-[11px] text-emerald-700 font-medium bg-emerald-50 px-3 py-2 rounded-xl border border-emerald-200 flex items-start gap-1.5">
               <CheckCircle2 size={14} className="shrink-0 mt-px" />
-              Contactez le traiteur sur WhatsApp pour convenir des derniers détails.
+              Devis signé : retrouvez-le dans vos commandes envoyées (acompte, impression, PDF).
             </p>
           )}
         </div>

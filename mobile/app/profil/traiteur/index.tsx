@@ -816,7 +816,7 @@ export default function TraiteurEspaceScreen() {
                       style={{ marginTop: 2 }}
                     />
                     <Text style={styles.reassuranceText}>
-                      Paiements sécurisés et garantis via la plateforme Dabari.
+                      Vos clients vous règlent directement ; devis et acomptes sont suivis sur Dabari.
                     </Text>
                   </View>
                 </View>

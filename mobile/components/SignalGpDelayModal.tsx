@@ -10,7 +10,6 @@ import {
   Alert,
   ScrollView,
   KeyboardAvoidingView,
-  Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { apiFetch } from "../utils/api";
@@ -159,10 +158,9 @@ export default function SignalGpDelayModal({
       statusBarTranslucent
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
-        style={styles.backdropOverlay}
-      >
+      {/* Android affiche les modales bord à bord et ne les redimensionne plus quand le clavier
+          s'ouvre : la fenêtre est remontée au-dessus du clavier sur les deux plateformes. */}
+      <KeyboardAvoidingView behavior="padding" style={styles.backdropOverlay}>
         {/* Backdrop tap to dismiss */}
         <TouchableOpacity
           style={StyleSheet.absoluteFill}
@@ -197,6 +195,7 @@ export default function SignalGpDelayModal({
           <ScrollView
             showsVerticalScrollIndicator={false}
             contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
           >
             {/* Erreur */}
             {Boolean(error) && (

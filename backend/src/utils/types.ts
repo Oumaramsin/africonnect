@@ -78,6 +78,8 @@ export interface DevisConditionsMetadata {
   acompte_paye_at?: string | null;
   acompte_transaction_ref?: string | null;
   acompte_choix_jour_j?: boolean;
+  /** Date à laquelle le traiteur a signalé ne pas avoir reçu l'acompte déclaré réglé (null sinon) */
+  acompte_conteste_at?: string | null;
 }
 
 /**
@@ -92,13 +94,87 @@ export interface DevisConditionsInput {
 
 export const ACOMPTE_TYPES = ["aucun", "obligatoire", "optionnel"] as const;
 export const ACOMPTE_MAX_POURCENTAGE = 80;
+export const DEVIS_TEXT_MAX_LENGTH = 3000;
 
-export const parseDevisConditionsMeta = (
+/**
+ * Conditions envoyées par le traiteur (JSON sérialisé, ou texte libre des anciennes versions) :
+ * seuls le texte, le type et le pourcentage d'acompte sont retenus, le reste est ignoré.
+ */
+export const parseDevisConditionsInput = (
+  raw: string,
+): { value?: DevisConditionsInput; error?: string } => {
+  const trimmed = raw.trim();
+  if (!trimmed.startsWith("{")) {
+    return trimmed.length > DEVIS_TEXT_MAX_LENGTH
+      ? { error: "Le texte des conditions ne doit pas dépasser 3 000 caractères." }
+      : { value: { texte: trimmed } };
+  }
+
+  let parsed: any;
+  try {
+    parsed = JSON.parse(trimmed);
+  } catch {
+    return { error: "Les conditions du devis sont illisibles." };
+  }
+  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+    return { error: "Les conditions du devis sont illisibles." };
+  }
+
+  const value: DevisConditionsInput = {};
+  if (parsed.texte !== undefined && parsed.texte !== null) {
+    if (typeof parsed.texte !== "string" || parsed.texte.length > DEVIS_TEXT_MAX_LENGTH) {
+      return { error: "Le texte des conditions doit être un texte de 3 000 caractères maximum." };
+    }
+    value.texte = parsed.texte.trim();
+  }
+  if (parsed.acompte_type !== undefined && parsed.acompte_type !== null) {
+    if (!ACOMPTE_TYPES.includes(parsed.acompte_type)) {
+      return { error: "Type d'acompte invalide (aucun, obligatoire ou optionnel)." };
+    }
+    value.acompte_type = parsed.acompte_type;
+  }
+  // Le pourcentage est ignoré (forcé à 0) quand aucun acompte n'est demandé
+  const rawPourcentage = parsed.acompte_pourcentage;
+  if (value.acompte_type !== "aucun" && rawPourcentage !== undefined && rawPourcentage !== null && rawPourcentage !== "") {
+    const pourcentage =
+      typeof rawPourcentage === "number"
+        ? rawPourcentage
+        : typeof rawPourcentage === "string"
+          ? Number(rawPourcentage.trim().replace(",", "."))
+          : NaN;
+    if (!Number.isFinite(pourcentage) || pourcentage < 0 || pourcentage > ACOMPTE_MAX_POURCENTAGE) {
+      return { error: `Le pourcentage d'acompte doit être compris entre 0 et ${ACOMPTE_MAX_POURCENTAGE} %.` };
+    }
+    value.acompte_pourcentage = pourcentage;
+  }
+  return { value };
+};
+
+// Texte par défaut des conditions d'un devis : les paiements se font directement entre le client et
+// le traiteur, Dabari ne perçoit ni ne conserve aucun fonds.
+export const DEFAULT_DEVIS_CONDITIONS_TEXTE =
+  "Acompte et solde à régler directement au traiteur, selon les modalités convenues entre vous. Dabari assure la mise en relation et ne perçoit ni ne conserve aucun fonds.";
+
+// Anciens textes par défaut, qui annonçaient à tort un séquestre : remplacés à la lecture (et donc
+// réécrits à la prochaine mise à jour du devis).
+const LEGACY_DEVIS_CONDITIONS_TEXTES = new Set([
+  "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation.",
+  "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de l'événement.",
+]);
+
+export const parseDevisConditionsMeta = (raw?: string | null): DevisConditionsMetadata => {
+  const meta = parseDevisConditionsMetaRaw(raw);
+  if (LEGACY_DEVIS_CONDITIONS_TEXTES.has((meta.texte || "").trim())) {
+    meta.texte = DEFAULT_DEVIS_CONDITIONS_TEXTE;
+  }
+  return meta;
+};
+
+const parseDevisConditionsMetaRaw = (
   raw?: string | null,
 ): DevisConditionsMetadata => {
   const defaultMeta: DevisConditionsMetadata = {
-    texte:
-      "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation.",
+    texte: DEFAULT_DEVIS_CONDITIONS_TEXTE,
     acompte_type: "optionnel",
     acompte_montant: 0,
     acompte_pourcentage: 30,
@@ -106,6 +182,7 @@ export const parseDevisConditionsMeta = (
     acompte_paye_at: null,
     acompte_transaction_ref: null,
     acompte_choix_jour_j: false,
+    acompte_conteste_at: null,
   };
 
   if (!raw) return defaultMeta;
@@ -141,6 +218,7 @@ export const parseDevisConditionsMeta = (
         acompte_transaction_ref:
           typeof parsed.acompte_transaction_ref === "string" ? parsed.acompte_transaction_ref : null,
         acompte_choix_jour_j: parsed.acompte_choix_jour_j === true,
+        acompte_conteste_at: typeof parsed.acompte_conteste_at === "string" ? parsed.acompte_conteste_at : null,
       };
     }
   } catch {
@@ -150,6 +228,29 @@ export const parseDevisConditionsMeta = (
   return {
     ...defaultMeta,
     texte: raw,
+  };
+};
+
+/**
+ * Conditions d'un devis pour un prix donné : texte, type et pourcentage d'acompte repris de la saisie
+ * (sinon valeurs par défaut), montant recalculé côté serveur, aucun règlement déclaré.
+ */
+export const buildDevisConditions = (
+  price: number,
+  input?: DevisConditionsInput,
+): DevisConditionsMetadata => {
+  const defaults = parseDevisConditionsMeta(null);
+  const acompteType = input?.acompte_type ?? defaults.acompte_type ?? "optionnel";
+  const pourcentage =
+    acompteType === "aucun"
+      ? 0
+      : Math.min(input?.acompte_pourcentage ?? defaults.acompte_pourcentage ?? 30, ACOMPTE_MAX_POURCENTAGE);
+  return {
+    ...defaults,
+    texte: input?.texte?.trim() || defaults.texte,
+    acompte_type: acompteType,
+    acompte_pourcentage: pourcentage,
+    acompte_montant: acompteType === "aucun" ? 0 : Math.round(price * pourcentage) / 100,
   };
 };
 
@@ -166,6 +267,7 @@ export const serializeDevisConditionsMeta = (
     acompte_paye_at: meta.acompte_paye_at || null,
     acompte_transaction_ref: meta.acompte_transaction_ref || null,
     acompte_choix_jour_j: Boolean(meta.acompte_choix_jour_j),
+    acompte_conteste_at: meta.acompte_conteste_at || null,
   });
 };
 
@@ -199,6 +301,54 @@ export const TRAITEUR_PROPOSAL_STATUS = {
   ACCEPTED: "accepted",
   REJECTED: "rejected",
 } as const;
+
+// ==========================================
+// Négociation du prix d'une offre de traiteur
+// ==========================================
+
+/** Contre-propositions qu'un client peut faire sur une même offre (ensuite : signer ou décliner). */
+export const NEGOCIATION_MAX_CONTRE_OFFRES = 3;
+export const NEGOCIATION_MESSAGE_MAX_LENGTH = 500;
+
+/**
+ * Étape de la négociation d'une offre, enregistrée par le serveur seul (colonne JSON
+ * traiteur_proposals.negociation) :
+ * - « contre_offre » : le client propose un prix (prix) plus bas que le devis en cours (prix_precedent) ;
+ * - « prix_maintenu » : le traiteur garde son devis signé (prix), avec un message facultatif ;
+ * - « nouveau_devis » : le traiteur signe un nouveau devis (prix) qui remplace le précédent (prix_precedent).
+ */
+export type NegociationEntry = {
+  type: "contre_offre" | "prix_maintenu" | "nouveau_devis";
+  auteur: "client" | "traiteur";
+  prix: number;
+  prix_precedent: number | null;
+  message: string | null;
+  at: string;
+};
+
+const NEGOCIATION_TYPES = ["contre_offre", "prix_maintenu", "nouveau_devis"];
+
+/** Historique lu en base : toute entrée inattendue est ignorée. */
+export const parseNegociation = (raw: unknown): NegociationEntry[] => {
+  if (!Array.isArray(raw)) return [];
+  return raw.filter(
+    (entry): entry is NegociationEntry =>
+      !!entry &&
+      typeof entry === "object" &&
+      NEGOCIATION_TYPES.includes(entry.type) &&
+      (entry.auteur === "client" || entry.auteur === "traiteur") &&
+      typeof entry.prix === "number" &&
+      Number.isFinite(entry.prix) &&
+      typeof entry.at === "string",
+  );
+};
+
+/** Vrai si une contre-proposition du client attend la réponse du traiteur. */
+export const hasPendingCounterOffer = (entries: NegociationEntry[]): boolean =>
+  entries.length > 0 && entries[entries.length - 1].type === "contre_offre";
+
+export const countCounterOffers = (entries: NegociationEntry[]): number =>
+  entries.filter((entry) => entry.type === "contre_offre").length;
 
 // ==========================================
 // Interfaces Données Traiteur & Plats
@@ -295,6 +445,9 @@ export interface UpdateTraiteurRequestInput {
 export interface CreateTraiteurProposalInput {
   proposed_price: number;
   message: string;
+  // La proposition est un devis : conditions d'acompte et signature (engagement) du traiteur
+  conditions: DevisConditionsInput;
+  traiteur_signature: string;
 }
 
 // ==========================================

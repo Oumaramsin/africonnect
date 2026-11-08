@@ -10,8 +10,13 @@ export type NotificationType =
   | "devis_acompte_verse"
   | "devis_acompte_refuse"
   | "devis_acompte_annule"
+  | "devis_acompte_conteste"
   | "traiteur_proposal_received"
   | "traiteur_proposal_accepted"
+  | "traiteur_proposal_rejected"
+  | "traiteur_contre_offre"
+  | "traiteur_prix_maintenu"
+  | "traiteur_nouveau_devis"
   | "traiteur_request_deleted"
   // Commandes de plats cuisinés
   | "nouvelle_commande_plat"
@@ -103,13 +108,13 @@ export function getNotificationVisuals(type: string): {
   badgeColor: string;
 } {
   switch (type) {
-    // ── Devis & Acomptes séquestrés ──
+    // ── Devis & Acomptes ──
     case "devis_acompte_verse":
       return {
         iconName: "shield-checkmark",
         iconColor: "#059669",
         badgeBg: "#ECFDF5",
-        categoryLabel: "Acompte Séquestré",
+        categoryLabel: "Acompte",
         badgeColor: "#065F46",
       };
     case "devis_acompte_refuse":
@@ -127,6 +132,14 @@ export function getNotificationVisuals(type: string): {
         badgeBg: "#F3F4F6",
         categoryLabel: "Acompte en attente",
         badgeColor: "#374151",
+      };
+    case "devis_acompte_conteste":
+      return {
+        iconName: "alert-circle-outline",
+        iconColor: "#B45309",
+        badgeBg: "#FFFBEB",
+        categoryLabel: "Acompte non reçu",
+        badgeColor: "#92400E",
       };
     case "devis_chiffre":
       return {
@@ -204,6 +217,38 @@ export function getNotificationVisuals(type: string): {
         badgeBg: "#F0FDF4",
         categoryLabel: "Proposition acceptée",
         badgeColor: "#15803D",
+      };
+    case "traiteur_proposal_rejected":
+      return {
+        iconName: "close-circle-outline",
+        iconColor: "#64748B",
+        badgeBg: "#F8FAFC",
+        categoryLabel: "Offre non retenue",
+        badgeColor: "#475569",
+      };
+    case "traiteur_contre_offre":
+      return {
+        iconName: "swap-vertical",
+        iconColor: "#7C3AED",
+        badgeBg: "#F5F3FF",
+        categoryLabel: "Contre-proposition",
+        badgeColor: "#5B21B6",
+      };
+    case "traiteur_prix_maintenu":
+      return {
+        iconName: "lock-closed-outline",
+        iconColor: "#0D9488",
+        badgeBg: "#F0FDFA",
+        categoryLabel: "Prix maintenu",
+        badgeColor: "#0F766E",
+      };
+    case "traiteur_nouveau_devis":
+      return {
+        iconName: "document-text-outline",
+        iconColor: "#2563EB",
+        badgeBg: "#EFF6FF",
+        categoryLabel: "Nouveau devis",
+        badgeColor: "#1E40AF",
       };
     case "traiteur_request_deleted":
       return {

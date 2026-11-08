@@ -12,6 +12,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Link, useRouter } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { getSecureToken } from "../utils/storage";
+import { hideSplash } from "../utils/splash";
 
 export default function HomeScreen() {
   const router = useRouter();
@@ -23,6 +24,8 @@ export default function HomeScreen() {
         const token = await getSecureToken("token");
         if (token) {
           router.replace("/accueil");
+          // Laisse le temps à l'accueil de s'afficher derrière le logo
+          setTimeout(hideSplash, 300);
           return;
         }
       } catch (err) {
@@ -30,6 +33,7 @@ export default function HomeScreen() {
       } finally {
         setCheckingAuth(false);
       }
+      hideSplash();
     }
     checkAuth();
   }, [router]);
@@ -133,7 +137,7 @@ export default function HomeScreen() {
         <View style={styles.footerTrust}>
           <Ionicons name="shield-checkmark-sharp" size={15} color="#1D6B45" />
           <Text style={styles.footerTrustText}>
-            Paiements 100% sécurisés • Membres vérifiés
+            Mise en relation directe • Devis signés en ligne
           </Text>
         </View>
 

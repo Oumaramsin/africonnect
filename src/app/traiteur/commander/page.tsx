@@ -486,7 +486,7 @@ export default function CommanderPage() {
             <div className="hidden sm:flex items-center gap-2.5">
               <div className="bg-white/10 backdrop-blur-xs border border-white/15 px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs text-white">
                 <ShieldCheck size={15} className="text-emerald-300" />
-                <span>Paiement séquestre garanti</span>
+                <span>Paiement direct au traiteur</span>
               </div>
               <div className="bg-white/10 backdrop-blur-xs border border-white/15 px-3 py-1.5 rounded-xl flex items-center gap-2 text-xs text-white">
                 <Sparkles size={15} className="text-amber-300" />
@@ -1003,7 +1003,7 @@ export default function CommanderPage() {
                 </div>
                 <div className="flex items-center gap-2.5 text-xs text-slate-500">
                   <Lock size={16} className="text-[#1D6B45] shrink-0" />
-                  <span>Paiement séquestre débloqué après réception</span>
+                  <span>Paiement réglé directement au traiteur</span>
                 </div>
                 <div className="flex items-center gap-2.5 text-xs text-slate-500">
                   <Clock size={16} className="text-[#1D6B45] shrink-0" />

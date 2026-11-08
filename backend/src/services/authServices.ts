@@ -30,6 +30,15 @@ const emailCooldown = new AttemptLimiter(1, 60 * 1000);
 // Hash factice comparé quand le compte n'existe pas : temps de réponse identique (anti-énumération).
 const DUMMY_PASSWORD_HASH = bcrypt.hashSync(crypto.randomBytes(16).toString("hex"), 10);
 
+/**
+ * Vérification de l'adresse e-mail par code à 6 chiffres à l'inscription. Désactivée tant que l'envoi
+ * d'e-mails n'est pas branché : l'inscription ouvre alors directement la session. Le parcours complet
+ * (code, renvoi, saisie sur le site et l'application) est conservé et se réactive avec
+ * EMAIL_VERIFICATION_ENABLED=true.
+ */
+export const isEmailVerificationEnabled = (): boolean =>
+  process.env.EMAIL_VERIFICATION_ENABLED === "true";
+
 const authError = (code: string, customMessage: string) => {
   const error: any = new Error(code);
   error.customMessage = customMessage;
@@ -48,15 +57,18 @@ class AuthService {
     const hashedPassword = await bcrypt.hash(data.password, 10);
 
     const isEmailRegistration = Boolean(data.email && !isSyntheticEmail(data.email));
-    const verifyCode = isEmailRegistration ? generateNumericCode() : null;
-    const verifyExpires = isEmailRegistration ? new Date(Date.now() + CODE_TTL_MS) : null;
+    // Code à saisir seulement pour une adresse e-mail réelle et si la vérification est activée
+    const requiresVerification = isEmailRegistration && isEmailVerificationEnabled();
+    const verifyCode = requiresVerification ? generateNumericCode() : null;
+    const verifyExpires = requiresVerification ? new Date(Date.now() + CODE_TTL_MS) : null;
 
     const newUser = await prisma.user.create({
       data: {
         email: data.email,
         phone: data.phone,
         password: hashedPassword,
-        is_email_verified: !isEmailRegistration, // true par défaut pour inscription téléphone, false pour email
+        // Compte actif d'emblée (téléphone, ou vérification e-mail désactivée) ; sinon après le code
+        is_email_verified: !requiresVerification,
         email_verify_code: verifyCode,
         email_verify_expires: verifyExpires,
         profile: {
@@ -74,7 +86,7 @@ class AuthService {
       },
     });
 
-    if (isEmailRegistration && data.email && verifyCode) {
+    if (requiresVerification && data.email && verifyCode) {
       emailCooldown.hit(`verify:${data.email}`);
       sendEmailVerificationCodeMail({
         to: data.email,
@@ -85,7 +97,17 @@ class AuthService {
       );
     }
 
-    return newUser.profile;
+    // Aucun code à saisir : la session s'ouvre dès l'inscription (comme après une connexion)
+    const token = requiresVerification
+      ? null
+      : signToken({
+          id: newUser.id,
+          role: newUser.role,
+          password: newUser.password,
+          full_name: newUser.profile?.full_name,
+        });
+
+    return { profile: newUser.profile, requiresVerification, token };
   };
 
   static findUserById = async (id: string) => {
@@ -282,6 +304,17 @@ class AuthService {
     // Seul le compteur de ce couple est remis à zéro : le plafond global expire avec sa fenêtre
     loginAttemptsByIp.reset(pairKey);
 
+    // Vérification désactivée : un compte resté en attente de code (inscrit quand elle était active,
+    // e-mail jamais reçu) est activé à sa première connexion réussie, au lieu d'être bloqué puis
+    // supprimé à l'expiration du code.
+    if (!user.is_email_verified && !isEmailVerificationEnabled()) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { is_email_verified: true, email_verify_code: null, email_verify_expires: null },
+      });
+      user.is_email_verified = true;
+    }
+
     // Vérification e-mail obligatoire quel que soit l'identifiant utilisé (e-mail ou téléphone)
     if (!user.is_email_verified) {
       if (user.email_verify_expires && new Date() > user.email_verify_expires) {
@@ -318,14 +351,19 @@ class AuthService {
     return await prisma.$transaction(async (tx) => {
       // La suppression du profil passe les relations à NULL : sans désactivation préalable, le
       // traiteur et les annonces GP resteraient publiés (et commandables) sans propriétaire.
+      // Fiche retirée du site (404) ; le numéro WhatsApp, donnée personnelle, est effacé. Le nom et la
+      // description restent pour l'historique des devis signés ; ses offres en attente ne sont plus
+      // affichées ni acceptables (traiteur inactif).
       await tx.traiteur.updateMany({
         where: { user_id: id },
-        data: { is_active: false },
+        data: { is_active: false, whatsapp: null },
       });
       await tx.gpListing.updateMany({
         where: { gp_id: id },
         data: { is_active: false },
       });
+      // Notifications du compte : sans titulaire, elles ne servent plus (politique de confidentialité)
+      await tx.notification.deleteMany({ where: { user_id: id } });
       return await tx.user.delete({
         where: { id },
         select: { id: true },
@@ -472,6 +510,12 @@ class AuthService {
         is_email_verified: true,
       },
       include: { profile: true },
+    });
+
+    // Les appareils enregistrés pour les notifications push sont aussi déconnectés : une personne qui
+    // aurait eu accès au compte ne reçoit plus ses notifications (montants, messages, adresses).
+    await prisma.pushToken.deleteMany({ where: { user_id: updatedUser.id } }).catch((error) => {
+      console.error("Erreur suppression des jetons push après réinitialisation :", error);
     });
 
     const token = signToken({

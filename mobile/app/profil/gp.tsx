@@ -1548,7 +1548,9 @@ export default function GpProfilScreen() {
           visible={Boolean(delayModalItem)}
           onRequestClose={() => setDelayModalItem(null)}
         >
-          <View style={styles.modalOverlay}>
+          {/* Android affiche les modales bord à bord et ne les redimensionne plus quand le clavier
+              s'ouvre : la fenêtre est remontée au-dessus du clavier sur les deux plateformes. */}
+          <KeyboardAvoidingView behavior="padding" style={styles.modalOverlay}>
             <View style={styles.modalCard}>
               <View style={styles.delayIconCircle}>
                 <Ionicons name="time" size={28} color="#D97706" />
@@ -1605,7 +1607,7 @@ export default function GpProfilScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          </View>
+          </KeyboardAvoidingView>
         </Modal>
 
         {/* ── MODALE SUPPRESSION ── */}

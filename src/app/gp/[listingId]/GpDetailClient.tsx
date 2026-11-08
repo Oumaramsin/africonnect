@@ -380,9 +380,9 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
             Demande de réservation transmise !
           </h1>
           <p className="text-slate-600 text-sm sm:text-base max-w-md mx-auto leading-relaxed">
-            {gpProfile?.full_name || "Le voyageur"} a reçu votre demande. Vos
-            fonds restent protégés sous séquestre jusqu&apos;à la remise en mains
-            propres de votre colis.
+            {gpProfile?.full_name || "Le voyageur"} a reçu votre demande. Convenez
+            ensemble du rendez-vous de remise et du règlement, à effectuer
+            directement auprès du voyageur.
           </p>
         </div>
 
@@ -399,7 +399,7 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
             <span className="font-bold text-slate-900">{form.weight_kg} kg</span>
           </div>
           <div className="flex justify-between border-t border-slate-200/80 pt-2 font-black text-sm">
-            <span className="text-slate-800">Montant consigné :</span>
+            <span className="text-slate-800">Montant convenu :</span>
             <span className="text-[#1D6B45]">{total.toFixed(2)} € TTC</span>
           </div>
         </div>
@@ -477,7 +477,7 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
               </span>
               <span className="bg-white/10 text-white/90 text-xs font-medium px-3 py-1 rounded-full flex items-center gap-1">
                 <ShieldCheck size={13} className="text-emerald-300" />
-                Séquestre Dabari garanti
+                Paiement direct au voyageur
               </span>
             </div>
 
@@ -745,11 +745,11 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
             )}
           </div>
 
-          {/* Processus Séquestre Dabari en 4 étapes */}
+          {/* Déroulement d'un envoi en 4 étapes */}
           <div className="bg-white rounded-3xl p-6 sm:p-8 border border-slate-200/80 shadow-xs space-y-4">
             <h2 className="font-extrabold text-slate-900 text-sm sm:text-base flex items-center gap-2">
               <ShieldCheck size={18} className="text-[#1D6B45]" />
-              <span>Comment fonctionne la protection sous séquestre ?</span>
+              <span>Comment se déroule un envoi ?</span>
             </h2>
 
             <ol className="grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs">
@@ -759,7 +759,7 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
                 </span>
                 <p className="font-bold text-slate-900">Réservation en ligne</p>
                 <p className="text-slate-500 text-[11px] leading-relaxed">
-                  Votre paiement est bloqué sur un compte tiers Dabari.
+                  Vous réservez vos kilos et le voyageur valide votre demande.
                 </p>
               </li>
 
@@ -787,9 +787,9 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
                 <span className="w-6 h-6 rounded-full bg-[#1D6B45] text-white font-bold flex items-center justify-center text-xs">
                   4
                 </span>
-                <p className="font-bold text-slate-900">Remise & Libération</p>
+                <p className="font-bold text-slate-900">Remise & Règlement</p>
                 <p className="text-slate-500 text-[11px] leading-relaxed">
-                  Les fonds sont débloqués après validation par le destinataire.
+                  Le destinataire récupère le colis ; le règlement se fait directement avec le voyageur.
                 </p>
               </li>
             </ol>
@@ -1022,7 +1022,7 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
                 </div>
                 <div className="flex items-center justify-between pt-1 border-t border-slate-200">
                   <span className="font-extrabold text-slate-800 text-sm">
-                    Total sous séquestre
+                    Total estimé
                   </span>
                   <span className="text-2xl font-black text-[#1D6B45]">
                     {total.toFixed(2)} €
@@ -1140,7 +1140,7 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
                 </div>
               )}
               <div className="flex justify-between border-t border-slate-200 pt-2 text-sm font-black text-slate-900">
-                <span className="text-slate-800">Montant sous séquestre :</span>
+                <span className="text-slate-800">Montant estimé :</span>
                 <span className="text-[#1D6B45]">{total.toFixed(2)} €</span>
               </div>
             </div>
@@ -1167,9 +1167,9 @@ export default function GpDetailClient({ listingId, initialListing }: Props) {
             )}
 
             <p className="text-[11px] text-slate-500 leading-relaxed">
-              Le paiement est placé sous séquestre sécurisé. Le voyageur sera
-              notifié immédiatement pour convenir du rendez-vous d&apos;inspection et
-              de remise.
+              Aucun paiement n&apos;est effectué sur Dabari : vous réglez le voyageur
+              directement. Il est notifié immédiatement pour convenir du rendez-vous
+              d&apos;inspection et de remise.
             </p>
 
             <div className="flex items-center justify-end gap-3 pt-2">

@@ -549,7 +549,7 @@ export default function EditGpScreen() {
             <Text style={styles.requiredBadge}>* OBLIGATOIRE</Text>
           </View>
           <Text style={styles.fieldHelper}>
-            Indiquez la valeur marchande estimée du colis (obligatoire pour l'assurance et la douane).
+            Indiquez la valeur marchande estimée du colis (utile pour la douane et pour votre éventuelle assurance : Dabari n'assure pas les colis).
           </Text>
           <TextInput
             style={[

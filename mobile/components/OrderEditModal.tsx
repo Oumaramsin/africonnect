@@ -24,6 +24,8 @@ type Props = {
   title: string;
   subtitle?: string;
   details?: DetailRowItem[];
+  // Titre de l'encadré récapitulatif (par défaut : « Récapitulatif des changements »)
+  detailsTitle?: string;
   noticeText?: string;
   confirmLabel?: string;
   cancelLabel?: string;
@@ -41,6 +43,7 @@ export default function OrderEditModal({
   title,
   subtitle,
   details = [],
+  detailsTitle,
   noticeText,
   confirmLabel,
   cancelLabel = "Continuer d'éditer",
@@ -129,7 +132,7 @@ export default function OrderEditModal({
                   { color: primaryColor },
                 ]}
               >
-                {isDanger ? "DÉTAILS DE L'ANNONCE" : "RÉCAPITULATIF DES CHANGEMENTS"}
+                {detailsTitle || (isDanger ? "DÉTAILS DE L'ANNONCE" : "RÉCAPITULATIF DES CHANGEMENTS")}
               </Text>
 
               <View style={styles.recapList}>

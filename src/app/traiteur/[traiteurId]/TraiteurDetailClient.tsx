@@ -32,6 +32,7 @@ import { authFetch, hasSession, isNetworkError } from "@/lib/auth";
 import CountryFlag from "@/components/ui/CountryFlag";
 import CountryFilterModal from "@/components/ui/CountryFilterModal";
 import CommandeForm from "./CommandeForm";
+import { useIsOwnTraiteur } from "@/lib/useIsOwnTraiteur";
 
 const subscribeToNothing = () => () => {};
 
@@ -239,6 +240,8 @@ type Props = {
 };
 
 export default function TraiteurDetailClient({ traiteurId, initialTraiteur }: Props) {
+  // Profil du traiteur connecté : ni demande de devis ni commande de ses propres plats
+  const isOwnProfile = useIsOwnTraiteur(traiteurId);
   const router = useRouter();
   const isLoggedIn = useHasSession();
   const [traiteur, setTraiteur] = useState<Traiteur | null>(initialTraiteur);
@@ -282,7 +285,7 @@ export default function TraiteurDetailClient({ traiteurId, initialTraiteur }: Pr
   };
 
   const addToCart = (dish: Dish) => {
-    if (!traiteur) return;
+    if (!traiteur || isOwnProfile) return;
     setCart((prev) => {
       const existing = prev.find((i) => i.dish.id === dish.id);
       if (existing) {
@@ -492,13 +495,20 @@ export default function TraiteurDetailClient({ traiteurId, initialTraiteur }: Pr
             </div>
 
             <div className="flex flex-col sm:flex-row items-center gap-2.5">
-              <Link
-                href={`/traiteur/${traiteur.id}/devis`}
-                className="inline-flex items-center gap-2 bg-[#D4870A] hover:bg-[#b87407] text-white text-xs font-black px-4 py-2.5 rounded-xl shadow-md transition-all hover:scale-102"
-              >
-                <Sparkles size={15} />
-                <span>Demander un devis</span>
-              </Link>
+              {isOwnProfile ? (
+                <span className="inline-flex items-center gap-2 bg-white/20 text-white text-xs font-black px-4 py-2.5 rounded-xl cursor-not-allowed opacity-80">
+                  <Sparkles size={15} />
+                  <span>Votre profil traiteur</span>
+                </span>
+              ) : (
+                <Link
+                  href={`/traiteur/${traiteur.id}/devis`}
+                  className="inline-flex items-center gap-2 bg-[#D4870A] hover:bg-[#b87407] text-white text-xs font-black px-4 py-2.5 rounded-xl shadow-md transition-all hover:scale-102"
+                >
+                  <Sparkles size={15} />
+                  <span>Demander un devis</span>
+                </Link>
+              )}
 
               {traiteur.whatsapp && (
                 <a
@@ -628,7 +638,7 @@ export default function TraiteurDetailClient({ traiteurId, initialTraiteur }: Pr
                   key={dish.id}
                   dish={dish}
                   qty={getQty(dish.id)}
-                  isLoggedIn={isLoggedIn}
+                  isLoggedIn={isLoggedIn && !isOwnProfile}
                   onAdd={() => addToCart(dish)}
                   onRemove={() => removeFromCart(dish.id)}
                   onOpenModal={() => setSelectedDishModal(dish)}
@@ -823,7 +833,11 @@ export default function TraiteurDetailClient({ traiteurId, initialTraiteur }: Pr
                 <div className="text-xs text-slate-500 font-medium">
                   Ajouter à votre commande :
                 </div>
-                {isLoggedIn ? (
+                {isOwnProfile ? (
+                  <span className="text-xs font-bold text-slate-500 bg-slate-100 px-4 py-2 rounded-xl">
+                    Vous ne pouvez pas commander vos propres plats
+                  </span>
+                ) : isLoggedIn ? (
                   <button
                     type="button"
                     onClick={() => {

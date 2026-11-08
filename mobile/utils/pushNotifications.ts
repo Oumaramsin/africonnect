@@ -19,9 +19,13 @@ import { deleteSecureToken, getSecureToken, saveSecureToken } from "./storage";
 const PUSH_TOKEN_KEY = "dabari_push_token";
 export const ANDROID_CHANNEL_ID = "default";
 
+/** Application lancée dans Expo Go (et non dans un build EAS) : les push y sont indisponibles. */
+const isExpoGo = (): boolean =>
+  Constants.executionEnvironment === ExecutionEnvironment.StoreClient || Constants.appOwnership === "expo";
+
 export function isPushSupported(): boolean {
   if (Platform.OS === "web") return false;
-  if (Platform.OS === "android" && Constants.executionEnvironment === ExecutionEnvironment.StoreClient) return false;
+  if (Platform.OS === "android" && isExpoGo()) return false;
   if (Platform.OS === "ios" && !Device.isDevice) return false;
   return true;
 }
@@ -32,22 +36,30 @@ let configured = false;
 export async function configureNotifications(): Promise<void> {
   if (configured || Platform.OS === "web") return;
   configured = true;
-  Notifications.setNotificationHandler({
-    handleNotification: async () => ({
-      shouldShowBanner: true,
-      shouldShowList: true,
-      shouldPlaySound: true,
-      shouldSetBadge: false,
-    }),
-  });
-  if (Platform.OS === "android") {
-    // Le canal doit exister avant la demande d'autorisation (Android 13+)
-    await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
-      name: "Notifications Dabari",
-      importance: Notifications.AndroidImportance.HIGH,
-      vibrationPattern: [0, 250, 250, 250],
-      lightColor: "#1D6B45",
+  // Expo Go sur Android n'a plus de module de notifications fonctionnel (SDK 53+) : la création du
+  // canal y lève une erreur native. Rien à configurer : les push ne marchent que dans un build EAS.
+  if (Platform.OS === "android" && isExpoGo()) return;
+  try {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldShowBanner: true,
+        shouldShowList: true,
+        shouldPlaySound: true,
+        shouldSetBadge: false,
+      }),
     });
+    if (Platform.OS === "android") {
+      // Le canal doit exister avant la demande d'autorisation (Android 13+)
+      await Notifications.setNotificationChannelAsync(ANDROID_CHANNEL_ID, {
+        name: "Notifications Dabari",
+        importance: Notifications.AndroidImportance.HIGH,
+        vibrationPattern: [0, 250, 250, 250],
+        lightColor: "#1D6B45",
+      });
+    }
+  } catch (error) {
+    // Jamais bloquant : l'application reste utilisable sans notifications
+    console.warn("Configuration des notifications impossible :", error instanceof Error ? error.message : error);
   }
 }
 

@@ -23,11 +23,13 @@ import { apiFetch, getApiErrorMessage, getErrorMessage, isNetworkError } from ".
 import { showErrorAlert } from "../../../utils/alerts";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
 import LoadErrorState from "../../../components/LoadErrorState";
+import { useOwnTraiteurId } from "../../../utils/useOwnTraiteurId";
 
 function DishCard({
   dish,
   qty,
   isLoggedIn,
+  isOwn = false,
   onAdd,
   onRemove,
   onRequireLogin,
@@ -36,6 +38,8 @@ function DishCard({
   dish: Dish;
   qty: number;
   isLoggedIn: boolean;
+  /** Plat du traiteur connecté : il ne peut pas le commander */
+  isOwn?: boolean;
   onAdd: () => void;
   onRemove: () => void;
   onRequireLogin: () => void;
@@ -142,7 +146,12 @@ function DishCard({
             <Text style={styles.dishPrice}>{Number(dish.price).toFixed(2)} €</Text>
           </View>
 
-          {!isLoggedIn ? (
+          {isOwn ? (
+            <View style={styles.addBtnDisabled}>
+              <Ionicons name="person-circle-outline" size={12} color="#64748B" />
+              <Text style={styles.addBtnTextDisabled}>Votre plat</Text>
+            </View>
+          ) : !isLoggedIn ? (
             <TouchableOpacity
               style={styles.addBtnDisabled}
               onPress={onRequireLogin}
@@ -189,6 +198,9 @@ function DishCard({
 export default function TraiteurDetailScreen() {
   const router = useRouter();
   const { traiteurId } = useLocalSearchParams<{ traiteurId: string }>();
+  // Profil du traiteur connecté : ni demande de devis ni commande à soi-même
+  const ownTraiteurId = useOwnTraiteurId();
+  const isOwnProfile = Boolean(ownTraiteurId && ownTraiteurId === traiteurId);
 
   const [traiteur, setTraiteur] = useState<Traiteur | null>(null);
   const [loading, setLoading] = useState(true);
@@ -312,6 +324,8 @@ export default function TraiteurDetailScreen() {
   );
 
   const addToCart = (dish: Dish) => {
+    // Sa propre fiche : pas de commande de ses propres plats (l'API la refuse aussi)
+    if (isOwnProfile) return;
     setCart((prev) => {
       const existing = prev.find((i) => i.dish.id === dish.id);
       if (existing) {
@@ -527,12 +541,15 @@ export default function TraiteurDetailScreen() {
             <View style={styles.heroActionRow}>
               {/* Bouton Devis Événement Sur-Mesure */}
               <TouchableOpacity
-                style={styles.devisBtnGold}
+                style={[styles.devisBtnGold, isOwnProfile && styles.ownProfileBtnDisabled]}
                 onPress={() => router.push(`/traiteur/${traiteurId}/devis`)}
                 activeOpacity={0.88}
+                disabled={isOwnProfile}
               >
-                <Ionicons name="sparkles" size={15} color="#FFFFFF" />
-                <Text style={styles.devisBtnGoldText}>Demander un devis</Text>
+                <Ionicons name={isOwnProfile ? "person-circle-outline" : "sparkles"} size={15} color="#FFFFFF" />
+                <Text style={styles.devisBtnGoldText}>
+                  {isOwnProfile ? "Votre profil traiteur" : "Demander un devis"}
+                </Text>
               </TouchableOpacity>
 
               {/* Bouton Contact WhatsApp direct si disponible */}
@@ -549,11 +566,11 @@ export default function TraiteurDetailScreen() {
             </View>
           </View>
 
-          {/* ── 2. BANNIÈRE PAIEMENT SÉCURISÉ PAR SÉQUESTRE ── */}
+          {/* ── 2. BANNIÈRE DEVIS SIGNÉ EN LIGNE ── */}
           <View style={styles.assuranceBanner}>
             <View style={styles.assuranceItem}>
               <Ionicons name="shield-checkmark" size={15} color="#1D6B45" />
-              <Text style={styles.assuranceText}>Paiement sécurisé par séquestre Dabari SAS</Text>
+              <Text style={styles.assuranceText}>Devis signé en ligne, paiement direct au traiteur</Text>
             </View>
           </View>
 
@@ -623,8 +640,9 @@ export default function TraiteurDetailScreen() {
                   Ce chef propose principalement des prestations sur devis pour les réceptions et événements.
                 </Text>
                 <TouchableOpacity
-                  style={styles.emptyDevisBtn}
+                  style={[styles.emptyDevisBtn, isOwnProfile && styles.ownProfileBtnDisabled]}
                   onPress={() => router.push(`/traiteur/${traiteurId}/devis`)}
+                  disabled={isOwnProfile}
                 >
                   <Ionicons name="calendar-outline" size={15} color="#FFFFFF" />
                   <Text style={styles.emptyDevisBtnText}>Demander un devis sur-mesure</Text>
@@ -649,6 +667,7 @@ export default function TraiteurDetailScreen() {
                   dish={dish}
                   qty={getQty(dish.id)}
                   isLoggedIn={isLoggedIn}
+                  isOwn={isOwnProfile}
                   onAdd={() => addToCart(dish)}
                   onRemove={() => removeFromCart(dish.id)}
                   onRequireLogin={() => router.push("/(auth)/login")}
@@ -744,7 +763,12 @@ export default function TraiteurDetailScreen() {
 
                   {/* Bouton d'ajout */}
                   <View style={styles.modalFooter}>
-                    {isLoggedIn ? (
+                    {isOwnProfile ? (
+                      <View style={[styles.modalAddBtn, styles.ownProfileBtnDisabled]}>
+                        <Ionicons name="person-circle-outline" size={16} color="#FFFFFF" />
+                        <Text style={styles.modalAddBtnText}>Vous ne pouvez pas commander vos propres plats</Text>
+                      </View>
+                    ) : isLoggedIn ? (
                       <TouchableOpacity
                         style={styles.modalAddBtn}
                         onPress={() => {
@@ -1391,6 +1415,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 10,
+  },
+  ownProfileBtnDisabled: {
+    opacity: 0.5,
   },
   cartCountPill: {
     backgroundColor: "rgba(255, 255, 255, 0.25)",

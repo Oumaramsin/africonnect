@@ -1,5 +1,6 @@
 import { Router } from "express";
 import AuthMiddleware from "../middlewares/authMiddleware";
+import { creationLimiter } from "../middlewares/rateLimiter";
 import {
   getOrderByClientIdController,
   getRecentOrderByClientIdController,
@@ -71,6 +72,8 @@ commandeRouter.post(
 commandeRouter.post(
   "/traiteur/:id/devis/acompte",
   AuthMiddleware.authenticate,
+  // Chaque action notifie l'autre partie (et un e-mail pour un règlement déclaré) : envois bornés
+  creationLimiter,
   payerAcompteCommandeTraiteurDevisController,
 );
 commandeRouter.patch(

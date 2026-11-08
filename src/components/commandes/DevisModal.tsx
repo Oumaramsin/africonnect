@@ -34,7 +34,7 @@ const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001/api";
 
 /** Actions du devis : leur erreur s'affiche à côté du bouton concerné. */
 type DevisAction = "chiffrage" | "signature" | "refus" | "acompte";
-type AcompteAction = "verser" | "refuser_acompte" | "annuler_reglement";
+type AcompteAction = "verser" | "refuser_acompte" | "annuler_reglement" | "contester_acompte";
 type DevisActionError = {
   action: DevisAction;
   message: string;
@@ -95,12 +95,38 @@ export type DevisConditionsMeta = {
   acompte_paye_at?: string | null;
   acompte_transaction_ref?: string | null;
   acompte_choix_jour_j?: boolean;
+  /** Le traiteur a signalé ne pas avoir reçu l'acompte déclaré réglé (date) */
+  acompte_conteste_at?: string | null;
 };
 
+/** « 7 novembre » : date courte d'un signalement d'acompte. */
+const formatShortDay = (value?: string | null): string => {
+  const date = value ? new Date(value) : null;
+  return date && !Number.isNaN(date.getTime())
+    ? date.toLocaleDateString("fr-FR", { day: "numeric", month: "long" })
+    : "";
+};
+
+// Texte par défaut des conditions : paiements directs entre client et traiteur (aucun séquestre)
+const DEFAULT_CONDITIONS_TEXTE =
+  "Acompte et solde à régler directement au traiteur, selon les modalités convenues entre vous. Dabari assure la mise en relation et ne perçoit ni ne conserve aucun fonds.";
+// Anciens textes par défaut annonçant à tort un séquestre : affichés avec le texte actuel
+const LEGACY_CONDITIONS_TEXTES = new Set([
+  "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation.",
+  "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de l'événement.",
+]);
+
 export function parseDevisConditions(raw?: string | null): DevisConditionsMeta {
+  const meta = parseDevisConditionsRaw(raw);
+  if (LEGACY_CONDITIONS_TEXTES.has((meta.texte || "").trim())) {
+    return { ...meta, texte: DEFAULT_CONDITIONS_TEXTE };
+  }
+  return meta;
+}
+
+function parseDevisConditionsRaw(raw?: string | null): DevisConditionsMeta {
   const defaultMeta: DevisConditionsMeta = {
-    texte:
-      "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation.",
+    texte: DEFAULT_CONDITIONS_TEXTE,
     acompte_type: "optionnel",
     acompte_montant: 0,
     acompte_pourcentage: 30,
@@ -108,6 +134,7 @@ export function parseDevisConditions(raw?: string | null): DevisConditionsMeta {
     acompte_paye_at: null,
     acompte_transaction_ref: null,
     acompte_choix_jour_j: false,
+    acompte_conteste_at: null,
   };
 
   if (!raw) return defaultMeta;
@@ -120,7 +147,7 @@ export function parseDevisConditions(raw?: string | null): DevisConditionsMeta {
         texte:
           parsed.texte ||
           parsed.conditions ||
-          "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation.",
+          DEFAULT_CONDITIONS_TEXTE,
         acompte_type:
           parsed.acompte_type === "aucun" ||
           parsed.acompte_type === "obligatoire" ||
@@ -137,6 +164,7 @@ export function parseDevisConditions(raw?: string | null): DevisConditionsMeta {
         acompte_paye_at: parsed.acompte_paye_at || null,
         acompte_transaction_ref: parsed.acompte_transaction_ref || null,
         acompte_choix_jour_j: Boolean(parsed.acompte_choix_jour_j),
+        acompte_conteste_at: typeof parsed.acompte_conteste_at === "string" ? parsed.acompte_conteste_at : null,
       };
     }
   } catch {
@@ -204,8 +232,7 @@ export default function DevisModal({
     parsedMeta.acompte_pourcentage || 30
   );
   const [conditionsTextInput, setConditionsTextInput] = useState<string>(
-    parsedMeta.texte ||
-      "Paiement garanti sous séquestre Dabari. Solde libéré après confirmation de la prestation."
+    parsedMeta.texte || DEFAULT_CONDITIONS_TEXTE
   );
   const [isEditingPrice, setIsEditingPrice] = useState(!commande.prix_devis && isTraiteurView);
   const [autoSignTraiteur, setAutoSignTraiteur] = useState(true);
@@ -219,6 +246,8 @@ export default function DevisModal({
   const [payingAcompte, setPayingAcompte] = useState(false);
   const [showRefusalForm, setShowRefusalForm] = useState(false);
   const [refusalMotif, setRefusalMotif] = useState("");
+  // Traiteur : confirmation du signalement « acompte non reçu »
+  const [confirmingContest, setConfirmingContest] = useState(false);
 
   useEscapeKey(onClose, !submitting && !payingAcompte);
 
@@ -239,6 +268,11 @@ export default function DevisModal({
   const isTraiteurSigned = Boolean(commande.traiteur_signed_at);
   const isFullySigned = isClientSigned && isTraiteurSigned;
   const isRefused = commande.devis_status === "refuse";
+  // Texte des conditions tel que signé, quand c'est un ancien texte par défaut (remplacé à l'affichage
+  // des devis non signés)
+  const rawConditionsTexte = parseDevisConditionsRaw(commande.conditions_devis).texte || "";
+  const signedLegacyConditions =
+    isFullySigned && LEGACY_CONDITIONS_TEXTES.has(rawConditionsTexte.trim()) ? rawConditionsTexte : null;
 
   const totalPrix = Number(commande.prix_devis || 0);
   const prixParPersonne =
@@ -406,7 +440,7 @@ export default function DevisModal({
     }
   };
 
-  // Deposit escrow management (simulation / validation / réinitialisation)
+  // Acompte déclaratif : règlement déclaré par le client, choix du jour J, remise en attente
   const handleAcompteAction = async (action: AcompteAction) => {
     if (payingRef.current) return;
     payingRef.current = true;
@@ -462,11 +496,14 @@ export default function DevisModal({
       setCommande(data.data.commande);
       onUpdate(data.data.commande);
       setShowAcomptePayModal(false);
+      setConfirmingContest(false);
       setSuccessMessage(
         action === "verser"
-          ? `Acompte (${displayAcompteMontant.toFixed(2)} €) consigné sous séquestre Dabari avec succès. Votre réservation est garantie !`
+          ? `Règlement de l'acompte (${displayAcompteMontant.toFixed(2)} €) enregistré : le traiteur en est informé.`
           : action === "refuser_acompte"
           ? "Choix de règlement complet le jour J enregistré."
+          : action === "contester_acompte"
+          ? "Acompte signalé comme non reçu : le client est prévenu."
           : "Le statut de l'acompte a été réinitialisé en attente."
       );
     } catch (err: unknown) {
@@ -748,12 +785,12 @@ export default function DevisModal({
                   <div>
                     <span className="font-black text-xl text-slate-900 tracking-tight">Dabari</span>
                     <span className="text-[10px] font-bold uppercase tracking-wider text-[#1D6B45] ml-2 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-100">
-                      Garantie Séquestre
+                      Devis en ligne
                     </span>
                   </div>
                 </div>
                 <p className="text-xs text-slate-500 mt-1 max-w-sm leading-snug print-text-compact">
-                  Contrat de prestation traiteur & séquestre garanti par Dabari SAS.
+                  Devis de prestation traiteur établi via la plateforme Dabari (éditée par RAMSIN).
                 </p>
               </div>
 
@@ -801,8 +838,8 @@ export default function DevisModal({
                   <ShieldCheck size={16} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-black text-emerald-950">Prix Ferme & Garanti</p>
-                  <p className="text-[10px] text-emerald-700">Aucun surcoût masqué</p>
+                  <p className="text-[11px] font-black text-emerald-950">Prix ferme une fois signé</p>
+                  <p className="text-[10px] text-emerald-700">Montant validé par les deux parties</p>
                 </div>
               </div>
 
@@ -811,8 +848,8 @@ export default function DevisModal({
                   <Lock size={16} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-black text-blue-950">Séquestre Dabari</p>
-                  <p className="text-[10px] text-blue-700">Fonds sécurisés jusqu&apos;au jour J</p>
+                  <p className="text-[11px] font-black text-blue-950">Paiement direct</p>
+                  <p className="text-[10px] text-blue-700">Réglé au traiteur, sans intermédiaire</p>
                 </div>
               </div>
 
@@ -821,8 +858,8 @@ export default function DevisModal({
                   <PenTool size={16} />
                 </div>
                 <div>
-                  <p className="text-[11px] font-black text-purple-950">Signature Certifiée</p>
-                  <p className="text-[10px] text-purple-700">Valeur légale eIDAS & Code civil</p>
+                  <p className="text-[11px] font-black text-purple-950">Signature électronique</p>
+                  <p className="text-[10px] text-purple-700">Horodatée depuis le compte de chaque partie</p>
                 </div>
               </div>
             </div>
@@ -921,8 +958,15 @@ export default function DevisModal({
                 </div>
                 {commande.notes && (
                   <div className="pt-1.5 border-t border-slate-100 text-slate-600 whitespace-pre-line leading-relaxed print-text-compact">
-                    <span className="font-bold text-slate-900">Menu & Choix convenus : </span>
+                    <span className="font-bold text-slate-900">Souhaits du client : </span>
                     {commande.notes}
+                  </div>
+                )}
+                {/* Ce que le traiteur s'est engagé à fournir (contenu de son offre signée) */}
+                {commande.message_traiteur && (
+                  <div className="pt-1.5 border-t border-slate-100 text-slate-600 whitespace-pre-line leading-relaxed print-text-compact">
+                    <span className="font-bold text-slate-900">Offre du traiteur : </span>
+                    {commande.message_traiteur}
                   </div>
                 )}
               </div>
@@ -959,7 +1003,7 @@ export default function DevisModal({
                   </tr>
                   <tr className="bg-slate-50/50">
                     <td className="py-2.5 px-3.5 text-[11px] text-slate-600 print:py-1" colSpan={3}>
-                      Protection sous séquestre Dabari & Assurance transactionnelle
+                      Mise en relation et suivi du devis via Dabari
                     </td>
                     <td className="py-2.5 px-3.5 text-right font-semibold text-emerald-700 text-[11px] print:py-1">
                       Inclus
@@ -1185,11 +1229,11 @@ export default function DevisModal({
                     </p>
                   </div>
 
-                  {/* Volet 2 : ACOMPTE SÉQUESTRÉ INTERACTIF */}
+                  {/* Volet 2 : ACOMPTE (DÉCLARATIF) */}
                   <button
                     type="button"
                     onClick={() => {
-                      if (displayAcompteMontant > 0) {
+                      if (displayAcompteMontant > 0 && !isTraiteur) {
                         setShowAcomptePayModal(true);
                       }
                     }}
@@ -1200,12 +1244,12 @@ export default function DevisModal({
                         ? "bg-white border-emerald-200 hover:border-emerald-400 hover:shadow-xs cursor-pointer group"
                         : "bg-white border-slate-200 cursor-default"
                     }`}
-                    title={displayAcompteMontant > 0 ? "Cliquer pour gérer ou régler l'acompte" : undefined}
+                    title={displayAcompteMontant > 0 && !isTraiteur ? "Cliquer pour gérer ou régler l'acompte" : undefined}
                   >
                     <div className="flex items-center justify-between">
                       <span className="text-[10px] font-black uppercase tracking-wider text-slate-400 group-hover:text-emerald-700 transition-colors flex items-center gap-1.5">
-                        Acompte Séquestré
-                        {displayAcompteMontant > 0 && !parsedMeta.acompte_paye && (
+                        Acompte
+                        {displayAcompteMontant > 0 && !parsedMeta.acompte_paye && !isTraiteur && (
                           <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 print:hidden">
                             Cliquer pour régler
                           </span>
@@ -1214,7 +1258,7 @@ export default function DevisModal({
                       {parsedMeta.acompte_paye ? (
                         <span className="text-[9px] font-black uppercase text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded flex items-center gap-1">
                           <CheckCircle2 size={11} className="text-emerald-600" />
-                          Consigné
+                          Déclaré réglé
                         </span>
                       ) : parsedMeta.acompte_type === "obligatoire" ? (
                         <span className="text-[9px] font-black uppercase text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
@@ -1235,9 +1279,11 @@ export default function DevisModal({
                     </p>
                     <p className="text-[11px] text-slate-500 font-medium print-text-compact">
                       {parsedMeta.acompte_paye
-                        ? "✓ Réglé & consigné sous séquestre Dabari"
+                        ? "✓ Déclaré réglé par le client"
                         : parsedMeta.acompte_type === "aucun"
                         ? "Règlement intégral le jour J"
+                        : isTraiteur
+                        ? "À régler par le client"
                         : parsedMeta.acompte_type === "obligatoire"
                         ? `Acompte requis (${parsedMeta.acompte_pourcentage}%) • Toucher pour régler`
                         : `Acompte suggéré (${parsedMeta.acompte_pourcentage}%) • Toucher pour régler`}
@@ -1265,27 +1311,36 @@ export default function DevisModal({
                       <div className="flex items-center gap-2 flex-wrap">
                         <span className="font-bold text-emerald-800 flex items-center gap-1.5">
                           <CheckCircle2 size={15} className="text-emerald-600" />
-                          Acompte consigné sous séquestre Dabari (Réf : {parsedMeta.acompte_transaction_ref || devisRefNumber}). Fonds sécurisés.
+                          Acompte déclaré réglé par le client (réf. : {parsedMeta.acompte_transaction_ref || devisRefNumber}), à vérifier par le traiteur.
                         </span>
-                        <button
-                          type="button"
-                          onClick={() => setShowAcomptePayModal(true)}
-                          className="text-xs font-bold text-emerald-700 underline hover:text-emerald-900 print:hidden"
-                        >
-                          Voir détails / Gérer
-                        </button>
+                        {!isTraiteur && (
+                          <button
+                            type="button"
+                            onClick={() => setShowAcomptePayModal(true)}
+                            className="text-xs font-bold text-emerald-700 underline hover:text-emerald-900 print:hidden"
+                          >
+                            Voir détails / Gérer
+                          </button>
+                        )}
                       </div>
+                    ) : parsedMeta.acompte_conteste_at && !parsedMeta.acompte_choix_jour_j ? (
+                      <span className="font-semibold text-amber-800 flex items-start gap-1.5">
+                        <AlertCircle size={15} className="shrink-0 mt-px" />
+                        {isTraiteur
+                          ? `Vous avez signalé le ${formatShortDay(parsedMeta.acompte_conteste_at)} ne pas avoir reçu l'acompte : le client a été prévenu.`
+                          : `Le traiteur a indiqué le ${formatShortDay(parsedMeta.acompte_conteste_at)} ne pas avoir reçu votre acompte : vérifiez votre règlement avec lui avant de le déclarer à nouveau.`}
+                      </span>
                     ) : parsedMeta.acompte_type === "aucun" ? (
                       <span>Aucun acompte demandé par le traiteur. Vous réglerez l&apos;intégralité lors de la prestation.</span>
                     ) : (
                       <span>
-                        Paiement sécurisé Dabari : vos fonds sont séquestrés et versés au traiteur une fois la prestation accomplie.
+                        Paiement direct : l&apos;acompte se règle directement au traiteur ; Dabari ne perçoit ni ne conserve aucun fonds.
                       </span>
                     )}
                   </div>
 
-                  {/* Boutons d'action versement acompte */}
-                  {!isRefused && displayAcompteMontant > 0 && (
+                  {/* Boutons d'action versement acompte (client) */}
+                  {!isRefused && displayAcompteMontant > 0 && !isTraiteur && (
                     <div className="flex items-center gap-2 print:hidden">
                       {parsedMeta.acompte_paye ? (
                         <button
@@ -1326,6 +1381,56 @@ export default function DevisModal({
                     </div>
                   )}
 
+                  {/* Traiteur : acompte déclaré réglé par le client mais non reçu */}
+                  {isTraiteur && !isRefused && parsedMeta.acompte_paye && (
+                    <div className="flex flex-col items-start sm:items-end gap-2 print:hidden">
+                      {confirmingContest ? (
+                        <div
+                          role="alertdialog"
+                          aria-label="Signaler l'acompte comme non reçu"
+                          className="rounded-xl border border-amber-300 bg-amber-50 p-3 space-y-2 max-w-sm"
+                        >
+                          <p className="text-xs font-bold text-amber-900">Signaler l&apos;acompte comme non reçu ?</p>
+                          <p className="text-[11px] text-amber-900/80 leading-relaxed">
+                            Le client sera prévenu et l&apos;acompte repassera « à régler ». Faites-le seulement si vous
+                            n&apos;avez rien reçu.
+                          </p>
+                          <div className="flex items-center justify-end gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setConfirmingContest(false)}
+                              disabled={payingAcompte}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold text-slate-600 hover:bg-white disabled:opacity-50"
+                            >
+                              Annuler
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleAcompteAction("contester_acompte")}
+                              disabled={payingAcompte}
+                              className="px-3 py-1.5 rounded-lg text-xs font-bold bg-amber-600 text-white hover:bg-amber-700 disabled:opacity-50"
+                            >
+                              {payingAcompte
+                                ? "Envoi..."
+                                : acompteRetry("contester_acompte")
+                                ? "Réessayer"
+                                : "Oui, signaler"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setConfirmingContest(true)}
+                          className="px-3.5 py-1.5 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-800 text-xs font-bold transition-all flex items-center gap-1.5"
+                        >
+                          <AlertCircle size={14} />
+                          Acompte non reçu ?
+                        </button>
+                      )}
+                    </div>
+                  )}
+
                   {/* Bouton ajustement prix pour le traiteur si non signé */}
                   {isTraiteur && !isFullySigned && !isRefused && !isEditingPrice && (
                     <button
@@ -1341,10 +1446,20 @@ export default function DevisModal({
                 {/* Erreur d'acompte (la sous-fenêtre de règlement l'affiche aussi) */}
                 {!showAcomptePayModal && renderActionError("acompte")}
 
-                {parsedMeta.texte && (
+                {/* Devis signé avec un ancien texte : il reste affiché tel que signé, avec une précision */}
+                {signedLegacyConditions ? (
                   <p className="text-[11px] text-slate-500 italic pt-1 print-text-compact">
-                    Conditions : {parsedMeta.texte}
+                    Conditions signées : {signedLegacyConditions}
+                    <br />
+                    Précision : Dabari ne perçoit ni ne conserve aucun fonds ; l&apos;acompte et le solde se
+                    règlent directement au traiteur.
                   </p>
+                ) : (
+                  parsedMeta.texte && (
+                    <p className="text-[11px] text-slate-500 italic pt-1 print-text-compact">
+                      Conditions : {parsedMeta.texte}
+                    </p>
+                  )
                 )}
               </div>
             )}
@@ -1353,7 +1468,7 @@ export default function DevisModal({
             <div className="space-y-2.5 print-avoid-break">
               <div className="flex items-center justify-between pb-1 border-b border-slate-200">
                 <h3 className="font-black text-xs uppercase tracking-wider text-slate-900">
-                  Double Signature Électronique Certifiée (Valeur Probante eIDAS)
+                  Double signature électronique (client et traiteur)
                 </h3>
                 <span className="text-[10px] text-slate-400 print-text-compact">
                   Art. 1366 et 1367 du Code civil
@@ -1649,10 +1764,10 @@ export default function DevisModal({
                 • <strong>Pénalités B2B (Art. L. 441-10 C. com) :</strong> En cas de retard de paiement entre professionnels, pénalités au taux légal majoré de 10 points et indemnité forfaitaire légale de 40 € pour frais de recouvrement.
               </p>
               <p>
-                • <strong>Force probante :</strong> Signature électronique certifiée conforme aux articles 1366 et 1367 du Code civil et au règlement européen eIDAS.
+                • <strong>Signatures :</strong> signatures électroniques simples (nom saisi par chaque partie depuis son compte, horodatage enregistré par Dabari), au sens des articles 1366 et 1367 du Code civil.
               </p>
               <div className="pt-1 border-t border-slate-200/60 flex items-center justify-between text-[9px] text-slate-500 print:hidden">
-                <span>Séquestre Dabari SAS • Prestation garantie</span>
+                <span>Dabari, édité par RAMSIN • Mise en relation clients et traiteurs</span>
                 <Link
                   href="/cgu"
                   target="_blank"
@@ -1684,10 +1799,10 @@ export default function DevisModal({
                 <div>
                   <h3 className="text-base font-black text-slate-900">
                     {parsedMeta.acompte_paye
-                      ? "Acompte Réglé & Séquestré"
+                      ? "Acompte déclaré réglé"
                       : "Règlement de l'Acompte"}
                   </h3>
-                  <p className="text-xs text-slate-500">Garantie transactionnelle Dabari SAS</p>
+                  <p className="text-xs text-slate-500">Réglé directement au traiteur</p>
                 </div>
               </div>
               <button
@@ -1704,7 +1819,7 @@ export default function DevisModal({
             {/* Cadre Montants */}
             <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-center space-y-1">
               <span className="text-[10px] font-black uppercase tracking-wider text-slate-400">
-                {parsedMeta.acompte_paye ? "Acompte sous séquestre" : "Montant de l'acompte"}
+                {parsedMeta.acompte_paye ? "Acompte déclaré réglé" : "Montant de l'acompte"}
               </span>
               <p className="text-2xl font-black text-emerald-700">
                 {displayAcompteMontant.toFixed(2)} €
@@ -1719,7 +1834,7 @@ export default function DevisModal({
               <div className="space-y-3">
                 <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center gap-2.5 text-xs text-emerald-900 font-bold">
                   <CheckCircle2 size={18} className="text-emerald-700 shrink-0" />
-                  <span>Acompte consigné sous séquestre sécurisé Dabari SAS</span>
+                  <span>Acompte déclaré réglé au traiteur</span>
                 </div>
 
                 <div className="p-3 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-2 text-slate-700">
@@ -1742,13 +1857,13 @@ export default function DevisModal({
                     </div>
                   )}
                   <div className="flex items-center justify-between">
-                    <span className="text-slate-500 font-semibold">Statut des fonds :</span>
-                    <span className="font-bold text-emerald-700">Séquestrés & Garantis</span>
+                    <span className="text-slate-500 font-semibold">Statut :</span>
+                    <span className="font-bold text-emerald-700">Déclaré réglé par le client</span>
                   </div>
                 </div>
 
                 <p className="text-[11px] text-slate-500 leading-snug bg-slate-100/70 p-2.5 rounded-xl">
-                  Vos fonds sont protégés sur un compte de cantonnement Dabari SAS. Le traiteur a reçu la garantie et le solde restant ({displaySoldeRestant.toFixed(2)} €) sera libéré après l&apos;exécution de la prestation.
+                  Le client a indiqué avoir réglé cet acompte directement au traiteur. Le solde restant ({displaySoldeRestant.toFixed(2)} €) se règle avec lui selon les modalités du devis : Dabari ne perçoit ni ne conserve aucun fonds.
                 </p>
 
                 {renderActionError("acompte")}
@@ -1762,18 +1877,25 @@ export default function DevisModal({
                   >
                     Fermer
                   </button>
-                  <button
-                    type="button"
-                    disabled={payingAcompte}
-                    onClick={() => handleAcompteAction("annuler_reglement")}
-                    className="text-[11px] text-slate-400 hover:text-slate-600 underline font-semibold py-1"
-                  >
-                    {payingAcompte
-                      ? "Réinitialisation..."
-                      : acompteRetry("annuler_reglement")
-                      ? "Réessayer la remise en attente"
-                      : "Remettre en attente (Test / Démo)"}
-                  </button>
+                  {/* Devis signé par les deux : l'API refuse l'annulation (à régler avec le traiteur) */}
+                  {isFullySigned ? (
+                    <p className="text-[11px] text-slate-400 text-center py-1">
+                      Devis signé : en cas d&apos;erreur sur ce règlement, voyez-le directement avec le traiteur.
+                    </p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={payingAcompte}
+                      onClick={() => handleAcompteAction("annuler_reglement")}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 underline font-semibold py-1"
+                    >
+                      {payingAcompte
+                        ? "Réinitialisation..."
+                        : acompteRetry("annuler_reglement")
+                        ? "Réessayer la remise en attente"
+                        : "Remettre en attente"}
+                    </button>
+                  )}
                 </div>
               </div>
             ) : (
@@ -1781,7 +1903,7 @@ export default function DevisModal({
               <div className="space-y-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-2">
-                    Mode de versement (Simulation) :
+                    Moyen de règlement utilisé :
                   </label>
                   <div className="grid grid-cols-3 gap-2">
                     <button
@@ -1828,10 +1950,10 @@ export default function DevisModal({
                 <div className="p-3 rounded-xl bg-blue-50 border border-blue-200 text-xs text-blue-900 space-y-1">
                   <p className="font-bold flex items-center gap-1.5 text-blue-950">
                     <ShieldCheck size={15} className="text-blue-700 shrink-0" />
-                    Protection sous séquestre Dabari
+                    Paiement direct au traiteur
                   </p>
                   <p className="text-[11px] text-blue-800 leading-snug">
-                    L&apos;acompte garantit la réservation du chef tout en protégeant vos fonds jusqu&apos;au bon déroulement de votre événement.
+                    Réglez l&apos;acompte directement au traiteur, puis confirmez-le ici : il en sera informé. Dabari ne perçoit aucun fonds.
                   </p>
                 </div>
 
@@ -1847,13 +1969,13 @@ export default function DevisModal({
                     {payingAcompte ? (
                       <>
                         <Loader2 size={15} className="animate-spin" />
-                        <span>Sécurisation sous séquestre...</span>
+                        <span>Enregistrement...</span>
                       </>
                     ) : (
                       <>
                         <ShieldCheck size={16} />
                         <span>
-                          {acompteRetry("verser") ? "Réessayer" : "Valider l'acompte"} ({displayAcompteMontant.toFixed(2)} €)
+                          {acompteRetry("verser") ? "Réessayer" : "J'ai réglé l'acompte"} ({displayAcompteMontant.toFixed(2)} €)
                         </span>
                       </>
                     )}

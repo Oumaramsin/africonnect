@@ -713,7 +713,7 @@ export default function AccueilScreen() {
             <View style={styles.footerTrustBar}>
               <Ionicons name="shield-checkmark" size={14} color="#1D6B45" />
               <Text style={styles.footerTrustText}>
-                Plateforme 100% sécurisée • Réseau de confiance Dabari
+                Plateforme sécurisée • Réseau de confiance Dabari
               </Text>
             </View>
           </View>

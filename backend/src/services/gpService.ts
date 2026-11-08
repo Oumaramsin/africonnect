@@ -78,6 +78,11 @@ export const createGpOrder = async (order: CreateGpRequestInput) => {
       throw new Error("Cette annonce GP n'est plus active.");
     }
 
+    // Un voyageur GP ne réserve pas de kilos sur son propre trajet
+    if (order.sender_id && gpListing.gp_id === order.sender_id) {
+      throw new Error("Vous ne pouvez pas réserver de kilos sur votre propre trajet.");
+    }
+
     // Sécurité Capacité : vérifier qu'il reste suffisamment de kilos
     const available = Number(gpListing.available_kg || 0);
     const capacityError = `Capacité insuffisante sur ce trajet : il ne reste que ${available} kg disponibles.`;

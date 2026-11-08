@@ -98,12 +98,17 @@ export default function SuppressionComptePage() {
         </h2>
         <ul className="list-disc pl-5 space-y-1.5 text-sm text-slate-700">
           <li>Votre compte et vos informations de profil (nom, e-mail, téléphone, ville).</li>
-          <li>Vos commandes, demandes de devis, annonces et votre historique sur Dabari.</li>
+          <li>Vos notifications, vos annonces de recherche de traiteur et les appareils enregistrés pour les notifications.</li>
           <li>Votre profil traiteur et vos annonces de transport GP sont retirés de la plateforme.</li>
         </ul>
         <p className="text-xs text-slate-500 leading-relaxed">
+          Les commandes, devis et demandes de transport conclus avec d&apos;autres utilisateurs sont conservés sans
+          lien avec votre compte, car l&apos;autre partie peut en avoir besoin, pendant la durée nécessaire à la
+          gestion d&apos;éventuels litiges et au respect de nos obligations légales.
+        </p>
+        <p className="text-xs text-slate-500 leading-relaxed">
           Vos autres droits (accès, rectification, portabilité) sont décrits dans la{" "}
-          <Link href="/cgu#article-11" className="underline underline-offset-2">
+          <Link href="/confidentialite" className="underline underline-offset-2">
             politique de confidentialité
           </Link>
           .

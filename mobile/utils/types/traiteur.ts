@@ -123,6 +123,8 @@ export type TraiteurRequest = {
   description: string | null;
   status: "open" | "fulfilled" | "cancelled";
   created_at: string;
+  // Annonce publiée par l'utilisateur connecté (liste des annonces côté traiteur)
+  is_own?: boolean;
   client?: {
     id: string;
     full_name: string;
@@ -133,6 +135,16 @@ export type TraiteurRequest = {
   proposals?: TraiteurProposal[];
 };
 
+/** Étape de la négociation du prix d'une offre (écrite par l'API seule). */
+export type NegociationEntry = {
+  type: "contre_offre" | "prix_maintenu" | "nouveau_devis";
+  auteur: "client" | "traiteur";
+  prix: number;
+  prix_precedent: number | null;
+  message: string | null;
+  at: string;
+};
+
 export type TraiteurProposal = {
   id: string;
   request_id: string;
@@ -141,6 +153,12 @@ export type TraiteurProposal = {
   message: string;
   status: "pending" | "accepted" | "rejected";
   created_at: string;
+  // Devis proposé : conditions d'acompte (JSON) et signature du traiteur (absentes sur les anciennes offres)
+  conditions_devis?: string | null;
+  traiteur_signature?: string | null;
+  traiteur_signed_at?: string | null;
+  // Négociation du prix : contre-propositions du client et réponses du traiteur
+  negociation?: NegociationEntry[] | null;
   traiteur?: {
     id: string;
     name: string;

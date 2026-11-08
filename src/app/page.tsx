@@ -550,7 +550,7 @@ export default async function HomePage() {
           <div className="flex items-center justify-center gap-2 py-3 text-center">
             <ShieldCheck size={14} className="text-[#1D6B45]" />
             <p className="text-[11px] font-semibold text-slate-500">
-              Plateforme 100% sécurisée • Réseau de confiance Dabari
+              Plateforme sécurisée • Réseau de confiance Dabari
             </p>
           </div>
         </div>
@@ -628,7 +628,7 @@ export default async function HomePage() {
               <div className="pt-2 flex items-center gap-6 text-xs text-white/80 flex-wrap">
                 <div className="flex items-center gap-2">
                   <ShieldCheck size={16} className="text-emerald-300 shrink-0" />
-                  <span>Paiement sous séquestre 100% garanti</span>
+                  <span>Devis signés en ligne par les deux parties</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <ChefHat size={16} className="text-amber-300 shrink-0" />

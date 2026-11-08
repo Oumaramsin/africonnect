@@ -25,6 +25,7 @@ import LoadErrorState from "../../../components/LoadErrorState";
 import { verifyAddressExists } from "../../../utils/addressValidation";
 import { EVENT_TYPES } from "../../../utils/constants";
 import AppKeyboardScrollView from "../../../components/AppKeyboardScrollView";
+import { useOwnTraiteurId } from "../../../utils/useOwnTraiteurId";
 
 let DateTimePicker: any = null;
 if (Platform.OS !== "web") {
@@ -38,6 +39,9 @@ if (Platform.OS !== "web") {
 export default function DevisScreen() {
   const router = useRouter();
   const { traiteurId } = useLocalSearchParams<{ traiteurId: string }>();
+  // Un traiteur ne peut pas se demander un devis à lui-même (l'API le refuse aussi)
+  const ownTraiteurId = useOwnTraiteurId();
+  const isOwnProfile = Boolean(ownTraiteurId && ownTraiteurId === traiteurId);
 
   const defaultDateObj = useMemo(() => {
     return new Date(Date.now() + 86400000 * 14); // Par défaut dans 2 semaines
@@ -132,6 +136,7 @@ export default function DevisScreen() {
 
   const parsedNbPersonnes = parseInt(nbPersonnes, 10);
   const isFormValid =
+    !isOwnProfile &&
     Boolean(dateEvenement) &&
     !isNaN(parsedNbPersonnes) &&
     parsedNbPersonnes > 0 &&
@@ -382,7 +387,7 @@ export default function DevisScreen() {
             </View>
             <View style={styles.reassuranceBadge}>
               <Ionicons name="lock-closed" size={12} color="#6EE7B7" />
-              <Text style={styles.reassuranceText}>Séquestre Dabari</Text>
+              <Text style={styles.reassuranceText}>Devis signé en ligne</Text>
             </View>
             <View style={styles.reassuranceBadge}>
               <Ionicons name="time" size={12} color="#FCD34D" />
@@ -559,6 +564,15 @@ export default function DevisScreen() {
               onChangeText={setNotes}
             />
           </View>
+
+          {isOwnProfile && (
+            <View style={styles.errorBanner}>
+              <Ionicons name="person-circle-outline" size={16} color="#B91C1C" />
+              <Text style={styles.errorBannerText}>
+                C&apos;est votre propre profil traiteur : vous ne pouvez pas vous demander un devis.
+              </Text>
+            </View>
+          )}
 
           {/* Message d'erreur */}
           {Boolean(error) && (

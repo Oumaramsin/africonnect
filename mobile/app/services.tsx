@@ -158,7 +158,7 @@ export default function ServicesScreen() {
         <View style={styles.trustBadgesRow}>
           <View style={styles.trustBadgePill}>
             <Ionicons name="shield-checkmark" size={13} color="#1D6B45" />
-            <Text style={styles.trustBadgeText}>Paiement 100% sécurisé</Text>
+            <Text style={styles.trustBadgeText}>Devis signés en ligne</Text>
           </View>
 
           <View style={styles.trustBadgePill}>
@@ -185,7 +185,7 @@ export default function ServicesScreen() {
             <View style={{ flex: 1 }}>
               <Text style={styles.cguBannerTitle}>Conditions Générales (CGU)</Text>
               <Text style={styles.cguBannerSub}>
-                Cotransportage solidaire, séquestre Dabari & cadre légal
+                Cotransportage solidaire, paiements & cadre légal
               </Text>
             </View>
           </View>

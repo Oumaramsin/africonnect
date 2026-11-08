@@ -1,4 +1,4 @@
-import AuthService from "../services/authServices";
+import AuthService, { isEmailVerificationEnabled } from "../services/authServices";
 import { Request, Response } from "express";
 import { getAuthUserId, isUserAdmin, isValidUUID } from "../utils/types";
 import { clearSessionCookies, getClientIp, sendSession } from "../utils/webClient";
@@ -104,9 +104,28 @@ class AuthController {
         return res.status(400).json({ message: "Les mots de passe ne correspondent pas." });
       }
 
+      // Numéro déjà utilisé par un autre compte : refusé avant toute suppression d'une inscription en
+      // attente (sinon celle-ci disparaîtrait sans que la nouvelle inscription aboutisse)
+      const existingByEmail = email ? await AuthService.findUserByEmail(email) : null;
+      if (phone) {
+        const existingByPhone = await AuthService.findUserByPhone(phone);
+        if (existingByPhone && existingByPhone.id !== existingByEmail?.id) {
+          return res.status(400).json({
+            message: "Ce numéro de téléphone est déjà enregistré.",
+          });
+        }
+      }
+
       if (email) {
-        const existingUser = await AuthService.findUserByEmail(email);
-        if (existingUser) {
+        const existingUser = existingByEmail;
+        if (existingUser && !existingUser.is_email_verified && !isEmailVerificationEnabled()) {
+          // Vérification désactivée : un compte en attente de code n'est jamais supprimé ni remplacé
+          // par une nouvelle inscription (un tiers s'approprierait l'adresse et effacerait le compte).
+          // Son titulaire se connecte avec son mot de passe : le compte est alors activé (loginUser).
+          return res.status(400).json({
+            message: "Cet e-mail est déjà enregistré : connectez-vous avec votre mot de passe.",
+          });
+        } else if (existingUser) {
           const hasPendingCode =
             !existingUser.is_email_verified &&
             Boolean(existingUser.email_verify_code) &&
@@ -153,16 +172,7 @@ class AuthController {
         }
       }
 
-      if (phone) {
-        const existingUser = await AuthService.findUserByPhone(phone);
-        if (existingUser) {
-          return res.status(400).json({
-            message: "Ce numéro de téléphone est déjà enregistré.",
-          });
-        }
-      }
-
-      const user = await AuthService.registerUser({
+      const { profile: user, requiresVerification, token } = await AuthService.registerUser({
         firstname: firstname.trim(),
         lastname: lastname.trim(),
         email,
@@ -170,13 +180,19 @@ class AuthController {
         password,
         address: typeof address === "string" ? address.trim() : undefined,
       });
-      const isEmailReg = Boolean(email && !isSyntheticEmail(email));
+      if (!requiresVerification && token) {
+        // Pas de code à saisir (téléphone, ou vérification e-mail désactivée) : session ouverte
+        // (cookie pour le site, jeton pour l'application)
+        return sendSession(req, res, token, {
+          user,
+          requiresVerification: false,
+          message: "Compte créé avec succès.",
+        });
+      }
       return res.status(201).json({
         user,
-        requiresVerification: isEmailReg,
-        message: isEmailReg
-          ? "Un code de vérification à 6 chiffres a été envoyé à votre adresse e-mail."
-          : "Compte créé avec succès.",
+        requiresVerification: true,
+        message: "Un code de vérification à 6 chiffres a été envoyé à votre adresse e-mail.",
       });
     } catch (error: any) {
       console.error("[Auth] Erreur inscription:", error);

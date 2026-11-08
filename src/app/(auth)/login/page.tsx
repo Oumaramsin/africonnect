@@ -144,7 +144,7 @@ export default function LoginPage() {
 
             <div className="inline-flex items-center gap-2 bg-white/10 backdrop-blur-md px-3.5 py-1.5 rounded-full text-xs font-semibold text-emerald-100 border border-white/15 mt-2">
               <Sparkles size={13} className="text-[#D4870A]" />
-              <span>Plateforme certifiée pour la diaspora</span>
+              <span>La plateforme de la diaspora</span>
             </div>
           </div>
 
@@ -186,7 +186,7 @@ export default function LoginPage() {
                 </div>
                 <div>
                   <h4 className="text-xs font-bold text-white">Paiement & Contact Direct</h4>
-                  <p className="text-[11px] text-white/75 mt-0.5">Garantie sous séquestre et liaisons WhatsApp directes.</p>
+                  <p className="text-[11px] text-white/75 mt-0.5">Vous réglez directement le prestataire et échangez avec lui sur WhatsApp.</p>
                 </div>
               </div>
             </div>

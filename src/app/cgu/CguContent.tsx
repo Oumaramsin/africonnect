@@ -148,9 +148,9 @@ export default function CguContent() {
               <Lock size={20} />
             </div>
             <div>
-              <h2 className="font-extrabold text-sm text-slate-900">Séquestre Protecteur</h2>
+              <h2 className="font-extrabold text-sm text-slate-900">Paiement Direct</h2>
               <p className="text-xs text-slate-600 mt-1 leading-snug">
-                Consignation sécurisée des acomptes et libération conditionnée à la livraison ou prestation.
+                Acomptes et soldes réglés directement entre utilisateurs, suivis dans le devis.
               </p>
             </div>
           </div>
@@ -176,7 +176,7 @@ export default function CguContent() {
             <Search size={18} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
             <input
               type="text"
-              placeholder="Rechercher un mot-clé (séquestre, bagages, douane, litige, responsabilité)..."
+              placeholder="Rechercher un mot-clé (acompte, bagages, douane, litige, responsabilité)..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full pl-10 pr-10 py-3 rounded-2xl bg-white border border-slate-200 text-sm font-medium focus:outline-hidden focus:ring-2 focus:ring-emerald-600 focus:border-transparent shadow-xs transition-all placeholder:text-slate-400"

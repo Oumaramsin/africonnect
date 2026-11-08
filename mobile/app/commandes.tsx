@@ -12,7 +12,6 @@ import {
   TextInput,
   DeviceEventEmitter,
   KeyboardAvoidingView,
-  Platform,
   RefreshControl,
 } from "react-native";
 import AppKeyboardScrollView from "../components/AppKeyboardScrollView";
@@ -28,6 +27,8 @@ import {
   isNetworkError,
 } from "../utils/api";
 import { showErrorAlert, showSuccessAlert } from "../utils/alerts";
+import { sortOrdersByPriority } from "../utils/orderPriority";
+import { OPEN_DEVIS_EVENT } from "../utils/appEvents";
 import {
   TraiteurRequest,
   TraiteurProposal,
@@ -41,6 +42,14 @@ import SignalGpDelayModal, {
   SignalGpDelayTarget,
 } from "../components/SignalGpDelayModal";
 import DevisModal from "../components/DevisModal";
+import NegociationThread from "../components/NegociationThread";
+import {
+  NEGOCIATION_MAX_CONTRE_OFFRES,
+  countCounterOffers,
+  formatEuros,
+  getNegociation,
+  hasPendingCounterOffer,
+} from "../utils/negociation";
 
 type OrderPlat = {
   id: string;
@@ -137,6 +146,23 @@ const isDevisIssued = (cmd: CommandeTraiteur) =>
   (cmd.prix_devis !== null && cmd.prix_devis !== undefined && cmd.prix_devis !== "") ||
   (Boolean(cmd.devis_status) && cmd.devis_status !== "draft");
 
+/** Conditions d'acompte d'une offre de traiteur (absentes sur les anciennes offres). */
+const describeProposalAcompte = (prop: TraiteurProposal): string => {
+  if (!prop.conditions_devis) return "Conditions d'acompte précisées au devis";
+  let type = "optionnel";
+  let pourcentage = 30;
+  try {
+    const meta = JSON.parse(prop.conditions_devis);
+    if (typeof meta.acompte_type === "string") type = meta.acompte_type;
+    if (typeof meta.acompte_pourcentage === "number") pourcentage = meta.acompte_pourcentage;
+  } catch {
+    return "Conditions d'acompte précisées au devis";
+  }
+  if (type === "aucun") return "Sans acompte : tout se règle le jour de l'événement";
+  const montant = Math.round(Number(prop.proposed_price) * pourcentage) / 100;
+  return `Acompte ${type === "obligatoire" ? "obligatoire" : "facultatif"} : ${pourcentage} % (${formatEuros(montant)})`;
+};
+
 export default function CommandeScreen() {
   const router = useRouter();
   const params = useLocalSearchParams<{
@@ -158,6 +184,11 @@ export default function CommandeScreen() {
       setServiceFilter("traiteur");
     }
   }, [params.tab, params.service]);
+
+  // Notification d'offre (devis reçu, prix maintenu, nouveau devis) : onglet « Devis & Annonces »
+  useEffect(() => {
+    if (params.sub === "mes_demandes") setTab("receptions");
+  }, [params.sub]);
   const [isTraiteur, setIsTraiteur] = useState(false);
   const [isGp, setIsGp] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -196,9 +227,8 @@ export default function CommandeScreen() {
 
   // Mes recherches de traiteur & propositions reçues
   const [myTraiteurRequests, setMyTraiteurRequests] = useState<TraiteurRequest[]>([]);
-  const [proposalLoading, setProposalLoading] = useState<string | null>(null);
-  // Verrou immédiat (l'état React n'est appliqué qu'au rendu suivant) contre le double appui
-  const proposalLockRef = useRef(false);
+  // Verrou immédiat contre le double appui : une action d'offre n'ouvre qu'un seul écran
+  const navLockRef = useRef(false);
   const [cancellingRequestId, setCancellingRequestId] = useState<string | null>(null);
 
   const [commandesRecues, setCommandesRecues] = useState<CommandeTraiteur[]>(
@@ -248,6 +278,13 @@ export default function CommandeScreen() {
   };
 
   const openEditTraiteurRequest = (req: TraiteurRequest) => {
+    if ((req.proposals || []).some((p) => p.status === "pending")) {
+      showErrorAlert(
+        "Annonce non modifiable",
+        "Vous avez déjà reçu des devis signés sur cette annonce : la modifier les rendrait faux. Négociez avec les traiteurs, ou annulez-la et publiez-en une nouvelle.",
+      );
+      return;
+    }
     router.push({
       pathname: "/commande/edit-traiteur-request",
       params: { id: req.id },
@@ -309,7 +346,7 @@ export default function CommandeScreen() {
 
   // ── État Annulation Commande / Suppression Annonce ──
   const [cancelConfirmTarget, setCancelConfirmTarget] = useState<{
-    type: "traiteur" | "order" | "gp" | "traiteur_request";
+    type: "traiteur" | "order" | "gp" | "traiteur_request" | "proposal_reject";
     id: string;
     title: string;
   } | null>(null);
@@ -318,7 +355,7 @@ export default function CommandeScreen() {
   const cancelLockRef = useRef(false);
 
   const openCancelConfirm = (
-    type: "traiteur" | "order" | "gp" | "traiteur_request",
+    type: "traiteur" | "order" | "gp" | "traiteur_request" | "proposal_reject",
     id: string,
     title: string,
   ) => {
@@ -339,7 +376,19 @@ export default function CommandeScreen() {
     setCancelError(null);
     const { type, id } = cancelConfirmTarget;
     try {
-      if (type === "traiteur_request") {
+      if (type === "proposal_reject") {
+        // Refus définitif de l'offre d'un traiteur (il ne pourra plus en envoyer pour cette annonce)
+        const res = await apiFetch(`/traiteur/proposals/${encodeURIComponent(id)}/status`, {
+          method: "PATCH",
+          body: JSON.stringify({ status: "refusee" }),
+        });
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          setCancelError(getApiErrorMessage(data, "Impossible de décliner cette offre. Réessayez."));
+          loadAll();
+          return;
+        }
+      } else if (type === "traiteur_request") {
         // Suppression définitive de l'annonce d'événement et de ses propositions
         const res = await apiFetch(`/traiteur/requests/${id}`, {
           method: "DELETE",
@@ -396,43 +445,41 @@ export default function CommandeScreen() {
     }
   };
 
+  // Écran au premier plan : seul celui-ci ouvre un devis demandé par un autre écran
+  const isFocusedRef = useRef(false);
   useFocusEffect(
     useCallback(() => {
+      isFocusedRef.current = true;
       loadAll();
+      return () => {
+        isFocusedRef.current = false;
+      };
     }, []),
   );
 
-  const sortOrdersByPendingFirst = <
-    T extends { statut?: string; status?: string; created_at?: string },
-  >(
-    items: T[],
-  ): T[] => {
-    return [...items].sort((a, b) => {
-      const statusA = a.statut || a.status || "";
-      const statusB = b.statut || b.status || "";
-
-      const isPendingA = statusA === "en_attente" || statusA === "pending";
-      const isPendingB = statusB === "en_attente" || statusB === "pending";
-
-      if (isPendingA && !isPendingB) return -1;
-      if (!isPendingA && isPendingB) return 1;
-
-      //tri ordre décroissant
-      const dateA = a.created_at ? new Date(a.created_at).getTime() : 0;
-      const dateB = b.created_at ? new Date(b.created_at).getTime() : 0;
-      return dateB - dateA;
+  // Offre acceptée (devis signé) depuis l'écran de signature : le devis s'ouvre une fois la liste à jour
+  useEffect(() => {
+    const subscription = DeviceEventEmitter.addListener(OPEN_DEVIS_EVENT, (commandeId: unknown) => {
+      if (isFocusedRef.current && typeof commandeId === "string" && commandeId) {
+        void loadAll({ openCommandeId: commandeId });
+      }
     });
-  };
+    return () => subscription.remove();
+  }, []);
 
   /**
    * Charge toutes les commandes. Au premier chargement, écran d'attente plein écran ; ensuite
    * (retour sur l'écran, synchronisation après une action) les listes restent affichées pendant la
    * mise à jour et sont conservées si elle échoue. `pullToRefresh` : indicateur « tirer pour
-   * rafraîchir » (et bouton Réessayer).
+   * rafraîchir » (et bouton Réessayer). `openCommandeId` : devis à ouvrir une fois la liste à jour
+   * (celui créé par l'acceptation d'une offre). Renvoie true si ce devis a été ouvert.
    */
-  async function loadAll(options: { pullToRefresh?: boolean } = {}) {
+  async function loadAll(
+    options: { pullToRefresh?: boolean; openCommandeId?: string } = {},
+  ): Promise<boolean> {
     const seq = ++loadSeqRef.current;
     let redirecting = false;
+    let openedRequested = false;
     if (options.pullToRefresh) {
       setRefreshing(true);
     } else if (!hasLoadedRef.current) {
@@ -443,7 +490,7 @@ export default function CommandeScreen() {
       if (!token) {
         redirecting = true;
         router.push("/login");
-        return;
+        return false;
       }
 
       // Marquage des notifications comme lues : sans incidence sur l'affichage, un échec est
@@ -459,7 +506,7 @@ export default function CommandeScreen() {
       const response = await apiFetch("/commande");
       const res = await response.json();
       // Un chargement plus récent a été lancé entre-temps : c'est lui qui fait foi
-      if (seq !== loadSeqRef.current) return;
+      if (seq !== loadSeqRef.current) return false;
       const profile = res?.data?.orders;
       if (!response.ok || !profile) {
         // Les données déjà affichées sont conservées ; un message invite à réessayer
@@ -470,13 +517,13 @@ export default function CommandeScreen() {
           ),
           offline: false,
         });
-        return;
+        return false;
       }
       if (profile.id) setCurrentUserId(profile.id);
       // ── 1. Commandes envoyées (Client) ──
-      setCommandesEnvoyees(sortOrdersByPendingFirst(profile.commandes || []));
-      setOrdersEnvoyees(sortOrdersByPendingFirst(profile.orders || []));
-      setGpEnvoyees(sortOrdersByPendingFirst(profile.gp_requests || []));
+      setCommandesEnvoyees(sortOrdersByPriority(profile.commandes || [], "devis", "client"));
+      setOrdersEnvoyees(sortOrdersByPriority(profile.orders || [], "plat", "client"));
+      setGpEnvoyees(sortOrdersByPriority(profile.gp_requests || [], "gp", "client"));
       // ── 2. Recherches de traiteur (Client) & Devis reçus ──
       setMyTraiteurRequests(profile.traiteur_requests || []);
       // ── 3. Statut & Commandes reçues (Traiteur) ──
@@ -487,8 +534,8 @@ export default function CommandeScreen() {
           (t: any) => t.commandes || [],
         );
         const allOrders = allTraiteurs.flatMap((t: any) => t.orders || []);
-        setCommandesRecues(sortOrdersByPendingFirst(allCommandes));
-        setOrdersRecues(sortOrdersByPendingFirst(allOrders));
+        setCommandesRecues(sortOrdersByPriority(allCommandes, "devis", "pro"));
+        setOrdersRecues(sortOrdersByPriority(allOrders, "plat", "pro"));
       }
       // ── 4. Statut & Demandes reçues (GP Voyageur) ──
       const gpListings = profile.gp_listings || [];
@@ -498,37 +545,38 @@ export default function CommandeScreen() {
         const allGpRequestsReceived = gpListings.flatMap(
           (l: any) => l.requests || [],
         );
-        setGpRecues(sortOrdersByPendingFirst(allGpRequestsReceived));
+        setGpRecues(sortOrdersByPriority(allGpRequestsReceived, "gp", "pro"));
       }
       hasLoadedRef.current = true;
       setHasLoaded(true);
       setLoadError(null);
 
-      // ── 5. Auto-ouverture de commande/devis ciblé par une notification (une seule fois,
-      // pas à chaque rafraîchissement) ──
-      if (params.commande_id && autoOpenedCommandeRef.current !== params.commande_id) {
+      // ── 5. Ouverture d'un devis : celui demandé par l'appelant (offre tout juste acceptée) ou
+      // celui ciblé par une notification (une seule fois, pas à chaque rafraîchissement) ──
+      const fromNotification =
+        !options.openCommandeId &&
+        Boolean(params.commande_id) &&
+        autoOpenedCommandeRef.current !== params.commande_id;
+      const targetId = options.openCommandeId || (fromNotification ? params.commande_id : undefined);
+      if (targetId) {
         const targetCmdEnvoyee = (profile.commandes || []).find(
-          (c: any) => c.id === params.commande_id,
+          (c: any) => c.id === targetId,
         );
         const allCommandes = allTraiteurs.flatMap((t: any) => t.commandes || []);
         const targetCmdRecue = allCommandes.find(
-          (c: any) => c.id === params.commande_id,
+          (c: any) => c.id === targetId,
         );
 
-        if (targetCmdEnvoyee) {
-          autoOpenedCommandeRef.current = params.commande_id;
-          setTab("envoyees");
-          setSelectedDevisCommande(targetCmdEnvoyee);
-          setIsTraiteurViewForDevis(false);
-        } else if (targetCmdRecue) {
-          autoOpenedCommandeRef.current = params.commande_id;
-          setTab("recues");
-          setSelectedDevisCommande(targetCmdRecue);
-          setIsTraiteurViewForDevis(true);
+        if (targetCmdEnvoyee || targetCmdRecue) {
+          if (fromNotification) autoOpenedCommandeRef.current = targetId;
+          openedRequested = Boolean(options.openCommandeId);
+          setTab(targetCmdEnvoyee ? "envoyees" : "recues");
+          setSelectedDevisCommande(targetCmdEnvoyee || targetCmdRecue);
+          setIsTraiteurViewForDevis(!targetCmdEnvoyee);
         }
       }
     } catch (error) {
-      if (seq !== loadSeqRef.current) return;
+      if (seq !== loadSeqRef.current) return false;
       if (!isNetworkError(error)) {
         console.warn("Erreur lors de la récupération des commandes:", error);
       }
@@ -545,55 +593,44 @@ export default function CommandeScreen() {
         setRefreshing(false);
       }
     }
+    return openedRequested;
   }
 
-  // Acceptation / refus d'une proposition de traiteur (un seul envoi à la fois). Les messages de
-  // l'écran passent par utils/alerts : Alert.alert de React Native n'affiche rien sur le web.
-  const updateProposalStatus = async (
-    prop: TraiteurProposal,
-    status: "acceptee" | "refusee",
-  ) => {
-    if (proposalLockRef.current) return;
-    proposalLockRef.current = true;
-    setProposalLoading(prop.id);
-    const fallback =
-      status === "acceptee"
-        ? "Impossible d'accepter cette proposition. Réessayez."
-        : "Impossible de décliner cette proposition. Réessayez.";
-    try {
-      const res = await apiFetch(`/traiteur/proposals/${prop.id}/status`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ status }),
-      });
-      if (!res.ok) {
-        const data = await res.json().catch(() => ({}));
-        showErrorAlert("Erreur", getApiErrorMessage(data, fallback));
-        // La proposition a pu changer d'état entre-temps : resynchronisation en arrière-plan
-        loadAll();
-        return;
-      }
-      if (status === "acceptee") {
-        showSuccessAlert(
-          "Offre acceptée !",
-          "Vous avez retenu cette offre. Vous pouvez contacter le traiteur par WhatsApp pour organiser votre événement.",
-        );
-      }
-      // Boutons désactivés jusqu'à la mise à jour de la liste
-      await loadAll();
-    } catch (e) {
-      showErrorAlert("Erreur", getErrorMessage(e, fallback));
-    } finally {
-      proposalLockRef.current = false;
-      setProposalLoading(null);
-    }
+
+  // Un double appui n'empile pas deux fois le même écran
+  const navigateOnce = (href: Parameters<typeof router.push>[0]) => {
+    if (navLockRef.current) return;
+    navLockRef.current = true;
+    router.push(href);
+    setTimeout(() => {
+      navLockRef.current = false;
+    }, 800);
   };
 
-  const handleAcceptProposal = (prop: TraiteurProposal) =>
-    updateProposalStatus(prop, "acceptee");
+  // Accepter une offre, c'est signer le devis proposé : écran dédié (signature et accord du client).
+  // Seuls les identifiants sont transmis : l'écran relit l'offre auprès de l'API.
+  const openAcceptOffer = (prop: TraiteurProposal, req: TraiteurRequest) => {
+    navigateOnce({
+      pathname: "/commande/accepter-offre" as any,
+      params: { requestId: req.id, proposalId: prop.id },
+    });
+  };
 
+  // Prix trop élevé : contre-proposition au traiteur (écran dédié)
+  const openCounterOffer = (prop: TraiteurProposal, req: TraiteurRequest) => {
+    navigateOnce({
+      pathname: "/commande/negocier" as any,
+      params: { requestId: req.id, proposalId: prop.id },
+    });
+  };
+
+  // Refus d'une offre : définitif, il passe par la fenêtre de confirmation
   const handleRejectProposal = (prop: TraiteurProposal) =>
-    updateProposalStatus(prop, "refusee");
+    openCancelConfirm(
+      "proposal_reject",
+      prop.id,
+      `l'offre de ${prop.traiteur?.name || "ce traiteur"} (${formatEuros(Number(prop.proposed_price))})`,
+    );
 
   const handleCancelTraiteurRequest = (req: TraiteurRequest) => {
     openCancelConfirm(
@@ -1082,7 +1119,9 @@ export default function CommandeScreen() {
           refreshControl={
             <RefreshControl
               refreshing={refreshing}
-              onRefresh={() => loadAll({ pullToRefresh: true })}
+              onRefresh={() => {
+                void loadAll({ pullToRefresh: true });
+              }}
               tintColor="#1D6B45"
               colors={["#1D6B45"]}
             />
@@ -2039,6 +2078,14 @@ export default function CommandeScreen() {
                             const isPending = prop.status === "pending";
                             const isAccepted = prop.status === "accepted";
                             const isRejected = prop.status === "rejected";
+                            // Négociation : une contre-proposition à la fois, dans la limite autorisée
+                            const negociation = getNegociation(prop.negociation);
+                            const counterPending = hasPendingCounterOffer(negociation);
+                            const canCounter =
+                              isPending &&
+                              isOpen &&
+                              !counterPending &&
+                              countCounterOffers(negociation) < NEGOCIATION_MAX_CONTRE_OFFRES;
                             const whatsappNum =
                               traiteur?.whatsapp ||
                               traiteur?.profile?.phone;
@@ -2067,7 +2114,7 @@ export default function CommandeScreen() {
                                   </View>
                                   <View style={{ alignItems: "flex-end" }}>
                                     <Text style={styles.proposalPrice}>
-                                      {prop.proposed_price} €
+                                      {formatEuros(Number(prop.proposed_price))}
                                     </Text>
                                     {isAccepted && (
                                       <Text
@@ -2091,6 +2138,37 @@ export default function CommandeScreen() {
                                     {prop.message}
                                   </Text>
                                 </View>
+
+                                {/* Conditions du devis proposé et signature du traiteur */}
+                                <View style={styles.proposalTermsRow}>
+                                  <Ionicons name="wallet-outline" size={13} color="#1D6B45" />
+                                  <Text style={styles.proposalTermsText}>
+                                    {describeProposalAcompte(prop)}
+                                  </Text>
+                                </View>
+                                <View style={styles.proposalTermsRow}>
+                                  <Ionicons
+                                    name={prop.traiteur_signature ? "checkmark-circle" : "time-outline"}
+                                    size={13}
+                                    color={prop.traiteur_signature ? "#15803D" : "#B45309"}
+                                  />
+                                  <Text
+                                    style={[
+                                      styles.proposalTermsText,
+                                      !prop.traiteur_signature && styles.proposalTermsTextPending,
+                                    ]}
+                                  >
+                                    {prop.traiteur_signature
+                                      ? `Devis signé par ${prop.traiteur_signature}`
+                                      : "Offre non signée : le traiteur signera après votre accord"}
+                                  </Text>
+                                </View>
+
+                                <NegociationThread
+                                  entries={negociation}
+                                  viewer="client"
+                                  traiteurName={traiteur?.name}
+                                />
 
                                 {/* Actions */}
                                 <View style={styles.proposalActionsRow}>
@@ -2121,7 +2199,7 @@ export default function CommandeScreen() {
                                     >
                                       <TouchableOpacity
                                         style={styles.proposalRejectBtn}
-                                        disabled={proposalLoading === prop.id}
+                                        disabled={isCancelling && cancelConfirmTarget?.id === prop.id}
                                         onPress={() =>
                                           handleRejectProposal(prop)
                                         }
@@ -2138,10 +2216,8 @@ export default function CommandeScreen() {
 
                                       <TouchableOpacity
                                         style={styles.proposalAcceptBtn}
-                                        disabled={proposalLoading === prop.id}
-                                        onPress={() =>
-                                          handleAcceptProposal(prop)
-                                        }
+                                        disabled={isCancelling && cancelConfirmTarget?.id === prop.id}
+                                        onPress={() => openAcceptOffer(prop, req)}
                                         activeOpacity={0.85}
                                       >
                                         <Ionicons
@@ -2154,14 +2230,34 @@ export default function CommandeScreen() {
                                             styles.proposalAcceptBtnText
                                           }
                                         >
-                                          {proposalLoading === prop.id
-                                            ? "..."
-                                            : "Accepter"}
+                                          Signer et accepter
                                         </Text>
                                       </TouchableOpacity>
                                     </View>
                                   )}
                                 </View>
+
+                                {isPending && isOpen && counterPending && (
+                                  <View style={styles.proposalCounterPending}>
+                                    <Ionicons name="hourglass-outline" size={13} color="#6D28D9" />
+                                    <Text style={styles.proposalCounterPendingText}>
+                                      Contre-proposition envoyée : en attente de la réponse du traiteur.
+                                    </Text>
+                                  </View>
+                                )}
+                                {canCounter && (
+                                  <TouchableOpacity
+                                    style={styles.proposalNegotiateBtn}
+                                    disabled={isCancelling && cancelConfirmTarget?.id === prop.id}
+                                    onPress={() => openCounterOffer(prop, req)}
+                                    activeOpacity={0.85}
+                                  >
+                                    <Ionicons name="swap-vertical" size={14} color="#6D28D9" />
+                                    <Text style={styles.proposalNegotiateBtnText}>
+                                      Trop cher ? Proposer un autre prix
+                                    </Text>
+                                  </TouchableOpacity>
+                                )}
                               </View>
                             );
                           })
@@ -2879,10 +2975,9 @@ export default function CommandeScreen() {
             visible={!!confirmAction}
             onRequestClose={closeStatusActionModal}
           >
-            <KeyboardAvoidingView
-              behavior={Platform.OS === "ios" ? "padding" : undefined}
-              style={{ flex: 1 }}
-            >
+            {/* Android affiche les modales bord à bord et ne les redimensionne plus quand le clavier s'ouvre :
+                la fenêtre est remontée au-dessus du clavier sur les deux plateformes. */}
+            <KeyboardAvoidingView behavior="padding" style={{ flex: 1 }}>
               <View style={styles.modalOverlay}>
                 <View style={styles.modalCard}>
                 <View
@@ -3005,7 +3100,9 @@ export default function CommandeScreen() {
                     name={
                       cancelConfirmTarget.type === "traiteur_request"
                         ? "trash-outline"
-                        : "alert-circle-outline"
+                        : cancelConfirmTarget.type === "proposal_reject"
+                          ? "close-circle-outline"
+                          : "alert-circle-outline"
                     }
                     size={36}
                     color="#B91C1C"
@@ -3015,13 +3112,17 @@ export default function CommandeScreen() {
                 <Text style={styles.confirmModalTitle}>
                   {cancelConfirmTarget.type === "traiteur_request"
                     ? "Supprimer l'annonce ?"
-                    : "Annuler la commande ?"}
+                    : cancelConfirmTarget.type === "proposal_reject"
+                      ? "Décliner cette offre ?"
+                      : "Annuler la commande ?"}
                 </Text>
 
                 <Text style={styles.confirmModalSubtext}>
                   {cancelConfirmTarget.type === "traiteur_request"
                     ? `Êtes-vous sûr(e) de vouloir annuler et supprimer ${cancelConfirmTarget.title} ? Cette action supprimera définitivement votre recherche d'événement ainsi que les propositions associées.`
-                    : `Êtes-vous sûr(e) de vouloir annuler ${cancelConfirmTarget.title} ? Cette action est irréversible.`}
+                    : cancelConfirmTarget.type === "proposal_reject"
+                      ? `Vous allez décliner ${cancelConfirmTarget.title}. Le traiteur ne pourra plus vous envoyer de devis pour cette annonce.`
+                      : `Êtes-vous sûr(e) de vouloir annuler ${cancelConfirmTarget.title} ? Cette action est irréversible.`}
                 </Text>
 
                 {cancelError && (
@@ -3041,7 +3142,9 @@ export default function CommandeScreen() {
                     <Text style={styles.confirmCancelText}>
                       {cancelConfirmTarget.type === "traiteur_request"
                         ? "Non, garder l'annonce"
-                        : "Non, garder"}
+                        : cancelConfirmTarget.type === "proposal_reject"
+                          ? "Non, garder l'offre"
+                          : "Non, garder"}
                     </Text>
                   </TouchableOpacity>
 
@@ -3060,7 +3163,9 @@ export default function CommandeScreen() {
                       <Text style={styles.confirmExecuteText}>
                         {cancelConfirmTarget.type === "traiteur_request"
                           ? "Oui, supprimer"
-                          : "Oui, annuler"}
+                          : cancelConfirmTarget.type === "proposal_reject"
+                            ? "Oui, décliner"
+                            : "Oui, annuler"}
                       </Text>
                     )}
                   </TouchableOpacity>
@@ -4244,6 +4349,10 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    // Écrans étroits : les boutons passent à la ligne au lieu de déborder de la carte
+    flexWrap: "wrap",
+    rowGap: 8,
+    columnGap: 8,
     paddingTop: 4,
   },
   proposalWaBtn: {
@@ -4288,6 +4397,54 @@ const styles = StyleSheet.create({
     fontSize: 11.5,
     color: "#FFFFFF",
     fontWeight: "700",
+  },
+  proposalTermsRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginTop: 6,
+  },
+  proposalTermsText: {
+    flex: 1,
+    fontSize: 11.5,
+    color: "#166534",
+    fontWeight: "700",
+  },
+  proposalTermsTextPending: {
+    color: "#B45309",
+  },
+  proposalCounterPending: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#F5F3FF",
+    borderRadius: 10,
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    marginTop: 8,
+  },
+  proposalCounterPendingText: {
+    flex: 1,
+    fontSize: 11.5,
+    fontWeight: "700",
+    color: "#5B21B6",
+  },
+  proposalNegotiateBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderWidth: 1,
+    borderColor: "#C4B5FD",
+    backgroundColor: "#FAF5FF",
+    borderRadius: 10,
+    paddingVertical: 9,
+    marginTop: 8,
+  },
+  proposalNegotiateBtnText: {
+    fontSize: 12,
+    fontWeight: "800",
+    color: "#6D28D9",
   },
 
   /* Retard Vol GP */

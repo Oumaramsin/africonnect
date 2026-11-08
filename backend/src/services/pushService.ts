@@ -49,7 +49,11 @@ const isMissingTable = (error: unknown) => {
   return true;
 };
 
-const truncate = (text: string, max: number) => (text.length > max ? `${text.slice(0, max - 1)}…` : text);
+const truncate = (text: string, max: number) => {
+  // Découpe par caractères (et non par unités UTF-16) : un emoji n'est jamais coupé en deux
+  const chars = Array.from(text);
+  return chars.length > max ? `${chars.slice(0, max - 1).join("")}…` : text;
+};
 
 /** Données du push : uniquement des valeurs simples (identifiants, type) utiles à la navigation. */
 const toPushData = (data: unknown): Record<string, unknown> => {

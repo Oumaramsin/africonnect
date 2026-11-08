@@ -30,7 +30,7 @@ const formatNumber = (value: unknown, minDigits: number, maxDigits: number) => {
 
 function describeListing(listing: GpListing): string {
   return truncateText(
-    `Envoyez vos colis de ${listing.departure_city} (${listing.departure_country}) à ${listing.arrival_city} (${listing.arrival_country}) avec un voyageur GP vérifié : départ le ${formatFlightDate(listing.departure_date)}, ${formatNumber(listing.available_kg, 0, 1)} kg disponibles à ${formatNumber(listing.price_per_kg, 2, 2)} €/kg, paiement sous séquestre.`,
+    `Envoyez vos colis de ${listing.departure_city} (${listing.departure_country}) à ${listing.arrival_city} (${listing.arrival_country}) avec un voyageur GP vérifié : départ le ${formatFlightDate(listing.departure_date)}, ${formatNumber(listing.available_kg, 0, 1)} kg disponibles à ${formatNumber(listing.price_per_kg, 2, 2)} €/kg, paiement direct au voyageur.`,
     200,
   );
 }
@@ -47,7 +47,7 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     return pageMetadata({
       title: "Vol GP : transport de colis",
       description:
-        "Réservez des kilos auprès d'un voyageur GP vérifié pour envoyer vos colis entre l'Europe et l'Afrique, avec paiement sous séquestre.",
+        "Réservez des kilos auprès d'un voyageur GP vérifié pour envoyer vos colis entre l'Europe et l'Afrique, avec paiement direct au voyageur.",
       path: `/gp/${listingId}`,
     });
   }
